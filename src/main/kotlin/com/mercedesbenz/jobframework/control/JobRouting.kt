@@ -21,16 +21,17 @@ val logger: Logger = LoggerFactory.getLogger("JobRouting") // TODO better name
 
 fun <INPUT, RESULT, IN : JobInput<INPUT>, RES : JobResult<RESULT>> Route.jobRoutings(
     persistence: Persistence<INPUT, RESULT, IN, RES>,
-    jobInputGen: (String) -> IN,
+    jobInputGen: (String) -> INPUT,
     myInstanceName: String,
-    tagProvider: (IN) -> List<String> = { emptyList() },
-    customInfoProvider: (IN) -> String = { "" },
-    priorityProvider: (IN) -> Int = { 0 },
+    inputValidation: (INPUT) -> List<String> = { emptyList() },
+    tagProvider: (INPUT) -> List<String> = { emptyList() },
+    customInfoProvider: (INPUT) -> String = { "" },
+    priorityProvider: (INPUT) -> Int = { 0 },
 ) {
     post("submit") {
         val plainInput = call.receiveText()
         val input = jobInputGen(plainInput)
-        submit(input, persistence, myInstanceName, tagProvider, customInfoProvider, priorityProvider)
+        submit(input, persistence, myInstanceName, inputValidation, tagProvider, customInfoProvider, priorityProvider)
     }
 
     get("status/{uuid}") {
@@ -71,14 +72,15 @@ fun <INPUT, RESULT, IN : JobInput<INPUT>, RES : JobResult<RESULT>> Route.jobRout
 }
 
 private suspend inline fun <INPUT, IN : JobInput<INPUT>> PipelineContext<Unit, ApplicationCall>.submit(
-    input: IN,
+    input: INPUT,
     persistence: Persistence<INPUT, *, IN, *>,
     myInstanceName: String,
-    tagProvider: (IN) -> List<String>,
-    customInfoProvider: (IN) -> String,
-    priorityProvider: (IN) -> Int
+    inputValidation: (INPUT) -> List<String>,
+    tagProvider: (INPUT) -> List<String>,
+    customInfoProvider: (INPUT) -> String,
+    priorityProvider: (INPUT) -> Int
 ) {
-    input.validate()?.let {
+    inputValidation(input).takeIf { it.isNotEmpty() }?.let {
         call.respond(HttpStatusCode.BadRequest, it.joinToString(", "))
         return
     }

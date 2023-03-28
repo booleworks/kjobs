@@ -71,7 +71,7 @@ interface Persistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobRe
  */
 interface TransactionalPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>> {
     fun persistJob(job: Job): JobAccessResult<Unit>
-    fun persistInput(job: Job, input: IN): JobAccessResult<Unit>
+    fun persistInput(job: Job, input: INPUT): JobAccessResult<Unit>
     fun persistResult(job: Job, result: RES): JobAccessResult<Unit>
 
     fun updateJob(job: Job): JobAccessResult<Unit>

@@ -99,7 +99,7 @@ class RedisTransactionalPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT
         return JobAccessResult.success
     }
 
-    override fun persistInput(job: Job, input: IN): JobAccessResult<Unit> {
+    override fun persistInput(job: Job, input: INPUT): JobAccessResult<Unit> {
         transaction.set(config.inputKey(job.uuid).toByteArray(), jacksonObjectMapper().writeValueAsBytes(input))
         return JobAccessResult.success
     }

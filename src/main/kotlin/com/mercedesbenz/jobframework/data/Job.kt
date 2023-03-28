@@ -18,25 +18,27 @@ class Job(
     var numRestarts: Int = 0
 )
 
-abstract class JobInput<T>(val uuid: String) {
-    abstract fun data(): T
-    abstract fun serializedData(): ByteArray
-    abstract fun validate(): List<String>?
+interface JobInput<T> {
+    val uuid: String
+    fun data(): T
+    fun serializedData(): ByteArray
+    fun validate(): List<String>?
 }
 
-abstract class SimpleJsonInput<T>(uuid: String, val data: T) : JobInput<T>(uuid) {
+abstract class SimpleJsonInput<T>(override val uuid: String, val data: T) : JobInput<T> {
     override fun data(): T = data
     override fun serializedData(): ByteArray = jacksonObjectMapper().writeValueAsBytes(data)
 }
 
-abstract class JobResult<T>(val uuid: String) {
-    abstract val isSuccess: Boolean
-    abstract fun result(): T?
-    abstract fun serializedResult(): String?
-    abstract fun error(): String?
+interface JobResult<T> {
+    val uuid: String
+    val isSuccess: Boolean
+    fun result(): T?
+    fun serializedResult(): String?
+    fun error(): String?
 }
 
-open class SimpleJsonResult<T>(uuid: String, val result: T?, val error: String?) : JobResult<T>(uuid) {
+open class SimpleJsonResult<T>(override val uuid: String, val result: T?, val error: String?) : JobResult<T> {
     override val isSuccess = result != null
     override fun result(): T? = result
     override fun serializedResult(): String? = jacksonObjectMapper().writeValueAsString(result)
