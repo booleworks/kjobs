@@ -22,7 +22,6 @@ interface JobInput<T> {
     val uuid: String
     fun data(): T
     fun serializedData(): ByteArray
-    fun validate(): List<String>?
 }
 
 abstract class SimpleJsonInput<T>(override val uuid: String, val data: T) : JobInput<T> {
@@ -34,14 +33,14 @@ interface JobResult<T> {
     val uuid: String
     val isSuccess: Boolean
     fun result(): T?
-    fun serializedResult(): String?
+    fun serializedResult(): ByteArray?
     fun error(): String?
 }
 
 open class SimpleJsonResult<T>(override val uuid: String, val result: T?, val error: String?) : JobResult<T> {
     override val isSuccess = result != null
     override fun result(): T? = result
-    override fun serializedResult(): String? = jacksonObjectMapper().writeValueAsString(result)
+    override fun serializedResult(): ByteArray? = result?.let { jacksonObjectMapper().writeValueAsBytes(it) }
     override fun error(): String? = error
 }
 

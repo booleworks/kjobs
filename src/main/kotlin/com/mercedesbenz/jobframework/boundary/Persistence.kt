@@ -33,15 +33,11 @@ class JobAccessResult<R> private constructor(val result: R?, val error: JobAcces
 
 sealed interface JobAccessError {
     object NotFound : JobAccessError {
-        override fun toString(): String {
-            return "Not found"
-        }
+        override fun toString() = "Not found"
     }
 
     data class InternalError(val message: String) : JobAccessError {
-        override fun toString(): String {
-            return message
-        }
+        override fun toString() = message
     }
 }
 
@@ -71,7 +67,7 @@ interface Persistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobRe
  */
 interface TransactionalPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>> {
     fun persistJob(job: Job): JobAccessResult<Unit>
-    fun persistInput(job: Job, input: INPUT): JobAccessResult<Unit>
+    fun persistInput(job: Job, input: IN): JobAccessResult<Unit>
     fun persistResult(job: Job, result: RES): JobAccessResult<Unit>
 
     fun updateJob(job: Job): JobAccessResult<Unit>

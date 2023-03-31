@@ -1,6 +1,5 @@
 package com.mercedesbenz.jobframework.control.impl
 
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.mercedesbenz.jobframework.boundary.JobAccessResult
 import com.mercedesbenz.jobframework.boundary.Persistence
 import com.mercedesbenz.jobframework.boundary.TransactionalPersistence
@@ -21,6 +20,8 @@ private val logger = LoggerFactory.getLogger(RedisPersistence::class.java)
 // TODO error handling
 class RedisPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
     private val pool: JedisPool,
+    private val inputSerializer: (IN) -> ByteArray,
+    private val resultSerializer: (RES) -> ByteArray,
     private val inputDeserializer: (ByteArray) -> IN,
     private val resultDeserializer: (ByteArray) -> RES,
     private val config: RedisConfig,
@@ -30,7 +31,7 @@ class RedisPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobR
     override fun transaction(block: TransactionalPersistence<INPUT, RESULT, IN, RES>.() -> Unit): JobAccessResult<Unit> = pool.resource.use { jedis ->
         jedis.multi().run {
             try {
-                RedisTransactionalPersistence<INPUT, RESULT, IN, RES>(this@run, config).run(block).also { exec() }
+                RedisTransactionalPersistence(this@run, inputSerializer, resultSerializer, config).run(block).also { exec() }
             } catch (e: Throwable) {
                 val message = e.message ?: "Undefined error"
                 logger.error("Jedis transaction failed with: $message", e)
@@ -42,9 +43,8 @@ class RedisPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobR
         JobAccessResult.success
     }
 
-    override fun fetchJob(uuid: String): JobAccessResult<Job> {
-        return pool.resource.use { it.hgetAll(config.jobKey(uuid)) }.redisMapToJob(uuid)
-    }
+    override fun fetchJob(uuid: String): JobAccessResult<Job> =
+        pool.resource.use { it.hgetAll(config.jobKey(uuid)) }.redisMapToJob(uuid)
 
     override fun fetchInput(uuid: String): JobAccessResult<IN> {
         val inputBytes = pool.resource.use { it.get(config.inputKey(uuid).toByteArray()) }
@@ -52,24 +52,20 @@ class RedisPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobR
     }
 
     override fun fetchResult(uuid: String): JobAccessResult<RES> {
-        val resultBytes = pool.resource.use { it.get(config.inputKey(uuid).toByteArray()) }
+        val resultBytes = pool.resource.use { it.get(config.resultKey(uuid).toByteArray()) }
         return JobAccessResult.result(resultDeserializer(resultBytes))
     }
 
-    override fun allJobsFor(status: JobStatus): JobAccessResult<List<Job>> {
-        return getAllJobsBy { jedis, key -> jedis.hget(key, "status") == JobStatus.RUNNING.toString() }
-    }
+    override fun allJobsFor(status: JobStatus): JobAccessResult<List<Job>> =
+        getAllJobsBy { jedis, key -> jedis.hget(key, "status") == JobStatus.RUNNING.toString() }
 
-    override fun allJobsOfInstance(status: JobStatus, instance: String): JobAccessResult<List<Job>> {
-        return getAllJobsBy { jedis, key -> jedis.hmget(key, "status", "executingInstance") == listOf(status.toString(), instance) }
-    }
+    override fun allJobsOfInstance(status: JobStatus, instance: String): JobAccessResult<List<Job>> =
+        getAllJobsBy { jedis, key -> jedis.hmget(key, "status", "executingInstance") == listOf(status.toString(), instance) }
 
-    override fun allJobsFinishedBefore(date: LocalDateTime): JobAccessResult<List<Job>> {
-        return getAllJobsBy { jedis, key ->
-            val statusAndFinishedAt = jedis.hmget(key, "status", "finishedAt")
-            (statusAndFinishedAt[0] == JobStatus.SUCCESS.toString() || statusAndFinishedAt[0] == JobStatus.FAILURE.toString())
-                    && statusAndFinishedAt.getOrNull(1)?.let { LocalDateTime.parse(it) }?.isBefore(date) ?: false
-        }
+    override fun allJobsFinishedBefore(date: LocalDateTime): JobAccessResult<List<Job>> = getAllJobsBy { jedis, key ->
+        val statusAndFinishedAt = jedis.hmget(key, "status", "finishedAt")
+        (statusAndFinishedAt[0] == JobStatus.SUCCESS.toString() || statusAndFinishedAt[0] == JobStatus.FAILURE.toString())
+                && statusAndFinishedAt.getOrNull(1)?.let { LocalDateTime.parse(it) }?.isBefore(date) ?: false
     }
 
     private fun getAllJobsBy(condition: (Jedis, String) -> Boolean): JobAccessResult<List<Job>> {
@@ -90,6 +86,8 @@ class RedisPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobR
  */
 class RedisTransactionalPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
     private val transaction: Transaction,
+    private val inputSerializer: (IN) -> ByteArray,
+    private val resultSerializer: (RES) -> ByteArray,
     private val config: RedisConfig
 ) :
     TransactionalPersistence<INPUT, RESULT, IN, RES> {
@@ -99,19 +97,18 @@ class RedisTransactionalPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT
         return JobAccessResult.success
     }
 
-    override fun persistInput(job: Job, input: INPUT): JobAccessResult<Unit> {
-        transaction.set(config.inputKey(job.uuid).toByteArray(), jacksonObjectMapper().writeValueAsBytes(input))
+    override fun persistInput(job: Job, input: IN): JobAccessResult<Unit> {
+        transaction.set(config.inputKey(job.uuid).toByteArray(), inputSerializer(input))
+        kotlin.runCatching { }
         return JobAccessResult.success
     }
 
     override fun persistResult(job: Job, result: RES): JobAccessResult<Unit> {
-        transaction.set(config.resultKey(job.uuid).toByteArray(), jacksonObjectMapper().writeValueAsBytes(result))
+        transaction.set(config.resultKey(job.uuid).toByteArray(), resultSerializer(result))
         return JobAccessResult.success
     }
 
-    override fun updateJob(job: Job): JobAccessResult<Unit> {
-        return persistJob(job)
-    }
+    override fun updateJob(job: Job): JobAccessResult<Unit> = persistJob(job)
 
     override fun deleteForUuid(uuid: String): JobAccessResult<Unit> {
         transaction.del(config.jobKey(uuid))

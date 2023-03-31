@@ -1,7 +1,5 @@
 package com.mercedesbenz.jobframework.control.impl
 
-import com.mercedesbenz.jobframework.data.Job
-
 interface RedisConfig {
     val jobPattern: String
         get() = "*:job"
@@ -11,4 +9,4 @@ interface RedisConfig {
     fun resultKey(uuid: String): String = "$uuid:result"
 }
 
-open class DefaultRedisConfig: RedisConfig
+open class DefaultRedisConfig : RedisConfig

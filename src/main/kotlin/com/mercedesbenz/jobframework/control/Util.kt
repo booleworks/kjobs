@@ -25,5 +25,7 @@ fun CoroutineScope.scheduleForever(duration: Duration, logger: Logger, task: sus
 }
 
 fun unreachable(): Nothing {
-    throw Exception("Expected this code to be unreachable")
+    throw UnreachableCodeException()
 }
+
+private class UnreachableCodeException : Throwable("Expected this code to be unreachable")

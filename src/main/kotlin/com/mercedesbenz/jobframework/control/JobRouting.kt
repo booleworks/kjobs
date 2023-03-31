@@ -6,30 +6,35 @@ import com.mercedesbenz.jobframework.data.Job
 import com.mercedesbenz.jobframework.data.JobInput
 import com.mercedesbenz.jobframework.data.JobResult
 import com.mercedesbenz.jobframework.data.JobStatus
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
-import io.ktor.util.pipeline.*
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.call
+import io.ktor.server.request.receiveText
+import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import io.ktor.util.pipeline.PipelineContext
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.nio.charset.StandardCharsets
 import java.time.LocalDateTime
 import java.util.*
 
 val logger: Logger = LoggerFactory.getLogger("JobRouting") // TODO better name
 
-fun <INPUT, RESULT, IN : JobInput<INPUT>, RES : JobResult<RESULT>> Route.jobRoutings(
+fun <INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>> Route.jobRoutings(
     persistence: Persistence<INPUT, RESULT, IN, RES>,
-    jobInputGen: (String) -> INPUT,
+    jobInputGen: (String) -> IN,
     myInstanceName: String,
-    inputValidation: (INPUT) -> List<String> = { emptyList() },
-    tagProvider: (INPUT) -> List<String> = { emptyList() },
-    customInfoProvider: (INPUT) -> String = { "" },
-    priorityProvider: (INPUT) -> Int = { 0 },
+    inputValidation: (IN) -> List<String> = { emptyList() },
+    tagProvider: (IN) -> List<String> = { emptyList() },
+    customInfoProvider: (IN) -> String = { "" },
+    priorityProvider: (IN) -> Int = { 0 },
 ) {
     post("submit") {
-        val plainInput = call.receiveText()
+        val plainInput = call.receiveText() // TODO we might want to make this call generic, s.t. the library user can decide how the call receives input
         val input = jobInputGen(plainInput)
         submit(input, persistence, myInstanceName, inputValidation, tagProvider, customInfoProvider, priorityProvider)
     }
@@ -46,7 +51,7 @@ fun <INPUT, RESULT, IN : JobInput<INPUT>, RES : JobResult<RESULT>> Route.jobRout
             } else {
                 val result = result(job, persistence) ?: return@get
                 result.serializedResult()?.let {
-                    call.respondText(it)
+                    call.respondText(it.toString(StandardCharsets.UTF_8))
                 } ?: run {
                     call.respondText("Expected the JobResult for ID $uuid to have a result.", status = HttpStatusCode.InternalServerError)
                 }
@@ -71,14 +76,14 @@ fun <INPUT, RESULT, IN : JobInput<INPUT>, RES : JobResult<RESULT>> Route.jobRout
     }
 }
 
-private suspend inline fun <INPUT, IN : JobInput<INPUT>> PipelineContext<Unit, ApplicationCall>.submit(
-    input: INPUT,
+private suspend inline fun <INPUT, IN : JobInput<in INPUT>> PipelineContext<Unit, ApplicationCall>.submit(
+    input: IN,
     persistence: Persistence<INPUT, *, IN, *>,
     myInstanceName: String,
-    inputValidation: (INPUT) -> List<String>,
-    tagProvider: (INPUT) -> List<String>,
-    customInfoProvider: (INPUT) -> String,
-    priorityProvider: (INPUT) -> Int
+    inputValidation: (IN) -> List<String>,
+    tagProvider: (IN) -> List<String>,
+    customInfoProvider: (IN) -> String,
+    priorityProvider: (IN) -> Int
 ) {
     inputValidation(input).takeIf { it.isNotEmpty() }?.let {
         call.respond(HttpStatusCode.BadRequest, it.joinToString(", "))
@@ -112,7 +117,7 @@ private suspend fun PipelineContext<Unit, ApplicationCall>.status(uuid: UUID, pe
     fetchJob(uuid, persistence)?.let { call.respond(it.status) }
 }
 
-private suspend inline fun <RESULT, RES : JobResult<RESULT>> PipelineContext<Unit, ApplicationCall>.result(
+private suspend inline fun <RESULT, RES : JobResult<out RESULT>> PipelineContext<Unit, ApplicationCall>.result(
     job: Job,
     persistence: Persistence<*, RESULT, *, RES>
 ): RES? {
@@ -127,7 +132,7 @@ private suspend fun PipelineContext<Unit, ApplicationCall>.parseUuid(): UUID? {
     plainUuid?.let {
         try {
             return UUID.fromString(it)
-        } catch (e: IllegalArgumentException) {
+        } catch (@Suppress("SwallowedException") e: IllegalArgumentException) {
             null
         }
     } ?: run {

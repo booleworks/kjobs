@@ -5,6 +5,4 @@ object JobFramework {
     fun builder() = JobFrameworkBuilder()
 }
 
-class JobFrameworkBuilder internal constructor() {
-
-}
+class JobFrameworkBuilder internal constructor()

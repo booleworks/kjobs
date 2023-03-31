@@ -73,7 +73,8 @@ class JobExecutor<INPUT, RESULT>(
                 return
             }.executingInstance
             if (executingInstance != myInstanceName) {
-                log.info("Job with ID $id was stolen from $myInstanceName by $executingInstance! (Does not harm in this case, we didn't compute anything so far.)")
+                log.info("Job with ID $id was stolen from $myInstanceName by $executingInstance! " +
+                        "(Does not harm in this case, we didn't compute anything so far.)")
                 return
             } else {
                 val timeout = timeoutComputation(job, jobInput)
@@ -100,6 +101,7 @@ class JobExecutor<INPUT, RESULT>(
             return
         }
         if (job.executingInstance != myInstanceName) {
+            // TODO Result doch schreiben
             log.warn("Job with ID $id was stolen from $myInstanceName by ${job.executingInstance} after the computation!")
             return
         }
@@ -135,7 +137,8 @@ class JobExecutor<INPUT, RESULT>(
             job.executingInstance = myInstanceName
             job.startedAt = LocalDateTime.now()
             job.status = JobStatus.RUNNING
-            // timeout will be recomputed shortly, but we need to set a timeout for the case that the pod is restarted in between (jobs will not be restarted without a timeout being set)
+            // timeout will be recomputed shortly, but we need to set a timeout for the case that the pod is restarted in between
+            // (jobs will not be restarted without a timeout being set)
             job.timeout = LocalDateTime.now().plusMinutes(2)
             persistence.transaction { updateJob(job) }.orQuitWith {
                 log.error("Failed to update job with ID ${job.uuid}: $it")
