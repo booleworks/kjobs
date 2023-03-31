@@ -15,7 +15,7 @@ object Maintenance {
     fun <RESULT, RES : JobResult<RESULT>> restartLongRunningJobs(
         persistence: Persistence<*, RESULT, *, RES>,
         maxRestarts: Int,
-        failureGenerator: (String) -> RES
+        failureGenerator: (String, String) -> RES
     ) {
         val jobsInTimeout = persistence.allRunningJobsWithTimeoutLessThan(LocalDateTime.now()).orQuitWith {
             logger.error("Job access failed when trying to restart long running jobs: $it")
@@ -26,7 +26,7 @@ object Maintenance {
                 if (job.numRestarts >= maxRestarts) {
                     job.status = JobStatus.FAILURE
                     job.finishedAt = LocalDateTime.now()
-                    persistResult(job, failureGenerator(MESSAGE_ABORTED))
+                    persistResult(job, failureGenerator(job.uuid, MESSAGE_ABORTED))
                 } else {
                     job.status = JobStatus.CREATED
                     job.numRestarts += 1

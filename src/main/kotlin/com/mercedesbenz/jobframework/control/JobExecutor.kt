@@ -15,23 +15,25 @@ import kotlin.time.toJavaDuration
 interface ExecutionCapacity {
     val mayTakeJobs: Boolean
     fun isSufficientFor(job: Job): Boolean
-}
 
-object AcceptingAnyJob : ExecutionCapacity {
-    override val mayTakeJobs = true
-    override fun isSufficientFor(job: Job) = true
-}
+    companion object {
+        object AcceptingAnyJob : ExecutionCapacity {
+            override val mayTakeJobs = true
+            override fun isSufficientFor(job: Job) = true
+        }
 
-object AcceptingNoJob : ExecutionCapacity {
-    override val mayTakeJobs = false
-    override fun isSufficientFor(job: Job) = false
+        object AcceptingNoJob : ExecutionCapacity {
+            override val mayTakeJobs = false
+            override fun isSufficientFor(job: Job) = false
+        }
+    }
 }
 
 typealias JobPrioritizer = (List<Job>) -> Job?
 
-val DefaultJobPrioritizer: JobPrioritizer = { jobs -> jobs.maxBy { it.priority } }
+val DefaultJobPrioritizer: JobPrioritizer = { jobs -> jobs.minWithOrNull(compareBy({ it.priority }, { it.createdAt })) }
 
-sealed interface TagMatcher {
+interface TagMatcher {
     fun matches(job: Job): Boolean
 
     object Any : TagMatcher {
@@ -51,12 +53,12 @@ sealed interface TagMatcher {
     }
 }
 
-class JobExecutor<INPUT, RESULT>(
-    private val persistence: Persistence<INPUT, RESULT, JobInput<INPUT>, JobResult<RESULT>>,
+class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
+    private val persistence: Persistence<INPUT, RESULT, IN, RES>,
     private val myInstanceName: String,
-    private val computation: (Job, JobInput<INPUT>) -> JobResult<RESULT>,
+    private val computation: suspend (Job, IN) -> RES,
     private val executionCapacityProvider: (List<Job>) -> ExecutionCapacity,
-    private val timeoutComputation: (Job, JobInput<INPUT>) -> kotlin.time.Duration,
+    private val timeoutComputation: (Job, IN) -> kotlin.time.Duration,
     private val jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
     private val tagMatcher: TagMatcher = TagMatcher.Any,
 ) {
@@ -73,8 +75,10 @@ class JobExecutor<INPUT, RESULT>(
                 return
             }.executingInstance
             if (executingInstance != myInstanceName) {
-                log.info("Job with ID $id was stolen from $myInstanceName by $executingInstance! " +
-                        "(Does not harm in this case, we didn't compute anything so far.)")
+                log.info(
+                    "Job with ID $id was stolen from $myInstanceName by $executingInstance! " +
+                            "(Does not harm in this case, we didn't compute anything so far.)"
+                )
                 return
             } else {
                 val timeout = timeoutComputation(job, jobInput)
@@ -95,7 +99,7 @@ class JobExecutor<INPUT, RESULT>(
         }
     }
 
-    private fun writeResultToDb(id: String, result: JobResult<RESULT>) {
+    private fun writeResultToDb(id: String, result: RES) {
         val job = persistence.fetchJob(id).orQuitWith {
             log.warn("Job with ID $id was deleted from the database during the computation!")
             return
@@ -130,7 +134,7 @@ class JobExecutor<INPUT, RESULT>(
         return executionCapacityProvider(allMyRunningJobs)
     }
 
-    private fun getAndReserveJob(executionCapacity: ExecutionCapacity): Pair<Job, JobInput<INPUT>>? {
+    private fun getAndReserveJob(executionCapacity: ExecutionCapacity): Pair<Job, IN>? {
         val job = selectJobWithHighestPriority(executionCapacity)
         if (job != null) {
             log.debug("Job executor selected job: ${job.uuid}")

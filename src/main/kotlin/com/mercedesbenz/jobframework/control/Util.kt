@@ -3,21 +3,16 @@ package com.mercedesbenz.jobframework.control
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
-import org.slf4j.Logger
+import kotlinx.coroutines.runBlocking
 import kotlin.time.Duration
 
-fun CoroutineScope.scheduleForever(duration: Duration, logger: Logger, task: suspend () -> Unit) {
+fun CoroutineScope.scheduleForever(duration: Duration, task: suspend () -> Unit) {
     launch {
         while (true) {
-            supervisorScope {// don't let Exceptions in child threads be propagated upwards
-                launch {
-                    try {
-                        task()
-                    } catch (t: Throwable) {
-                        logger.error("Caught exception in scheduled task: ${t.message}", t)
-                    }
-                }
+            launch {
+                // this should not be a child of the parent scope -- if it fails, we do not want it to destroy the parent
+                // TODO do we want to catch and log any exception thrown in task?
+                runBlocking { task() }
             }
             delay(duration)
         }
