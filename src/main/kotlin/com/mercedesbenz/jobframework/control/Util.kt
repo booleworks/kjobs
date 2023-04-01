@@ -1,22 +1,37 @@
 package com.mercedesbenz.jobframework.control
 
+import io.ktor.server.application.Application
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlin.time.Duration
 
-fun CoroutineScope.scheduleForever(duration: Duration, task: suspend () -> Unit) {
+/**
+ * Executes the given task with an interval of [duration]. The task will be executed until the application stops.
+ * Also, the schedule can be stopped by invoking [Job.cancel] on the returned job.
+ * Exceptions in the task will not affect the application or other runs of the task.
+ */
+fun Application.scheduleForever(duration: Duration, task: suspend () -> Unit): Job = launch(coroutineContext) {
+    scheduleForever(duration, task)
+}
+
+/**
+ * Executes the given task with an interval of [duration].
+ * Prefer [Application.scheduleForever] if you want to schedule a task from a ktor application.
+ */
+fun CoroutineScope.scheduleForever(duration: Duration, task: suspend () -> Unit): Job {
+    // the SupervisorJob prevents exceptions from task to cancel the parent coroutine (which might be the whole application)
+    val job = SupervisorJob(coroutineContext.job)
     launch {
         while (true) {
-            launch {
-                // this should not be a child of the parent scope -- if it fails, we do not want it to destroy the parent
-                // TODO do we want to catch and log any exception thrown in task?
-                runBlocking { task() }
-            }
+            launch(job) { task() }
             delay(duration)
         }
     }
+    return job
 }
 
 fun unreachable(): Nothing {
