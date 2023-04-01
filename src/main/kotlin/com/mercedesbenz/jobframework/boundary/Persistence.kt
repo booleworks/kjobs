@@ -46,17 +46,17 @@ sealed interface JobAccessError {
  * Any kind of write access must be done by acquiring a [TransactionalPersistence] using [transaction].
  */
 interface Persistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>> {
-    fun transaction(block: TransactionalPersistence<INPUT, RESULT, IN, RES>.() -> Unit): JobAccessResult<Unit>
+    suspend fun transaction(block: suspend TransactionalPersistence<INPUT, RESULT, IN, RES>.() -> Unit): JobAccessResult<Unit>
 
-    fun fetchJob(uuid: String): JobAccessResult<Job>
-    fun fetchInput(uuid: String): JobAccessResult<IN>
-    fun fetchResult(uuid: String): JobAccessResult<RES>
+    suspend fun fetchJob(uuid: String): JobAccessResult<Job>
+    suspend fun fetchInput(uuid: String): JobAccessResult<IN>
+    suspend fun fetchResult(uuid: String): JobAccessResult<RES>
 
-    fun allJobsFor(status: JobStatus): JobAccessResult<List<Job>>
-    fun allJobsOfInstance(status: JobStatus, instance: String): JobAccessResult<List<Job>>
-    fun allJobsFinishedBefore(date: LocalDateTime): JobAccessResult<List<Job>>
+    suspend fun allJobsFor(status: JobStatus): JobAccessResult<List<Job>>
+    suspend fun allJobsOfInstance(status: JobStatus, instance: String): JobAccessResult<List<Job>>
+    suspend fun allJobsFinishedBefore(date: LocalDateTime): JobAccessResult<List<Job>>
 
-    fun allRunningJobsWithTimeoutLessThan(date: LocalDateTime): JobAccessResult<List<Job>> =
+    suspend fun allRunningJobsWithTimeoutLessThan(date: LocalDateTime): JobAccessResult<List<Job>> =
         allJobsFor(JobStatus.RUNNING).mapResult { jobs -> jobs.filter { it.timeout!! < date } }
 }
 
@@ -66,16 +66,16 @@ interface Persistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobRe
  * only be evaluated after the transaction is successfully executed).
  */
 interface TransactionalPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>> {
-    fun persistJob(job: Job): JobAccessResult<Unit>
-    fun persistInput(job: Job, input: IN): JobAccessResult<Unit>
-    fun persistResult(job: Job, result: RES): JobAccessResult<Unit>
+    suspend fun persistJob(job: Job): JobAccessResult<Unit>
+    suspend fun persistInput(job: Job, input: IN): JobAccessResult<Unit>
+    suspend fun persistOrUpdateResult(job: Job, result: RES): JobAccessResult<Unit>
 
-    fun updateJob(job: Job): JobAccessResult<Unit>
+    suspend fun updateJob(job: Job): JobAccessResult<Unit>
 
     /**
      * Deletes the job, job input, and job result (if present) with the given UUID.
      * If anything was not found, the result will still be successful.
      * If any delete operation failed with an error (other than not found), this error will be returned.
      */
-    fun deleteForUuid(uuid: String): JobAccessResult<Unit>
+    suspend fun deleteForUuid(uuid: String): JobAccessResult<Unit>
 }

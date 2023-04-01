@@ -19,26 +19,25 @@ class Job(
 )
 
 interface JobInput<T> {
-    val uuid: String
     fun data(): T
     fun serializedData(): ByteArray
 }
 
-abstract class SimpleJsonInput<T>(override val uuid: String, val data: T) : JobInput<T> {
+abstract class SimpleJsonInput<T>(val data: T) : JobInput<T> {
     override fun data(): T = data
     override fun serializedData(): ByteArray = jacksonObjectMapper().writeValueAsBytes(data)
 }
 
 interface JobResult<T> {
     val uuid: String
-    val isSuccess: Boolean
+    fun isSuccess(): Boolean
     fun result(): T?
     fun serializedResult(): ByteArray?
     fun error(): String?
 }
 
 open class SimpleJsonResult<T>(override val uuid: String, val result: T?, val error: String?) : JobResult<T> {
-    override val isSuccess = result != null
+    override fun isSuccess() = result != null
     override fun result(): T? = result
     override fun serializedResult(): ByteArray? = result?.let { jacksonObjectMapper().writeValueAsBytes(it) }
     override fun error(): String? = error

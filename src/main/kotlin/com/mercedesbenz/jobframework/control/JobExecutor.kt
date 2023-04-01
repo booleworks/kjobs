@@ -99,20 +99,23 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
         }
     }
 
-    private fun writeResultToDb(id: String, result: RES) {
+    private suspend fun writeResultToDb(id: String, result: RES) {
         val job = persistence.fetchJob(id).orQuitWith {
             log.warn("Job with ID $id was deleted from the database during the computation!")
             return
         }
         if (job.executingInstance != myInstanceName) {
-            // TODO Result doch schreiben
             log.warn("Job with ID $id was stolen from $myInstanceName by ${job.executingInstance} after the computation!")
-            return
+            if (result.isSuccess() && job.status != JobStatus.SUCCESS) {
+                job.executingInstance = myInstanceName
+            } else {
+                return
+            }
         }
         job.finishedAt = LocalDateTime.now()
-        job.status = if (result.isSuccess) JobStatus.SUCCESS else JobStatus.FAILURE
+        job.status = if (result.isSuccess()) JobStatus.SUCCESS else JobStatus.FAILURE
         persistence.transaction {
-            persistResult(job, result).orQuitWith {
+            persistOrUpdateResult(job, result).orQuitWith {
                 // Here it's difficult to tell what we should do with the job, since we don't know why persisting the job failed.
                 // Should we do nothing, reset it to CREATED, or set it to FAILURE?
                 // Currently, we decide to do nothing and just wait for the cleanup tasks to reset the job.
@@ -126,7 +129,7 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
         }
     }
 
-    private fun getExecutionCapacity(): ExecutionCapacity? {
+    private suspend fun getExecutionCapacity(): ExecutionCapacity? {
         val allMyRunningJobs = persistence.allJobsOfInstance(JobStatus.RUNNING, myInstanceName).orQuitWith {
             log.warn("Failed to retrieve all running jobs: $it")
             return null
@@ -134,7 +137,7 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
         return executionCapacityProvider(allMyRunningJobs)
     }
 
-    private fun getAndReserveJob(executionCapacity: ExecutionCapacity): Pair<Job, IN>? {
+    private suspend fun getAndReserveJob(executionCapacity: ExecutionCapacity): Pair<Job, IN>? {
         val job = selectJobWithHighestPriority(executionCapacity)
         if (job != null) {
             log.debug("Job executor selected job: ${job.uuid}")
@@ -159,7 +162,7 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
         }
     }
 
-    private fun selectJobWithHighestPriority(executionCapacity: ExecutionCapacity): Job? {
+    private suspend fun selectJobWithHighestPriority(executionCapacity: ExecutionCapacity): Job? {
         val result = persistence.allJobsFor(JobStatus.CREATED).orQuitWith {
             log.warn("Job access failed with error: $it")
             return null

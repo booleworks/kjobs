@@ -12,7 +12,7 @@ object Maintenance {
 
     private val logger: Logger = LoggerFactory.getLogger(this.javaClass)
 
-    fun <RESULT, RES : JobResult<RESULT>> restartLongRunningJobs(
+    suspend fun <RESULT, RES : JobResult<RESULT>> restartLongRunningJobs(
         persistence: Persistence<*, RESULT, *, RES>,
         maxRestarts: Int,
         failureGenerator: (String, String) -> RES
@@ -26,7 +26,7 @@ object Maintenance {
                 if (job.numRestarts >= maxRestarts) {
                     job.status = JobStatus.FAILURE
                     job.finishedAt = LocalDateTime.now()
-                    persistResult(job, failureGenerator(job.uuid, MESSAGE_ABORTED))
+                    persistOrUpdateResult(job, failureGenerator(job.uuid, MESSAGE_ABORTED))
                 } else {
                     job.status = JobStatus.CREATED
                     job.numRestarts += 1
@@ -38,7 +38,7 @@ object Maintenance {
         }
     }
 
-    fun deleteOldJobs(persistence: Persistence<*, *, *, *>, afterDays: Int) {
+    suspend fun deleteOldJobs(persistence: Persistence<*, *, *, *>, afterDays: Int) {
         persistence.allJobsFinishedBefore(LocalDateTime.now().minusDays(afterDays.toLong())).orQuitWith {
             logger.error("Job access failed when trying to delete old jobs: $it")
             return

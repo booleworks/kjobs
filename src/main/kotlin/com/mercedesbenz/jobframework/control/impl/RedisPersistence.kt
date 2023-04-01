@@ -28,41 +28,42 @@ class RedisPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobR
 ) :
     Persistence<INPUT, RESULT, IN, RES> {
 
-    override fun transaction(block: TransactionalPersistence<INPUT, RESULT, IN, RES>.() -> Unit): JobAccessResult<Unit> = pool.resource.use { jedis ->
-        jedis.multi().run {
-            try {
-                RedisTransactionalPersistence(this@run, inputSerializer, resultSerializer, config).run(block).also { exec() }
-            } catch (e: Throwable) {
-                val message = e.message ?: "Undefined error"
-                logger.error("Jedis transaction failed with: $message", e)
-                val discardResult = discard()
-                logger.error("Discarded the transaction with result: $discardResult")
-                return JobAccessResult.internalError(message)
+    override suspend fun transaction(block: suspend TransactionalPersistence<INPUT, RESULT, IN, RES>.() -> Unit): JobAccessResult<Unit> =
+        pool.resource.use { jedis ->
+            jedis.multi().run {
+                try {
+                    RedisTransactionalPersistence(this@run, inputSerializer, resultSerializer, config).run { block() }.also { exec() }
+                } catch (e: Throwable) {
+                    val message = e.message ?: "Undefined error"
+                    logger.error("Jedis transaction failed with: $message", e)
+                    val discardResult = discard()
+                    logger.error("Discarded the transaction with result: $discardResult")
+                    return JobAccessResult.internalError(message)
+                }
             }
+            JobAccessResult.success
         }
-        JobAccessResult.success
-    }
 
-    override fun fetchJob(uuid: String): JobAccessResult<Job> =
+    override suspend fun fetchJob(uuid: String): JobAccessResult<Job> =
         pool.resource.use { it.hgetAll(config.jobKey(uuid)) }.redisMapToJob(uuid)
 
-    override fun fetchInput(uuid: String): JobAccessResult<IN> {
+    override suspend fun fetchInput(uuid: String): JobAccessResult<IN> {
         val inputBytes = pool.resource.use { it.get(config.inputKey(uuid).toByteArray()) }
         return JobAccessResult.result(inputDeserializer(inputBytes))
     }
 
-    override fun fetchResult(uuid: String): JobAccessResult<RES> {
+    override suspend fun fetchResult(uuid: String): JobAccessResult<RES> {
         val resultBytes = pool.resource.use { it.get(config.resultKey(uuid).toByteArray()) }
         return JobAccessResult.result(resultDeserializer(resultBytes))
     }
 
-    override fun allJobsFor(status: JobStatus): JobAccessResult<List<Job>> =
+    override suspend fun allJobsFor(status: JobStatus): JobAccessResult<List<Job>> =
         getAllJobsBy { jedis, key -> jedis.hget(key, "status") == JobStatus.RUNNING.toString() }
 
-    override fun allJobsOfInstance(status: JobStatus, instance: String): JobAccessResult<List<Job>> =
+    override suspend fun allJobsOfInstance(status: JobStatus, instance: String): JobAccessResult<List<Job>> =
         getAllJobsBy { jedis, key -> jedis.hmget(key, "status", "executingInstance") == listOf(status.toString(), instance) }
 
-    override fun allJobsFinishedBefore(date: LocalDateTime): JobAccessResult<List<Job>> = getAllJobsBy { jedis, key ->
+    override suspend fun allJobsFinishedBefore(date: LocalDateTime): JobAccessResult<List<Job>> = getAllJobsBy { jedis, key ->
         val statusAndFinishedAt = jedis.hmget(key, "status", "finishedAt")
         (statusAndFinishedAt[0] == JobStatus.SUCCESS.toString() || statusAndFinishedAt[0] == JobStatus.FAILURE.toString())
                 && statusAndFinishedAt.getOrNull(1)?.let { LocalDateTime.parse(it) }?.isBefore(date) ?: false
@@ -92,25 +93,25 @@ class RedisTransactionalPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT
 ) :
     TransactionalPersistence<INPUT, RESULT, IN, RES> {
 
-    override fun persistJob(job: Job): JobAccessResult<Unit> {
+    override suspend fun persistJob(job: Job): JobAccessResult<Unit> {
         transaction.hset(config.jobKey(job.uuid), job.toRedisMap())
         return JobAccessResult.success
     }
 
-    override fun persistInput(job: Job, input: IN): JobAccessResult<Unit> {
+    override suspend fun persistInput(job: Job, input: IN): JobAccessResult<Unit> {
         transaction.set(config.inputKey(job.uuid).toByteArray(), inputSerializer(input))
         kotlin.runCatching { }
         return JobAccessResult.success
     }
 
-    override fun persistResult(job: Job, result: RES): JobAccessResult<Unit> {
+    override suspend fun persistOrUpdateResult(job: Job, result: RES): JobAccessResult<Unit> {
         transaction.set(config.resultKey(job.uuid).toByteArray(), resultSerializer(result))
         return JobAccessResult.success
     }
 
-    override fun updateJob(job: Job): JobAccessResult<Unit> = persistJob(job)
+    override suspend fun updateJob(job: Job): JobAccessResult<Unit> = persistJob(job)
 
-    override fun deleteForUuid(uuid: String): JobAccessResult<Unit> {
+    override suspend fun deleteForUuid(uuid: String): JobAccessResult<Unit> {
         transaction.del(config.jobKey(uuid))
         transaction.del(config.inputKey(uuid))
         transaction.del(config.resultKey(uuid))
