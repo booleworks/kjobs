@@ -1,11 +1,12 @@
 package com.mercedesbenz.jobframework.control
 
-import com.mercedesbenz.jobframework.boundary.JobAccessError
 import com.mercedesbenz.jobframework.boundary.Persistence
 import com.mercedesbenz.jobframework.data.Job
 import com.mercedesbenz.jobframework.data.JobInput
 import com.mercedesbenz.jobframework.data.JobResult
 import com.mercedesbenz.jobframework.data.JobStatus
+import com.mercedesbenz.jobframework.data.PersistenceAccessError
+import com.mercedesbenz.jobframework.data.orQuitWith
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
@@ -74,6 +75,22 @@ fun <INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>> Route.
             }
         }
     }
+
+    post("cancel/{uuid}") {
+        call.respond(HttpStatusCode.BadRequest, "Sorry, cancellation is not yet implemented")
+//        parseUuid()?.let { uuid ->
+//            val job = fetchJob(uuid, persistence) ?: return@post
+//            when (job.status) {
+//                JobStatus.CREATED, JobStatus.RUNNING -> {
+//                    withContext(CoroutineName(uuid.toString())) { cancel("User requested cancellation") }
+//                    job.status = JobStatus.CANCELLED
+//                    persistence.transaction { updateJob(job) }
+//                    call.respond("Job with id $uuid was cancelled successfully")
+//                }
+//                JobStatus.SUCCESS, JobStatus.FAILURE, JobStatus.CANCELLED -> call.respond("Job with id $uuid has already finished with status ${job.status}")
+//            }
+//        }
+    }
 }
 
 private suspend inline fun <INPUT, IN : JobInput<in INPUT>> PipelineContext<Unit, ApplicationCall>.submit(
@@ -106,8 +123,8 @@ private suspend inline fun <INPUT, IN : JobInput<in INPUT>> PipelineContext<Unit
 private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: Persistence<*, *, *, *>): Job? {
     return persistence.fetchJob(uuid.toString()).orQuitWith {
         when (it) {
-            is JobAccessError.InternalError -> call.respondText("Failed to access job with ID $uuid: $it", status = HttpStatusCode.InternalServerError)
-            is JobAccessError.NotFound -> call.respondText("No job with ID $uuid could be found.", status = HttpStatusCode.NotFound)
+            is PersistenceAccessError.InternalError -> call.respondText("Failed to access job with ID $uuid: $it", status = HttpStatusCode.InternalServerError)
+            is PersistenceAccessError.NotFound -> call.respondText("No job with ID $uuid could be found.", status = HttpStatusCode.NotFound)
         }
         return null
     }

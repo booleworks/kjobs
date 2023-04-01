@@ -5,7 +5,9 @@ import com.mercedesbenz.jobframework.data.Job
 import com.mercedesbenz.jobframework.data.JobInput
 import com.mercedesbenz.jobframework.data.JobResult
 import com.mercedesbenz.jobframework.data.JobStatus
-import kotlinx.coroutines.coroutineScope
+import com.mercedesbenz.jobframework.data.ifError
+import com.mercedesbenz.jobframework.data.orQuitWith
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.time.withTimeoutOrNull
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -56,20 +58,20 @@ interface TagMatcher {
 class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
     private val persistence: Persistence<INPUT, RESULT, IN, RES>,
     private val myInstanceName: String,
-    private val computation: suspend (Job, IN) -> RES,
+    private val computation: suspend (Job, IN) -> RES?, // must only return null if the job (coroutine) was cancelled
     private val executionCapacityProvider: (List<Job>) -> ExecutionCapacity,
     private val timeoutComputation: (Job, IN) -> kotlin.time.Duration,
     private val jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
     private val tagMatcher: TagMatcher = TagMatcher.Any,
 ) {
-    suspend fun execute() {
+    suspend fun CoroutineScope.execute() {
         val myCapacity = getExecutionCapacity() ?: return
         if (!myCapacity.mayTakeJobs) {
             log.debug("No capacity for further jobs.")
         } else {
             val (job, jobInput) = getAndReserveJob(myCapacity) ?: return
             val id = job.uuid
-            // Parsing input may take some time, afterwards we check if anyone might have "stolen" the job (because of overlapping transactions)
+            // Parsing input may take some time, afterwards, we check if anyone might have "stolen" the job (because of overlapping transactions)
             val executingInstance = persistence.fetchJob(id).orQuitWith {
                 log.error("Failed to fetch job: $it")
                 return
@@ -85,10 +87,8 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
                 job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
                 persistence.transaction { updateJob(job) }
 
-                val result = coroutineScope {
-                    withTimeoutOrNull(timeout.toJavaDuration()) {
-                        computation(job, jobInput)
-                    }
+                val result = withTimeoutOrNull(timeout.toJavaDuration()) {
+                    computation(job, jobInput)
                 }
                 if (result == null) {
                     log.info("Job with ID $id failed to finish in iteration #${job.numRestarts + 1} with timeout $timeout seconds.")

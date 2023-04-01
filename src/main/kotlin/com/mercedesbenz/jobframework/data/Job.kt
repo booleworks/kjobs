@@ -44,5 +44,5 @@ open class SimpleJsonResult<T>(override val uuid: String, val result: T?, val er
 }
 
 enum class JobStatus {
-    CREATED, RUNNING, SUCCESS, FAILURE
+    CREATED, RUNNING, SUCCESS, FAILURE, CANCELLED
 }

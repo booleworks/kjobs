@@ -6,3 +6,8 @@ object JobFramework {
 }
 
 class JobFrameworkBuilder internal constructor()
+
+// JobFramework.newApi("route") {
+//   persistence = PgPersistence(...)
+//
+// }

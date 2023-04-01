@@ -3,6 +3,8 @@ package com.mercedesbenz.jobframework.control
 import com.mercedesbenz.jobframework.boundary.Persistence
 import com.mercedesbenz.jobframework.data.JobResult
 import com.mercedesbenz.jobframework.data.JobStatus
+import com.mercedesbenz.jobframework.data.ifError
+import com.mercedesbenz.jobframework.data.orQuitWith
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
