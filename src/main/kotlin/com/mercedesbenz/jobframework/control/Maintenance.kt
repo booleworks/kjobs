@@ -9,6 +9,8 @@ import com.mercedesbenz.jobframework.util.getOrElse
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
+import kotlin.time.Duration
+import kotlin.time.toJavaDuration
 
 object Maintenance {
     private const val MESSAGE_ABORTED = "Job was aborted due to repeated timeouts"
@@ -23,7 +25,7 @@ object Maintenance {
         jobsToBeCancelled = persistence.allJobsWithStatus(JobStatus.CANCEL_REQUESTED).map { jobs -> jobs.map { it.uuid } }.getOrElse { emptyList() }.toSet()
     }
 
-    suspend fun <RESULT, RES : JobResult<RESULT>> restartLongRunningJobs(
+    suspend fun <RESULT, RES : JobResult<out RESULT>> restartLongRunningJobs(
         persistence: Persistence<*, RESULT, *, RES>,
         maxRestarts: Int,
         failureGenerator: (String, String) -> RES
@@ -49,8 +51,8 @@ object Maintenance {
         }
     }
 
-    suspend fun deleteOldJobs(persistence: Persistence<*, *, *, *>, afterDays: Int) {
-        persistence.allJobsFinishedBefore(LocalDateTime.now().minusDays(afterDays.toLong())).orQuitWith {
+    suspend fun deleteOldJobs(persistence: Persistence<*, *, *, *>, after: Duration) {
+        persistence.allJobsFinishedBefore(LocalDateTime.now().minus(after.toJavaDuration())).orQuitWith {
             logger.error("Job access failed when trying to delete old jobs: $it")
             return
         }.forEach { job ->

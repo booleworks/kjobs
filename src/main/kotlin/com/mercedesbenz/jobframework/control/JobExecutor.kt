@@ -16,6 +16,7 @@ import kotlinx.coroutines.time.withTimeoutOrNull
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
@@ -37,6 +38,7 @@ interface ExecutionCapacity {
 }
 
 typealias JobPrioritizer = (List<Job>) -> Job?
+typealias ExecutionCapacityProvider = (List<Job>) -> ExecutionCapacity
 
 val DefaultJobPrioritizer: JobPrioritizer = { jobs -> jobs.minWithOrNull(compareBy({ it.priority }, { it.createdAt })) }
 
@@ -68,10 +70,11 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
     private val persistence: Persistence<INPUT, RESULT, IN, RES>,
     private val myInstanceName: String,
     private val computation: suspend (Job, IN) -> RES?, // must only return null if the job (coroutine) was cancelled
-    private val executionCapacityProvider: (List<Job>) -> ExecutionCapacity,
-    private val timeoutComputation: (Job, IN) -> kotlin.time.Duration,
+    private val executionCapacityProvider: ExecutionCapacityProvider,
+    private val timeoutComputation: (Job, IN) -> Duration,
     private val jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
     private val tagMatcher: TagMatcher = TagMatcher.Any,
+    private val failureGenerator: (String, String) -> RES
 ) {
     suspend fun execute() = coroutineScope {
         val myCapacity = getExecutionCapacity() ?: return@coroutineScope
@@ -140,9 +143,11 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
             job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
             persistence.transaction { updateJob(job) }
 
-            val result = withTimeoutOrNull(timeout.toJavaDuration()) {
-                computation(job, jobInput)
-            }
+            val result: RES? = runCatching {
+                withTimeoutOrNull(timeout.toJavaDuration()) {
+                    computation(job, jobInput)
+                }
+            }.getOrElse { failureGenerator(job.uuid, "Unexpected exception without further information") }
             if (result == null) {
                 log.info("Job with ID $uuid failed to finish in iteration #${job.numRestarts + 1} with timeout $timeout seconds.")
                 return@launch
