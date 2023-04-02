@@ -81,38 +81,8 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
         }
         val (job, jobInput) = getAndReserveJob(myCapacity) ?: return@coroutineScope
         val uuid = job.uuid
-        val coroutineJob = launch { launchComputationJob(uuid, job, jobInput) }
+        val coroutineJob = launchComputationJob(uuid, job, jobInput)
         launchCancellationCheck(coroutineJob, uuid)
-    }
-
-    private suspend fun writeResultToDb(id: String, result: RES) {
-        val job = persistence.fetchJob(id).orQuitWith {
-            log.warn("Job with ID $id was deleted from the database during the computation!")
-            return
-        }
-        if (job.executingInstance != myInstanceName) {
-            log.warn("Job with ID $id was stolen from $myInstanceName by ${job.executingInstance} after the computation!")
-            if (result.isSuccess() && job.status != JobStatus.SUCCESS) {
-                job.executingInstance = myInstanceName
-            } else {
-                return
-            }
-        }
-        job.finishedAt = LocalDateTime.now()
-        job.status = if (result.isSuccess()) JobStatus.SUCCESS else JobStatus.FAILURE
-        persistence.transaction {
-            persistOrUpdateResult(job, result).orQuitWith {
-                // Here it's difficult to tell what we should do with the job, since we don't know why persisting the job failed.
-                // Should we do nothing, reset it to CREATED, or set it to FAILURE?
-                // Currently, we decide to do nothing and just wait for the cleanup tasks to reset the job.
-                // Also, we explicitly log an error, since this situation is generally bad.
-                log.error("Failed to persist result for ID $id: $it")
-                return@transaction
-            }
-            updateJob(job).ifError {
-                log.error("Failed to update the job for ID $id after finishing the computation. The job will remain in an inconsistent state!")
-            }
-        }
     }
 
     private suspend fun getExecutionCapacity(): ExecutionCapacity? {
@@ -156,15 +126,15 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
         return result.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.let(jobPrioritizer)
     }
 
-    private suspend fun launchComputationJob(uuid: String, job: Job, jobInput: IN) {
+    private fun CoroutineScope.launchComputationJob(uuid: String, job: Job, jobInput: IN) = launch {
         // Parsing input may take some time, afterwards, we check if anyone might have "stolen" the job (because of overlapping transactions)
         val executingInstance = persistence.fetchJob(uuid).orQuitWith {
             log.error("Failed to fetch job: $it")
-            return
+            return@launch
         }.executingInstance
         if (executingInstance != myInstanceName) {
             log.info("Job with ID $uuid was stolen from $myInstanceName by $executingInstance")
-            return
+            return@launch
         } else {
             val timeout = timeoutComputation(job, jobInput)
             job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
@@ -175,7 +145,7 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
             }
             if (result == null) {
                 log.info("Job with ID $uuid failed to finish in iteration #${job.numRestarts + 1} with timeout $timeout seconds.")
-                return
+                return@launch
             }
             writeResultToDb(uuid, result)
         }
@@ -200,6 +170,36 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
                 return@launch
             }
             delay(1.seconds) // TODO make configurable?
+        }
+    }
+
+    private suspend fun writeResultToDb(id: String, result: RES) {
+        val job = persistence.fetchJob(id).orQuitWith {
+            log.warn("Job with ID $id was deleted from the database during the computation!")
+            return
+        }
+        if (job.executingInstance != myInstanceName) {
+            log.warn("Job with ID $id was stolen from $myInstanceName by ${job.executingInstance} after the computation!")
+            if (result.isSuccess() && job.status != JobStatus.SUCCESS) {
+                job.executingInstance = myInstanceName
+            } else {
+                return
+            }
+        }
+        job.finishedAt = LocalDateTime.now()
+        job.status = if (result.isSuccess()) JobStatus.SUCCESS else JobStatus.FAILURE
+        persistence.transaction {
+            persistOrUpdateResult(job, result).orQuitWith {
+                // Here it's difficult to tell what we should do with the job, since we don't know why persisting the job failed.
+                // Should we do nothing, reset it to CREATED, or set it to FAILURE?
+                // Currently, we decide to do nothing and just wait for the cleanup tasks to reset the job.
+                // Also, we explicitly log an error, since this situation is generally bad.
+                log.error("Failed to persist result for ID $id: $it")
+                return@transaction
+            }
+            updateJob(job).ifError {
+                log.error("Failed to update the job for ID $id after finishing the computation. The job will remain in an inconsistent state!")
+            }
         }
     }
 }
