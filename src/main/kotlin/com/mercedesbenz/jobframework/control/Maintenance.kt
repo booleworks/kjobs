@@ -5,6 +5,7 @@ import com.mercedesbenz.jobframework.data.JobResult
 import com.mercedesbenz.jobframework.data.JobStatus
 import com.mercedesbenz.jobframework.data.ifError
 import com.mercedesbenz.jobframework.data.orQuitWith
+import com.mercedesbenz.jobframework.util.getOrElse
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
@@ -12,7 +13,15 @@ import java.time.LocalDateTime
 object Maintenance {
     private const val MESSAGE_ABORTED = "Job was aborted due to repeated timeouts"
 
-    private val logger: Logger = LoggerFactory.getLogger(this.javaClass)
+    private val logger: Logger = LoggerFactory.getLogger(Maintenance::class.java)
+
+    var jobsToBeCancelled = setOf<String>()
+        private set
+
+    suspend fun checkForCancellations(persistence: Persistence<*, *, *, *>) {
+        // we don't filter for instance here to also cancel jobs which might have been stolen from us
+        jobsToBeCancelled = persistence.allJobsWithStatus(JobStatus.CANCEL_REQUESTED).map { jobs -> jobs.map { it.uuid } }.getOrElse { emptyList() }.toSet()
+    }
 
     suspend fun <RESULT, RES : JobResult<RESULT>> restartLongRunningJobs(
         persistence: Persistence<*, RESULT, *, RES>,

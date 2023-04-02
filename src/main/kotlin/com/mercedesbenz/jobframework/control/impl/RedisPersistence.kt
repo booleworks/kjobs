@@ -63,7 +63,7 @@ class RedisPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobR
         return PersistenceAccessResult.result(resultDeserializer(resultBytes))
     }
 
-    override suspend fun allJobsFor(status: JobStatus): PersistenceAccessResult<List<Job>> =
+    override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
         getAllJobsBy { jedis, key -> jedis.hget(key, "status") == JobStatus.RUNNING.toString() }
 
     override suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>> =

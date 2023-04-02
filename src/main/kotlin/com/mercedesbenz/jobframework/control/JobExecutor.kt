@@ -8,10 +8,15 @@ import com.mercedesbenz.jobframework.data.JobStatus
 import com.mercedesbenz.jobframework.data.ifError
 import com.mercedesbenz.jobframework.data.orQuitWith
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.time.withTimeoutOrNull
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
 interface ExecutionCapacity {
@@ -55,6 +60,10 @@ interface TagMatcher {
     }
 }
 
+private typealias CoroutineJob = kotlinx.coroutines.Job
+
+private val log: Logger = LoggerFactory.getLogger(JobExecutor::class.java)
+
 class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
     private val persistence: Persistence<INPUT, RESULT, IN, RES>,
     private val myInstanceName: String,
@@ -64,39 +73,16 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
     private val jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
     private val tagMatcher: TagMatcher = TagMatcher.Any,
 ) {
-    suspend fun CoroutineScope.execute() {
-        val myCapacity = getExecutionCapacity() ?: return
+    suspend fun execute() = coroutineScope {
+        val myCapacity = getExecutionCapacity() ?: return@coroutineScope
         if (!myCapacity.mayTakeJobs) {
             log.debug("No capacity for further jobs.")
-        } else {
-            val (job, jobInput) = getAndReserveJob(myCapacity) ?: return
-            val id = job.uuid
-            // Parsing input may take some time, afterwards, we check if anyone might have "stolen" the job (because of overlapping transactions)
-            val executingInstance = persistence.fetchJob(id).orQuitWith {
-                log.error("Failed to fetch job: $it")
-                return
-            }.executingInstance
-            if (executingInstance != myInstanceName) {
-                log.info(
-                    "Job with ID $id was stolen from $myInstanceName by $executingInstance! " +
-                            "(Does not harm in this case, we didn't compute anything so far.)"
-                )
-                return
-            } else {
-                val timeout = timeoutComputation(job, jobInput)
-                job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
-                persistence.transaction { updateJob(job) }
-
-                val result = withTimeoutOrNull(timeout.toJavaDuration()) {
-                    computation(job, jobInput)
-                }
-                if (result == null) {
-                    log.info("Job with ID $id failed to finish in iteration #${job.numRestarts + 1} with timeout $timeout seconds.")
-                    return
-                }
-                writeResultToDb(id, result)
-            }
+            return@coroutineScope
         }
+        val (job, jobInput) = getAndReserveJob(myCapacity) ?: return@coroutineScope
+        val uuid = job.uuid
+        val coroutineJob = launch { launchComputationJob(uuid, job, jobInput) }
+        launchCancellationCheck(coroutineJob, uuid)
     }
 
     private suspend fun writeResultToDb(id: String, result: RES) {
@@ -163,14 +149,57 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
     }
 
     private suspend fun selectJobWithHighestPriority(executionCapacity: ExecutionCapacity): Job? {
-        val result = persistence.allJobsFor(JobStatus.CREATED).orQuitWith {
+        val result = persistence.allJobsWithStatus(JobStatus.CREATED).orQuitWith {
             log.warn("Job access failed with error: $it")
             return null
         }
         return result.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.let(jobPrioritizer)
     }
 
-    companion object {
-        private val log: Logger = LoggerFactory.getLogger(this::class.java)
+    private suspend fun launchComputationJob(uuid: String, job: Job, jobInput: IN) {
+        // Parsing input may take some time, afterwards, we check if anyone might have "stolen" the job (because of overlapping transactions)
+        val executingInstance = persistence.fetchJob(uuid).orQuitWith {
+            log.error("Failed to fetch job: $it")
+            return
+        }.executingInstance
+        if (executingInstance != myInstanceName) {
+            log.info("Job with ID $uuid was stolen from $myInstanceName by $executingInstance")
+            return
+        } else {
+            val timeout = timeoutComputation(job, jobInput)
+            job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
+            persistence.transaction { updateJob(job) }
+
+            val result = withTimeoutOrNull(timeout.toJavaDuration()) {
+                computation(job, jobInput)
+            }
+            if (result == null) {
+                log.info("Job with ID $uuid failed to finish in iteration #${job.numRestarts + 1} with timeout $timeout seconds.")
+                return
+            }
+            writeResultToDb(uuid, result)
+        }
+    }
+
+    private fun CoroutineScope.launchCancellationCheck(coroutineJob: CoroutineJob, uuid: String) = launch {
+        while (coroutineJob.isActive) {
+            if (Maintenance.jobsToBeCancelled.contains(uuid)) {
+                coroutineJob.cancelAndJoin()
+                persistence.fetchJob(uuid).onRight { job ->
+                    if (job.status == JobStatus.SUCCESS || job.status == JobStatus.FAILURE) {
+                        log.info("Job with ID $uuid was cancelled, but finished before the cancellation was processed.")
+                    } else {
+                        job.status = JobStatus.CANCELLED
+                        persistence.transaction { updateJob(job) }.orQuitWith {
+                            log.error("Failed to update job with ID $uuid to status CANCELLED: $it")
+                            return@launch
+                        }
+                        log.info("Job with ID $uuid was cancelled successfully.")
+                    }
+                }
+                return@launch
+            }
+            delay(1.seconds) // TODO make configurable?
+        }
     }
 }

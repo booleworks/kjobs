@@ -19,12 +19,12 @@ interface Persistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobRe
     suspend fun fetchInput(uuid: String): PersistenceAccessResult<IN>
     suspend fun fetchResult(uuid: String): PersistenceAccessResult<RES>
 
-    suspend fun allJobsFor(status: JobStatus): PersistenceAccessResult<List<Job>>
+    suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>>
     suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>>
     suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>>
 
     suspend fun allRunningJobsWithTimeoutLessThan(date: LocalDateTime): PersistenceAccessResult<List<Job>> =
-        allJobsFor(JobStatus.RUNNING).mapResult { jobs -> jobs.filter { it.timeout!! < date } }
+        allJobsWithStatus(JobStatus.RUNNING).mapResult { jobs -> jobs.filter { it.timeout!! < date } }
 }
 
 /**
