@@ -1,12 +1,15 @@
-package com.mercedesbenz.jobframework.control
+// SPDX-License-Identifier: MIT
+// Copyright 2023 BooleWorks GmbH
 
-import com.mercedesbenz.jobframework.boundary.Persistence
-import com.mercedesbenz.jobframework.data.Job
-import com.mercedesbenz.jobframework.data.JobInput
-import com.mercedesbenz.jobframework.data.JobResult
-import com.mercedesbenz.jobframework.data.JobStatus
-import com.mercedesbenz.jobframework.data.PersistenceAccessError
-import com.mercedesbenz.jobframework.data.orQuitWith
+package com.booleworks.jobframework.control
+
+import com.booleworks.jobframework.boundary.Persistence
+import com.booleworks.jobframework.data.Job
+import com.booleworks.jobframework.data.JobInput
+import com.booleworks.jobframework.data.JobResult
+import com.booleworks.jobframework.data.JobStatus
+import com.booleworks.jobframework.data.PersistenceAccessError
+import com.booleworks.jobframework.data.orQuitWith
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.HttpStatusCode.Companion.InternalServerError
@@ -25,6 +28,37 @@ import java.nio.charset.StandardCharsets
 import java.time.LocalDateTime
 import java.util.*
 
+/**
+ * Setup all routings according to a given [JobApiDef].
+ *
+ * The following routes will be created:
+ * - `POST submit`
+ *     - receives its input as text (which may still be JSON formatted)
+ *     - transforms this text in a job input using [JobApiDef.jobInputGenerator]
+ *     - optionally validates the input using [JobApiDef.inputValidation]
+ *     - creates a new [Job] stores the job and the input in the [persistence][JobApiDef.persistence]
+ * - `GET status/{uuid}`
+ *     - returns the status of the job with the given uuid
+ *     - if no such job exists, status 404 is returned
+ * - `GET result/{uuid}`
+ *     - returns the result of the job with the given uuid
+ *     - if no such job exists or it is not in status `SUCCESS`, status 404 is returned
+ * - `GET failure/{uuid}`
+ *     - returns the failure of the job with the given uuid
+ *     - if no such job exists or it is not in status `FAILURE`, status 404 is returned
+ * - `POST cancel/{uuid}` (if enabled via [JobApiDef.enableCancellation])
+ *     - cancels the job with the given uuid
+ *     - if no such job exists, status 404 is returned
+ *     - if the job is in status `CREATED`, it is cancelled immediately
+ *     - if the job is in status `CANCEL_REQUESTED`, `CANCELLED`, `SUCCESS`, or `FAILURE`, the request is ignored
+ *       with http status 200 and a respective message
+ *     - if the job is in status `RUNNING` it will go to `CANCEL_REQUESTED`. As soon as the computation is aborted
+ *       the job will change to status `CANCELLED`. However, if the computation finishes (with `SUCCESS` or
+ *       `FAILURE`) before it is aborted, the respecting finishing status will be set instead of `CANCELLED`
+ *       and the result (or error) will be stored.
+ *
+ * If the persistence access in any of the routes fails, status 500 with a respective message is returned.
+ */
 internal fun <INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>> Route.setupJobApi(def: JobApiDef<INPUT, RESULT, IN, RES>) = with(def) {
     route(basePath ?: "") {
         post("submit") {
@@ -78,6 +112,7 @@ internal fun <INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT
                         //  The execution job could take the job at the same time and might not see the respective cancellation update.
                         JobStatus.CREATED -> {
                             job.status = JobStatus.CANCELLED
+                            job.finishedAt = LocalDateTime.now()
                             persistence.transaction { updateJob(job) }
                             call.respond("Job with id $uuid was cancelled successfully")
                         }

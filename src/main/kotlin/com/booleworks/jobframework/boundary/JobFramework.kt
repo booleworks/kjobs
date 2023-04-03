@@ -1,17 +1,20 @@
-package com.mercedesbenz.jobframework.boundary
+// SPDX-License-Identifier: MIT
+// Copyright 2023 BooleWorks GmbH
 
-import com.mercedesbenz.jobframework.control.DefaultJobPrioritizer
-import com.mercedesbenz.jobframework.control.ExecutionCapacity
-import com.mercedesbenz.jobframework.control.JobApiDef
-import com.mercedesbenz.jobframework.control.JobExecutor
-import com.mercedesbenz.jobframework.control.JobPrioritizer
-import com.mercedesbenz.jobframework.control.Maintenance
-import com.mercedesbenz.jobframework.control.TagMatcher
-import com.mercedesbenz.jobframework.control.scheduleForever
-import com.mercedesbenz.jobframework.control.setupJobApi
-import com.mercedesbenz.jobframework.data.Job
-import com.mercedesbenz.jobframework.data.JobInput
-import com.mercedesbenz.jobframework.data.JobResult
+package com.booleworks.jobframework.boundary
+
+import com.booleworks.jobframework.control.JobApiDef
+import com.booleworks.jobframework.control.JobExecutor
+import com.booleworks.jobframework.control.Maintenance
+import com.booleworks.jobframework.control.scheduleForever
+import com.booleworks.jobframework.control.setupJobApi
+import com.booleworks.jobframework.data.DefaultJobPrioritizer
+import com.booleworks.jobframework.data.ExecutionCapacity
+import com.booleworks.jobframework.data.Job
+import com.booleworks.jobframework.data.JobInput
+import com.booleworks.jobframework.data.JobPrioritizer
+import com.booleworks.jobframework.data.JobResult
+import com.booleworks.jobframework.data.TagMatcher
 import io.ktor.http.ContentType
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.application

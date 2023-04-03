@@ -1,12 +1,20 @@
-package com.mercedesbenz.jobframework.control
+// SPDX-License-Identifier: MIT
+// Copyright 2023 BooleWorks GmbH
 
-import com.mercedesbenz.jobframework.boundary.Persistence
-import com.mercedesbenz.jobframework.data.Job
-import com.mercedesbenz.jobframework.data.JobInput
-import com.mercedesbenz.jobframework.data.JobResult
-import com.mercedesbenz.jobframework.data.JobStatus
-import com.mercedesbenz.jobframework.data.ifError
-import com.mercedesbenz.jobframework.data.orQuitWith
+package com.booleworks.jobframework.control
+
+import com.booleworks.jobframework.boundary.Persistence
+import com.booleworks.jobframework.data.DefaultJobPrioritizer
+import com.booleworks.jobframework.data.ExecutionCapacity
+import com.booleworks.jobframework.data.ExecutionCapacityProvider
+import com.booleworks.jobframework.data.Job
+import com.booleworks.jobframework.data.JobInput
+import com.booleworks.jobframework.data.JobPrioritizer
+import com.booleworks.jobframework.data.JobResult
+import com.booleworks.jobframework.data.JobStatus
+import com.booleworks.jobframework.data.TagMatcher
+import com.booleworks.jobframework.data.ifError
+import com.booleworks.jobframework.data.orQuitWith
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
@@ -20,52 +28,17 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
-interface ExecutionCapacity {
-    val mayTakeJobs: Boolean
-    fun isSufficientFor(job: Job): Boolean
-
-    companion object {
-        object AcceptingAnyJob : ExecutionCapacity {
-            override val mayTakeJobs = true
-            override fun isSufficientFor(job: Job) = true
-        }
-
-        object AcceptingNoJob : ExecutionCapacity {
-            override val mayTakeJobs = false
-            override fun isSufficientFor(job: Job) = false
-        }
-    }
-}
-
-typealias JobPrioritizer = (List<Job>) -> Job?
-typealias ExecutionCapacityProvider = (List<Job>) -> ExecutionCapacity
-
-val DefaultJobPrioritizer: JobPrioritizer = { jobs -> jobs.minWithOrNull(compareBy({ it.priority }, { it.createdAt })) }
-
-interface TagMatcher {
-    fun matches(job: Job): Boolean
-
-    object Any : TagMatcher {
-        override fun matches(job: Job) = true
-    }
-
-    class OneOf(private val desiredTags: List<String>) : TagMatcher {
-        override fun matches(job: Job) = desiredTags.intersect(job.tags.toSet()).isNotEmpty()
-    }
-
-    class AllOf(private val desiredTags: List<String>) : TagMatcher {
-        override fun matches(job: Job) = job.tags.toSet().containsAll(desiredTags)
-    }
-
-    class Exactly(private vararg val desiredTags: String) : TagMatcher {
-        override fun matches(job: Job) = job.tags.toSet() == desiredTags.toSet()
-    }
-}
-
 private typealias CoroutineJob = kotlinx.coroutines.Job
 
 private val log: Logger = LoggerFactory.getLogger(JobExecutor::class.java)
 
+/**
+ * The central instance which is responsible to compute jobs.
+ *
+ * Required parameters are a [persistence] for job access, the [name of this instance][myInstanceName],
+ * and the actual [computation] taking a [Job] and its [JobInput]. This computation must always return
+ * a result unless it was cancelled (by a timeout or an explicit cancel operation).
+ */
 class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
     private val persistence: Persistence<INPUT, RESULT, IN, RES>,
     private val myInstanceName: String,
@@ -76,6 +49,9 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
     private val tagMatcher: TagMatcher = TagMatcher.Any,
     private val failureGenerator: (String, String) -> RES
 ) {
+    /**
+     * The main execution routine of the job executor.
+     */
     suspend fun execute() = coroutineScope {
         val myCapacity = getExecutionCapacity() ?: return@coroutineScope
         if (!myCapacity.mayTakeJobs) {
@@ -165,6 +141,7 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
                         log.info("Job with ID $uuid was cancelled, but finished before the cancellation was processed.")
                     } else {
                         job.status = JobStatus.CANCELLED
+                        job.finishedAt = LocalDateTime.now()
                         persistence.transaction { updateJob(job) }.orQuitWith {
                             log.error("Failed to update job with ID $uuid to status CANCELLED: $it")
                             return@launch

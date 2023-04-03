@@ -1,5 +1,11 @@
-package com.mercedesbenz.jobframework.control.impl
+// SPDX-License-Identifier: MIT
+// Copyright 2023 BooleWorks GmbH
 
+package com.booleworks.jobframework.boundary.impl
+
+/**
+ * Configuration for the [RedisPersistence].
+ */
 interface RedisConfig {
     val jobPattern: String
         get() = "*:job"
@@ -9,4 +15,7 @@ interface RedisConfig {
     fun resultKey(uuid: String): String = "$uuid:result"
 }
 
+/**
+ * Default Redis configuration.
+ */
 open class DefaultRedisConfig : RedisConfig

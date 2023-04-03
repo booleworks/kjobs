@@ -1,19 +1,22 @@
-package com.mercedesbenz.jobframework.control.impl
+// SPDX-License-Identifier: MIT
+// Copyright 2023 BooleWorks GmbH
 
-import com.mercedesbenz.jobframework.boundary.Persistence
-import com.mercedesbenz.jobframework.boundary.TransactionalPersistence
-import com.mercedesbenz.jobframework.control.unreachable
-import com.mercedesbenz.jobframework.data.Job
-import com.mercedesbenz.jobframework.data.JobInput
-import com.mercedesbenz.jobframework.data.JobResult
-import com.mercedesbenz.jobframework.data.JobStatus
-import com.mercedesbenz.jobframework.data.PersistenceAccessResult
-import com.mercedesbenz.jobframework.data.internalError
-import com.mercedesbenz.jobframework.data.mapResult
-import com.mercedesbenz.jobframework.data.result
-import com.mercedesbenz.jobframework.data.success
-import com.mercedesbenz.jobframework.data.successful
-import com.mercedesbenz.jobframework.util.Either
+package com.booleworks.jobframework.boundary.impl
+
+import com.booleworks.jobframework.boundary.Persistence
+import com.booleworks.jobframework.boundary.TransactionalPersistence
+import com.booleworks.jobframework.control.unreachable
+import com.booleworks.jobframework.data.Job
+import com.booleworks.jobframework.data.JobInput
+import com.booleworks.jobframework.data.JobResult
+import com.booleworks.jobframework.data.JobStatus
+import com.booleworks.jobframework.data.PersistenceAccessResult
+import com.booleworks.jobframework.data.internalError
+import com.booleworks.jobframework.data.mapResult
+import com.booleworks.jobframework.data.result
+import com.booleworks.jobframework.data.success
+import com.booleworks.jobframework.data.successful
+import com.booleworks.jobframework.util.Either
 import org.slf4j.LoggerFactory
 import redis.clients.jedis.Jedis
 import redis.clients.jedis.JedisPool
@@ -23,25 +26,32 @@ import java.time.format.DateTimeFormatter
 
 private val logger = LoggerFactory.getLogger(RedisPersistence::class.java)
 
+/**
+ * [Persistence] implementation for redis. It requires a [JedisPool] providing the connection to
+ * the Redis instance, serializers and deserializers for job inputs and results, and a
+ * [Redis configuration][config].
+ */
 // TODO error handling
-class RedisPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
+open class RedisPersistence<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
     private val pool: JedisPool,
     private val inputSerializer: (IN) -> ByteArray,
     private val resultSerializer: (RES) -> ByteArray,
     private val inputDeserializer: (ByteArray) -> IN,
     private val resultDeserializer: (ByteArray) -> RES,
-    private val config: RedisConfig,
+    private val config: RedisConfig = DefaultRedisConfig(),
 ) :
     Persistence<INPUT, RESULT, IN, RES> {
 
     override suspend fun transaction(block: suspend TransactionalPersistence<INPUT, RESULT, IN, RES>.() -> Unit): PersistenceAccessResult<Unit> =
         pool.resource.use { jedis ->
             jedis.multi().run {
-                try {
-                    RedisTransactionalPersistence(this@run, inputSerializer, resultSerializer, config).run { block() }.also { exec() }
-                } catch (e: Throwable) {
-                    val message = e.message ?: "Undefined error"
-                    logger.error("Jedis transaction failed with: $message", e)
+                runCatching {
+                    RedisTransactionalPersistence(this@run, inputSerializer, resultSerializer, config)
+                        .run { block() }
+                        .also { exec() }
+                }.onFailure {
+                    val message = it.message ?: "Undefined error"
+                    logger.error("Jedis transaction failed with: $message", it)
                     val discardResult = discard()
                     logger.error("Discarded the transaction with result: $discardResult")
                     return PersistenceAccessResult.internalError(message)
@@ -92,7 +102,7 @@ class RedisPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobR
  * Note that all methods will always return [PersistenceAccessResult.success] since commands within transaction are not yet
  * executed, so the only real kind of error would be connection problems which are ok to be caught in [RedisPersistence.transaction].
  */
-class RedisTransactionalPersistence<in INPUT, out RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
+open class RedisTransactionalPersistence<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
     private val transaction: Transaction,
     private val inputSerializer: (IN) -> ByteArray,
     private val resultSerializer: (RES) -> ByteArray,

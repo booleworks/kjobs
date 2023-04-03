@@ -1,4 +1,7 @@
-package com.mercedesbenz.jobframework.control
+// SPDX-License-Identifier: MIT
+// Copyright 2023 BooleWorks GmbH
+
+package com.booleworks.jobframework.control
 
 import io.ktor.server.application.Application
 import kotlinx.coroutines.CoroutineScope

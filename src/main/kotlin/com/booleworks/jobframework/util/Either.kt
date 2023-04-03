@@ -1,7 +1,10 @@
-package com.mercedesbenz.jobframework.util
+// SPDX-License-Identifier: MIT
+// Copyright 2023 BooleWorks GmbH
 
-import com.mercedesbenz.jobframework.util.Either.Left
-import com.mercedesbenz.jobframework.util.Either.Right
+package com.booleworks.jobframework.util
+
+import com.booleworks.jobframework.util.Either.Left
+import com.booleworks.jobframework.util.Either.Right
 
 /**
  * An implementation of Either, inspired by [Arrow](https://arrow-kt.io/)

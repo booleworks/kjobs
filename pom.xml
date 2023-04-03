@@ -3,24 +3,24 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.mercedesbenz</groupId>
-  <artifactId>sat-tech-job-framework</artifactId>
+  <groupId>com.booleworks</groupId>
+  <artifactId>job-framework</artifactId>
   <version>1.0.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
-  <name>SAT Tech Job Framework</name>
-  <description>A Job Framework for Asynchronous Services @ SAT Tech</description>
+  <name>Async Job Framework</name>
+  <description>A Job Framework for Asynchronous Webservices</description>
 
   <developers>
+    <developer>
+      <name>Christoph Zengler</name>
+      <organization>BooleWorks GmbH</organization>
+      <email>christoph.zengler@booleworks.com</email>
+    </developer>
     <developer>
       <name>Steffen Hildebrandt</name>
       <organization>BooleWorks GmbH</organization>
       <email>steffen.hildebrandt@booleworks.com</email>
-    </developer>
-    <developer>
-      <name>Rouven Walter</name>
-      <organization>BooleWorks GmbH</organization>
-      <email>rouven.walter@booleworks.com</email>
     </developer>
   </developers>
 
@@ -133,6 +133,20 @@
                 </rule>
               </rules>
             </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jetbrains.dokka</groupId>
+        <artifactId>dokka-maven-plugin</artifactId>
+        <version>${version.kotlin}</version>
+        <executions>
+          <execution>
+            <phase>pre-site</phase>
+            <goals>
+              <goal>dokka</goal>
+            </goals>
           </execution>
         </executions>
       </plugin>
@@ -257,15 +271,4 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-
-  <repositories>
-    <repository>
-      <id>pdm-artifactory</id>
-      <name>PDM Artifactory</name>
-      <url>https://artifacts.i.mercedes-benz.com/artifactory/maven-open-virtual</url>
-      <snapshots>
-        <enabled>true</enabled>
-      </snapshots>
-    </repository>
-  </repositories>
 </project>
