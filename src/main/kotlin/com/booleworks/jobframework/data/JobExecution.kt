@@ -3,6 +3,9 @@
 
 package com.booleworks.jobframework.data
 
+import com.booleworks.jobframework.data.ExecutionCapacity.Companion.AcceptingAnyJob
+import com.booleworks.jobframework.data.ExecutionCapacity.Companion.AcceptingNoJob
+
 /**
  * Interface for specifying the execution capacity of an instance.
  *
@@ -42,16 +45,25 @@ interface ExecutionCapacity {
         }
     }
 }
+
 /**
  * Takes a (possibly empty) list of jobs which are currently running on this instance and
  * returns an execution capacity.
  */
 typealias ExecutionCapacityProvider = (List<Job>) -> ExecutionCapacity
+
 /**
  * Return the job with the highest priority from a given list of jobs.
  * If the list of jobs is not empty, the result must not be `null`.
  */
 typealias JobPrioritizer = (List<Job>) -> Job?
+
+/**
+ * The default execution capacity provider which returns [AcceptingAnyJob] if the instance
+ * is not computing anything and otherwise [AcceptingNoJob].
+ */
+val DefaultExecutionCapacityProvider: ExecutionCapacityProvider =
+    { if (it.isEmpty()) AcceptingAnyJob else AcceptingNoJob }
 
 /**
  * The default job prioritizer taking the job with the highest priority (i.e. lowest number)

@@ -13,7 +13,7 @@ import java.time.LocalDateTime
  * responsibility to correctly set and read this information
  * @param priority the priority of this job, _lower values indicate a higher priority_,
  * it is recommended, but not required, to use only positive integers, i.e. the highest
- * priority would be `1`
+ * priority would be `0`
  * @param createdBy the instance by which this job was created
  * @param createdAt when this job was created
  * @param status the current [JobStatus] of this job
