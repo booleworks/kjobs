@@ -19,6 +19,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.time.withTimeoutOrNull
+import kotlinx.coroutines.yield
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
@@ -122,7 +123,10 @@ internal class JobExecutor<INPUT, RESULT>(
                         log.info("Job with ID $uuid failed to finish in iteration #${job.numRestarts + 1} with timeout $timeout seconds.")
                         return@launch
                     }
-            }.getOrElse { JobResult.error(job.uuid, "Unexpected exception without further information") }
+            }.getOrElse {
+                yield() // for the case that the coroutine was cancelled
+                JobResult.error(job.uuid, "Unexpected exception without further information: ${it.message}")
+            }
             writeResultToDb(uuid, result)
         }
     }
