@@ -74,7 +74,7 @@ open class RedisPersistence<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobRes
     }
 
     override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy { jedis, key -> jedis.hget(key, "status") == JobStatus.RUNNING.toString() }
+        getAllJobsBy { jedis, key -> jedis.hget(key, "status") == status.toString() }
 
     override suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>> =
         getAllJobsBy { jedis, key -> jedis.hmget(key, "status", "executingInstance") == listOf(status.toString(), instance) }
@@ -89,7 +89,7 @@ open class RedisPersistence<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobRes
         val jobResults = pool.resource.use { jedis ->
             jedis.keys(config.jobPattern)
                 .filter { condition(jedis, it) }
-                .map { jedis.hgetAll(it).redisMapToJob() }
+                .map { jedis.hgetAll(it).redisMapToJob(config.extractUuid(it)) }
         }
         // TODO complicated
         return jobResults.find { !it.successful }?.mapResult { unreachable() } ?: PersistenceAccessResult.result(jobResults.map { (it as Either.Right).value })

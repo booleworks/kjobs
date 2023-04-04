@@ -13,6 +13,8 @@ interface RedisConfig {
     fun jobKey(uuid: String): String = "$uuid:job"
     fun inputKey(uuid: String): String = "$uuid:input"
     fun resultKey(uuid: String): String = "$uuid:result"
+
+    fun extractUuid(key: String): String = key.split(":")[0]
 }
 
 /**

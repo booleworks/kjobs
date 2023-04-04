@@ -42,7 +42,7 @@ private val log: Logger = LoggerFactory.getLogger(JobExecutor::class.java)
 class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
     private val persistence: Persistence<INPUT, RESULT, IN, RES>,
     private val myInstanceName: String,
-    private val computation: suspend (Job, IN) -> RES?, // must only return null if the job (coroutine) was cancelled
+    private val computation: suspend (Job, IN) -> RES?,
     private val executionCapacityProvider: ExecutionCapacityProvider,
     private val timeoutComputation: (Job, IN) -> Duration,
     private val jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,

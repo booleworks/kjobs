@@ -60,9 +60,9 @@ object JobFramework {
         myInstanceName: String,
         jobInputGenerator: (String) -> IN,
         failureGenerator: (String, String) -> RES,
-        computation: suspend (Job, IN) -> RES?, // must only return null if the job (coroutine) was cancelled
+        computation: suspend (Job, IN) -> RES?,
         configuration: JobFrameworkBuilder<INPUT, RESULT, IN, RES>.() -> Unit
-    ) = JobFrameworkBuilder(persistence, myInstanceName, computation, jobInputGenerator, failureGenerator).apply {
+    ): Unit = JobFrameworkBuilder(persistence, myInstanceName, computation, jobInputGenerator, failureGenerator).apply {
         configuration()
     }.build(route)
 }
