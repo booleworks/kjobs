@@ -5,12 +5,9 @@ package com.booleworks.jobframework
 
 import com.booleworks.jobframework.boundary.JobFramework
 import com.booleworks.jobframework.testservice.TestInput
-import com.booleworks.jobframework.testservice.TestJobInput
-import com.booleworks.jobframework.testservice.TestJobResult
 import com.booleworks.jobframework.testservice.TestResult
 import com.booleworks.jobframework.testservice.defaultComputation
 import com.booleworks.jobframework.testservice.defaultRedis
-import com.booleworks.jobframework.testservice.jacksonObjectMapperWithTime
 import com.booleworks.jobframework.testservice.newRedisPersistence
 import com.booleworks.jobframework.testservice.ser
 import com.booleworks.jobframework.testservice.testJobFramework
@@ -23,6 +20,9 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.server.application.call
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
 import io.ktor.server.routing.route
 import kotlinx.coroutines.delay
 import org.assertj.core.api.Assertions.assertThat
@@ -41,16 +41,16 @@ class ApiTest {
                     this@route,
                     newRedisPersistence(defaultRedis),
                     "ME",
-                    { jacksonObjectMapperWithTime().readValue(it) },
-                    { uuid, message -> TestJobResult(uuid, null, message) },
+                    { call.receive<TestInput>() },
+                    { call.respond<TestResult>(it) },
                     defaultComputation
                 ) {
-                    apiConfig { responseContentType = ContentType.Application.Json }
-                    maintenanceConfig { jobCheckInterval = 200.milliseconds }
+                    maintenanceConfig { jobCheckInterval = 500.milliseconds }
                 }
             }
         }
-        val submit = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestJobInput(TestInput()).ser()) }
+        delay(100.milliseconds) // first run of executor should have started
+        val submit = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput().ser()) }
         assertThat(submit.status).isEqualTo(HttpStatusCode.OK)
         val uuid = submit.bodyAsText().also { assertThat(UUID.fromString(it)).isNotNull() }
         assertThat(client.get("test/status/$uuid").bodyAsText()).isEqualTo("CREATED")

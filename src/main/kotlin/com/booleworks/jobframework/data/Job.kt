@@ -3,6 +3,7 @@
 
 package com.booleworks.jobframework.data
 
+import com.fasterxml.jackson.annotation.JsonIgnore
 import java.time.LocalDateTime
 
 /**
@@ -40,24 +41,16 @@ class Job(
 )
 
 /**
- * Interface for a job input. The idea is that the user is free to store the input as binary
- * (serialized) data or as structured data of type [T].
+ * The result of a job with ID [uuid]. It is guaranteed that either [result] (x)or [error] is non-`null`.
  */
-interface JobInput<T> {
-    fun data(): T
-    fun serializedData(): ByteArray
-}
+class JobResult<out T> private constructor(val uuid: String, val result: T?, val error: String?) {
+    @JsonIgnore
+    val isSuccess = result != null
 
-/**
- * Interface for a job result. The idea is that the user is free to store the result as binary
- * (serialized) data or as structured data of type [T].
- */
-interface JobResult<T> {
-    val uuid: String
-    fun isSuccess(): Boolean
-    fun result(): T?
-    fun serializedResult(): ByteArray?
-    fun error(): String?
+    companion object {
+        fun <T> success(uuid: String, result: T) = JobResult(uuid, result, null)
+        fun <T> error(uuid: String, error: String) = JobResult<T>(uuid, null, error)
+    }
 }
 
 /**

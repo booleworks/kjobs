@@ -4,11 +4,9 @@
 package com.booleworks.jobframework.control
 
 import com.booleworks.jobframework.boundary.Persistence
-import com.booleworks.jobframework.data.DefaultJobPrioritizer
 import com.booleworks.jobframework.data.ExecutionCapacity
 import com.booleworks.jobframework.data.ExecutionCapacityProvider
 import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobInput
 import com.booleworks.jobframework.data.JobPrioritizer
 import com.booleworks.jobframework.data.JobResult
 import com.booleworks.jobframework.data.JobStatus
@@ -25,7 +23,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.toJavaDuration
 
 private typealias CoroutineJob = kotlinx.coroutines.Job
@@ -36,18 +34,16 @@ private val log: Logger = LoggerFactory.getLogger(JobExecutor::class.java)
  * The central instance which is responsible to compute jobs.
  *
  * Required parameters are a [persistence] for job access, the [name of this instance][myInstanceName],
- * and the actual [computation] taking a [Job] and its [JobInput]. This computation must always return
- * a result unless it was cancelled (by a timeout or an explicit cancel operation).
+ * and the actual [computation] taking a [Job] and its input.
  */
-class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
-    private val persistence: Persistence<INPUT, RESULT, IN, RES>,
+internal class JobExecutor<INPUT, RESULT>(
+    private val persistence: Persistence<INPUT, RESULT>,
     private val myInstanceName: String,
-    private val computation: suspend (Job, IN) -> RES?,
+    private val computation: suspend (Job, INPUT) -> RESULT,
     private val executionCapacityProvider: ExecutionCapacityProvider,
-    private val timeoutComputation: (Job, IN) -> Duration,
-    private val jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
-    private val tagMatcher: TagMatcher = TagMatcher.Any,
-    private val failureGenerator: (String, String) -> RES
+    private val timeoutComputation: (Job, INPUT) -> Duration,
+    private val jobPrioritizer: JobPrioritizer,
+    private val tagMatcher: TagMatcher
 ) {
     /**
      * The main execution routine of the job executor.
@@ -72,7 +68,7 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
         return executionCapacityProvider(allMyRunningJobs)
     }
 
-    private suspend fun getAndReserveJob(executionCapacity: ExecutionCapacity): Pair<Job, IN>? {
+    private suspend fun getAndReserveJob(executionCapacity: ExecutionCapacity): Pair<Job, INPUT>? {
         val job = selectJobWithHighestPriority(executionCapacity)
         if (job != null) {
             log.debug("Job executor selected job: ${job.uuid}")
@@ -105,7 +101,7 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
         return result.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.let(jobPrioritizer)
     }
 
-    private fun CoroutineScope.launchComputationJob(uuid: String, job: Job, jobInput: IN) = launch {
+    private fun CoroutineScope.launchComputationJob(uuid: String, job: Job, jobInput: INPUT) = launch {
         // Parsing input may take some time, afterwards, we check if anyone might have "stolen" the job (because of overlapping transactions)
         val executingInstance = persistence.fetchJob(uuid).orQuitWith {
             log.error("Failed to fetch job: $it")
@@ -119,15 +115,14 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
             job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
             persistence.transaction { updateJob(job) }
 
-            val result: RES? = runCatching {
-                withTimeoutOrNull(timeout.toJavaDuration()) {
-                    computation(job, jobInput)
-                }
-            }.getOrElse { failureGenerator(job.uuid, "Unexpected exception without further information") }
-            if (result == null) {
-                log.info("Job with ID $uuid failed to finish in iteration #${job.numRestarts + 1} with timeout $timeout seconds.")
-                return@launch
-            }
+            val result: JobResult<RESULT> = runCatching {
+                withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
+                    ?.let { JobResult.success(job.uuid, it) }
+                    ?: run {
+                        log.info("Job with ID $uuid failed to finish in iteration #${job.numRestarts + 1} with timeout $timeout seconds.")
+                        return@launch
+                    }
+            }.getOrElse { JobResult.error(job.uuid, "Unexpected exception without further information") }
             writeResultToDb(uuid, result)
         }
     }
@@ -151,25 +146,26 @@ class JobExecutor<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RE
                 }
                 return@launch
             }
-            delay(1.seconds) // TODO make configurable?
+            // TODO make configurable? The operation performed in this loop (basically a map lookup) is really cheap, so a small value is ok.
+            delay(100.milliseconds)
         }
     }
 
-    private suspend fun writeResultToDb(id: String, result: RES) {
+    private suspend fun writeResultToDb(id: String, result: JobResult<RESULT>) {
         val job = persistence.fetchJob(id).orQuitWith {
             log.warn("Job with ID $id was deleted from the database during the computation!")
             return
         }
         if (job.executingInstance != myInstanceName) {
             log.warn("Job with ID $id was stolen from $myInstanceName by ${job.executingInstance} after the computation!")
-            if (result.isSuccess() && job.status != JobStatus.SUCCESS) {
+            if (result.isSuccess && job.status != JobStatus.SUCCESS) {
                 job.executingInstance = myInstanceName
             } else {
                 return
             }
         }
         job.finishedAt = LocalDateTime.now()
-        job.status = if (result.isSuccess()) JobStatus.SUCCESS else JobStatus.FAILURE
+        job.status = if (result.isSuccess) JobStatus.SUCCESS else JobStatus.FAILURE
         persistence.transaction {
             persistOrUpdateResult(job, result).orQuitWith {
                 // Here it's difficult to tell what we should do with the job, since we don't know why persisting the job failed.

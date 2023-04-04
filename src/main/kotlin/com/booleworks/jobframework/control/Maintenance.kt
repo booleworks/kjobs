@@ -30,7 +30,7 @@ object Maintenance {
      * Retrieves all jobs from the [persistence] in status [JobStatus.CANCEL_REQUESTED] and writes their
      * uuids to [jobsToBeCancelled].
      */
-    suspend fun checkForCancellations(persistence: Persistence<*, *, *, *>) {
+    suspend fun checkForCancellations(persistence: Persistence<*, *>) {
         // we don't filter for instance here to also cancel jobs which might have been stolen from us
         jobsToBeCancelled = persistence.allJobsWithStatus(JobStatus.CANCEL_REQUESTED).map { jobs -> jobs.map { it.uuid } }.getOrElse { emptyList() }.toSet()
     }
@@ -39,10 +39,9 @@ object Maintenance {
      * Checks for jobs in status [JobStatus.RUNNING] which have exceeded their timeout. If the number of restarts
      * is less than [maxRestarts], the job is reset to [JobStatus.CREATED], otherwise the job is set to failure.
      */
-    suspend fun <RESULT, RES : JobResult<out RESULT>> restartLongRunningJobs(
-        persistence: Persistence<*, RESULT, *, RES>,
+    suspend fun <RESULT> restartLongRunningJobs(
+        persistence: Persistence<*, RESULT>,
         maxRestarts: Int,
-        failureGenerator: (String, String) -> RES
     ) {
         val jobsInTimeout = persistence.allRunningJobsWithTimeoutBefore(LocalDateTime.now()).orQuitWith {
             logger.error("Job access failed when trying to restart long running jobs: $it")
@@ -53,7 +52,7 @@ object Maintenance {
                 if (job.numRestarts >= maxRestarts) {
                     job.status = JobStatus.FAILURE
                     job.finishedAt = LocalDateTime.now()
-                    persistOrUpdateResult(job, failureGenerator(job.uuid, MESSAGE_ABORTED))
+                    persistOrUpdateResult(job, JobResult.error(job.uuid, MESSAGE_ABORTED))
                 } else {
                     job.status = JobStatus.CREATED
                     job.numRestarts += 1
@@ -68,7 +67,7 @@ object Maintenance {
     /**
      * Deletes all jobs, including their inputs and results, which have finished for longer than the given duration.
      */
-    suspend fun deleteOldJobs(persistence: Persistence<*, *, *, *>, after: Duration) {
+    suspend fun deleteOldJobs(persistence: Persistence<*, *>, after: Duration) {
         persistence.allJobsFinishedBefore(LocalDateTime.now().minus(after.toJavaDuration())).orQuitWith {
             logger.error("Job access failed when trying to delete old jobs: $it")
             return

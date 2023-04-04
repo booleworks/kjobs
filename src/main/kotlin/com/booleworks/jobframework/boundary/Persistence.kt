@@ -4,7 +4,6 @@
 package com.booleworks.jobframework.boundary
 
 import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobInput
 import com.booleworks.jobframework.data.JobResult
 import com.booleworks.jobframework.data.JobStatus
 import com.booleworks.jobframework.data.PersistenceAccessResult
@@ -22,11 +21,11 @@ import java.time.LocalDateTime
  * _If there will be many jobs in the database and if the database supports it, it may be useful to
  * create indices on the job's [JobStatus]_.
  */
-interface Persistence<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>> {
+interface Persistence<INPUT, RESULT> {
     /**
      * Opens a new transaction to allow write operations.
      */
-    suspend fun transaction(block: suspend TransactionalPersistence<INPUT, RESULT, IN, RES>.() -> Unit): PersistenceAccessResult<Unit>
+    suspend fun transaction(block: suspend TransactionalPersistence<INPUT, RESULT>.() -> Unit): PersistenceAccessResult<Unit>
 
     /**
      * Fetches the job with the given uuid.
@@ -36,12 +35,12 @@ interface Persistence<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<ou
     /**
      * Fetches the job input with the given uuid.
      */
-    suspend fun fetchInput(uuid: String): PersistenceAccessResult<IN>
+    suspend fun fetchInput(uuid: String): PersistenceAccessResult<INPUT>
 
     /**
      * Fetches the job result with the given uuid.
      */
-    suspend fun fetchResult(uuid: String): PersistenceAccessResult<RES>
+    suspend fun fetchResult(uuid: String): PersistenceAccessResult<JobResult<RESULT>>
 
     /**
      * Fetches all jobs in the given status.
@@ -70,7 +69,7 @@ interface Persistence<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<ou
  * Read access within a transaction is not supported since Redis does not support it (reads in Redis can
  * only be evaluated after the transaction is successfully executed).
  */
-interface TransactionalPersistence<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>> {
+interface TransactionalPersistence<INPUT, RESULT> {
     /**
      * Persists the given job.
      *
@@ -85,12 +84,12 @@ interface TransactionalPersistence<INPUT, RESULT, IN : JobInput<in INPUT>, RES :
      * It is assumed that the job is not yet present, if it is, the behavior (whether the input is overridden,
      * the request is ignored, or an error is returned) is undefined.
      */
-    suspend fun persistInput(job: Job, input: IN): PersistenceAccessResult<Unit>
+    suspend fun persistInput(job: Job, input: INPUT): PersistenceAccessResult<Unit>
 
     /**
      * Persists the given job result. If the result is already present, it should be updated accordingly.
      */
-    suspend fun persistOrUpdateResult(job: Job, result: RES): PersistenceAccessResult<Unit>
+    suspend fun persistOrUpdateResult(job: Job, result: JobResult<RESULT>): PersistenceAccessResult<Unit>
 
     /**
      * Updates the given job.

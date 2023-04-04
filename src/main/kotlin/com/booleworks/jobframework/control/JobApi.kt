@@ -5,18 +5,15 @@ package com.booleworks.jobframework.control
 
 import com.booleworks.jobframework.boundary.Persistence
 import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobInput
 import com.booleworks.jobframework.data.JobResult
 import com.booleworks.jobframework.data.JobStatus
 import com.booleworks.jobframework.data.PersistenceAccessError
 import com.booleworks.jobframework.data.orQuitWith
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.HttpStatusCode.Companion.InternalServerError
 import io.ktor.http.HttpStatusCode.Companion.NotFound
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
-import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
@@ -24,7 +21,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.util.pipeline.PipelineContext
-import java.nio.charset.StandardCharsets
 import java.time.LocalDateTime
 import java.util.*
 
@@ -33,15 +29,14 @@ import java.util.*
  *
  * The following routes will be created:
  * - `POST submit`
- *     - receives its input as text (which may still be JSON formatted)
- *     - transforms this text in a job input using [JobApiDef.jobInputGenerator]
+ *     - receives its input using [JobApiDef.inputReceiver]
  *     - optionally validates the input using [JobApiDef.inputValidation]
  *     - creates a new [Job] stores the job and the input in the [persistence][JobApiDef.persistence]
  * - `GET status/{uuid}`
  *     - returns the status of the job with the given uuid
  *     - if no such job exists, status 404 is returned
  * - `GET result/{uuid}`
- *     - returns the result of the job with the given uuid
+ *     - returns the result using [JobApiDef.resultResponder]
  *     - if no such job exists or it is not in status `SUCCESS`, status 404 is returned
  * - `GET failure/{uuid}`
  *     - returns the failure of the job with the given uuid
@@ -59,11 +54,10 @@ import java.util.*
  *
  * If the persistence access in any of the routes fails, status 500 with a respective message is returned.
  */
-internal fun <INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>> Route.setupJobApi(def: JobApiDef<INPUT, RESULT, IN, RES>) = with(def) {
+internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = with(def) {
     route(basePath ?: "") {
         post("submit") {
-            val plainInput = call.receiveText() // TODO we might want to make this call generic, s.t. the library user can decide how the call receives input
-            val input = jobInputGenerator(plainInput)
+            val input = inputReceiver()
             submit(def, input)
         }
 
@@ -78,8 +72,8 @@ internal fun <INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT
                     call.respondText("Cannot return the result for job with ID $uuid and status ${job.status}.", status = HttpStatusCode.BadRequest)
                 } else {
                     val result = result(job, persistence) ?: return@get
-                    result.serializedResult()?.let {
-                        call.respondText(it.toString(StandardCharsets.UTF_8), responseContentType)
+                    result.result?.let {
+                        resultResponder(it)
                     } ?: run {
                         call.respondText("Expected the JobResult for ID $uuid to have a result.", status = InternalServerError)
                     }
@@ -94,7 +88,7 @@ internal fun <INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT
                     call.respondText("Cannot return a failure for job with ID $uuid and status ${job.status}.", status = HttpStatusCode.BadRequest)
                 } else {
                     val result = result(job, persistence) ?: return@get
-                    result.error()?.let {
+                    result.error?.let {
                         call.respondText(it)
                     } ?: run {
                         call.respondText("Expected the JobResult for ID $uuid to have an error.", status = InternalServerError)
@@ -136,20 +130,20 @@ internal fun <INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT
     }
 }
 
-internal class JobApiDef<INPUT, RESULT, IN : JobInput<in INPUT>, RES : JobResult<out RESULT>>(
-    val persistence: Persistence<INPUT, RESULT, IN, RES>,
-    val jobInputGenerator: (String) -> IN,
+internal class JobApiDef<INPUT, RESULT>(
+    val persistence: Persistence<INPUT, RESULT>,
     val myInstanceName: String,
+    val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
+    val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
     val basePath: String?,
-    val responseContentType: ContentType?,
-    val inputValidation: (IN) -> List<String>,
-    val tagProvider: (IN) -> List<String>,
-    val customInfoProvider: (IN) -> String,
-    val priorityProvider: (IN) -> Int,
+    val inputValidation: (INPUT) -> List<String>,
+    val tagProvider: (INPUT) -> List<String>,
+    val customInfoProvider: (INPUT) -> String,
+    val priorityProvider: (INPUT) -> Int,
     val enableCancellation: Boolean,
 )
 
-private suspend inline fun <INPUT, IN : JobInput<in INPUT>> PipelineContext<Unit, ApplicationCall>.submit(def: JobApiDef<INPUT, *, IN, *>, input: IN) =
+private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.submit(def: JobApiDef<INPUT, *>, input: INPUT) =
     with(def) {
         inputValidation(input).takeIf { it.isNotEmpty() }?.let {
             call.respond(HttpStatusCode.BadRequest, it.joinToString(", "))
@@ -169,7 +163,7 @@ private suspend inline fun <INPUT, IN : JobInput<in INPUT>> PipelineContext<Unit
         call.respondText(uuid)
     }
 
-private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: Persistence<*, *, *, *>): Job? {
+private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: Persistence<*, *>): Job? {
     return persistence.fetchJob(uuid.toString()).orQuitWith {
         when (it) {
             is PersistenceAccessError.InternalError -> call.respondText("Failed to access job with ID $uuid: $it", status = InternalServerError)
@@ -179,17 +173,15 @@ private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?,
     }
 }
 
-private suspend fun PipelineContext<Unit, ApplicationCall>.status(uuid: UUID, persistence: Persistence<*, *, *, *>) {
+private suspend fun PipelineContext<Unit, ApplicationCall>.status(uuid: UUID, persistence: Persistence<*, *>) {
     fetchJob(uuid, persistence)?.let { call.respondText(it.status.toString()) }
 }
 
-private suspend inline fun <RESULT, RES : JobResult<out RESULT>> PipelineContext<Unit, ApplicationCall>.result(
-    job: Job,
-    persistence: Persistence<*, RESULT, *, RES>
-): RES? = persistence.fetchResult(job.uuid).orQuitWith {
-    call.respondText("Failed to retrieve job result for ID ${job.uuid}: $it")
-    return null
-}
+private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(job: Job, persistence: Persistence<*, RESULT>): JobResult<RESULT>? =
+    persistence.fetchResult(job.uuid).orQuitWith {
+        call.respondText("Failed to retrieve job result for ID ${job.uuid}: $it")
+        return null
+    }
 
 private suspend fun PipelineContext<Unit, ApplicationCall>.parseUuid(): UUID? = call.parameters["uuid"]?.let {
     try {

@@ -29,7 +29,7 @@
 
     <kotlin.code.style>official</kotlin.code.style>
     <kotlin.compiler.jvmTarget>11</kotlin.compiler.jvmTarget>
-    <version.kotlin>1.8.10</version.kotlin>
+    <version.kotlin>1.8.20</version.kotlin>
     <version.ktor>2.2.4</version.ktor>
     <version.slf4j>1.7.36</version.slf4j>
     <version.logback>1.2.11</version.logback>
@@ -42,6 +42,7 @@
     <version.jedis-mock>1.0.7</version.jedis-mock>
     <version.coroutines-test>1.6.4</version.coroutines-test>
     <version.jacoco>0.8.8</version.jacoco>
+    <version.dokka>1.8.10</version.dokka>
     <version.detekt>1.22.0</version.detekt>
 
     <version.maven-surefire-plugin>3.0.0</version.maven-surefire-plugin>
@@ -144,7 +145,7 @@
       <plugin>
         <groupId>org.jetbrains.dokka</groupId>
         <artifactId>dokka-maven-plugin</artifactId>
-        <version>${version.kotlin}</version>
+        <version>${version.dokka}</version>
         <executions>
           <execution>
             <phase>pre-site</phase>
