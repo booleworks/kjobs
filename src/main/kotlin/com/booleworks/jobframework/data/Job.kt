@@ -51,6 +51,26 @@ class JobResult<out T> private constructor(val uuid: String, val result: T?, val
         fun <T> success(uuid: String, result: T) = JobResult(uuid, result, null)
         fun <T> error(uuid: String, error: String) = JobResult<T>(uuid, null, error)
     }
+
+    override fun hashCode(): Int {
+        var result1 = uuid.hashCode()
+        result1 = 31 * result1 + (result?.hashCode() ?: 0)
+        result1 = 31 * result1 + (error?.hashCode() ?: 0)
+        return result1
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as JobResult<*>
+        if (uuid != other.uuid) return false
+        if (result != other.result) return false
+        return error == other.error
+    }
+
+    override fun toString(): String {
+        return "JobResult(uuid='$uuid', result=$result, error=$error)"
+    }
 }
 
 /**

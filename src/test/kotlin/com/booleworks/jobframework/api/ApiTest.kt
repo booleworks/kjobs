@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework
+package com.booleworks.jobframework.api
 
 import com.booleworks.jobframework.boundary.JobFramework
-import com.booleworks.jobframework.testservice.TestInput
-import com.booleworks.jobframework.testservice.TestResult
-import com.booleworks.jobframework.testservice.defaultComputation
-import com.booleworks.jobframework.testservice.defaultRedis
-import com.booleworks.jobframework.testservice.newRedisPersistence
-import com.booleworks.jobframework.testservice.ser
-import com.booleworks.jobframework.testservice.testJobFramework
+import com.booleworks.jobframework.util.TestInput
+import com.booleworks.jobframework.util.TestResult
+import com.booleworks.jobframework.util.defaultComputation
+import com.booleworks.jobframework.util.defaultInstanceName
+import com.booleworks.jobframework.util.defaultRedis
+import com.booleworks.jobframework.util.newRedisPersistence
+import com.booleworks.jobframework.util.ser
+import com.booleworks.jobframework.util.testJobFramework
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.request.get
@@ -40,7 +41,7 @@ class ApiTest {
                 JobFramework.newApi(
                     this@route,
                     newRedisPersistence(defaultRedis),
-                    "ME",
+                    defaultInstanceName,
                     { call.receive<TestInput>() },
                     { call.respond<TestResult>(it) },
                     defaultComputation

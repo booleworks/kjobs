@@ -101,33 +101,32 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
             post("cancel/{uuid}") {
                 parseUuid()?.let { uuid ->
                     val job = fetchJob(uuid, persistence) ?: return@post
-                    when (job.status) {
-                        // TODO: what about the risk of the job status being overridden?
-                        //  The execution job could take the job at the same time and might not see the respective cancellation update.
-                        JobStatus.CREATED -> {
-                            job.status = JobStatus.CANCELLED
-                            job.finishedAt = LocalDateTime.now()
-                            persistence.transaction { updateJob(job) }
-                            call.respond("Job with id $uuid was cancelled successfully")
-                        }
-
-                        JobStatus.RUNNING -> {
-                            job.status = JobStatus.CANCEL_REQUESTED
-                            persistence.transaction { updateJob(job) }
-                            call.respond(
-                                "Job with id $uuid is currently running and will be cancelled as soon as possible. " +
-                                        "If it finishes in the meantime, the cancel request will be ignored."
-                            )
-                        }
-
-                        JobStatus.CANCEL_REQUESTED -> call.respond("Cancellation for job with id $uuid has already been requested")
-                        JobStatus.SUCCESS, JobStatus.FAILURE, JobStatus.CANCELLED ->
-                            call.respond("Job with id $uuid has already finished with status ${job.status}")
-                    }
+                    call.respond(cancelJob(job, uuid, persistence))
                 }
             }
         }
     }
+}
+
+internal suspend fun <INPUT, RESULT> cancelJob(job: Job, uuid: UUID, persistence: Persistence<INPUT, RESULT>): String = when (job.status) {
+    // TODO: what about the risk of the job status being overridden?
+    //  The execution job could take the job at the same time and might not see the respective cancellation update.
+    JobStatus.CREATED -> {
+        job.status = JobStatus.CANCELLED
+        job.finishedAt = LocalDateTime.now()
+        persistence.transaction { updateJob(job) }
+        "Job with id $uuid was cancelled successfully"
+    }
+
+    JobStatus.RUNNING -> {
+        job.status = JobStatus.CANCEL_REQUESTED
+        persistence.transaction { updateJob(job) }
+        "Job with id $uuid is currently running and will be cancelled as soon as possible. If it finishes in the meantime, the cancel request will be ignored."
+    }
+
+    JobStatus.CANCEL_REQUESTED -> "Cancellation for job with id $uuid has already been requested"
+    JobStatus.SUCCESS, JobStatus.FAILURE, JobStatus.CANCELLED ->
+        "Job with id $uuid has already finished with status ${job.status}"
 }
 
 internal class JobApiDef<INPUT, RESULT>(

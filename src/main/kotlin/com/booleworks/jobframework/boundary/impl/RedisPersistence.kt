@@ -137,13 +137,13 @@ open class RedisTransactionalPersistence<INPUT, RESULT>(
 
 internal fun Job.toRedisMap(): Map<String, String> {
     return mapOf(
-        "tags" to tags.joinToString(TAG_SEPARATOR),
         "priority" to priority.toString(),
         "createdBy" to createdBy,
         "createdAt" to createdAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
         "status" to status.toString(),
         "numRestarts" to numRestarts.toString(),
     ) + listOf(
+        "tags" to tags.takeIf { it.isNotEmpty() }?.joinToString(TAG_SEPARATOR),
         "customInfo" to customInfo,
         "startedAt" to startedAt?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
         "executingInstance" to executingInstance,

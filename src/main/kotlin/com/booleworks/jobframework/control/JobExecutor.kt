@@ -119,13 +119,10 @@ internal class JobExecutor<INPUT, RESULT>(
             val result: JobResult<RESULT> = runCatching {
                 withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
                     ?.let { JobResult.success(job.uuid, it) }
-                    ?: run {
-                        log.info("Job with ID $uuid failed to finish in iteration #${job.numRestarts + 1} with timeout $timeout seconds.")
-                        return@launch
-                    }
+                    ?: JobResult.error(job.uuid, "The job did not finish within the configured timeout of $timeout")
             }.getOrElse {
                 yield() // for the case that the coroutine was cancelled
-                JobResult.error(job.uuid, "Unexpected exception without further information: ${it.message}")
+                JobResult.error(job.uuid, "Unexpected exception during computation: ${it.message}")
             }
             writeResultToDb(uuid, result)
         }
