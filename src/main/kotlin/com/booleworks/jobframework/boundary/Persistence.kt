@@ -8,7 +8,6 @@ import com.booleworks.jobframework.data.Job
 import com.booleworks.jobframework.data.JobResult
 import com.booleworks.jobframework.data.JobStatus
 import com.booleworks.jobframework.data.PersistenceAccessResult
-import com.booleworks.jobframework.data.mapResult
 import java.time.LocalDateTime
 
 /**
@@ -63,12 +62,6 @@ interface Persistence<INPUT, RESULT> {
      * Fetches all jobs which have been finished before the given date.
      */
     suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>>
-
-    /**
-     * Fetches all jobs which have a timeout before the given date.
-     */
-    suspend fun allRunningJobsWithTimeoutBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>> =
-        allJobsWithStatus(JobStatus.RUNNING).mapResult { jobs -> jobs.filter { it.timeout!! < date } }
 }
 
 /**
