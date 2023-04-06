@@ -9,12 +9,16 @@ package com.booleworks.jobframework.boundary.impl
 interface RedisConfig {
     val jobPattern: String
         get() = "*:job"
+    val heartbeatPattern: String
+        get() = "*:heartbeat"
 
     fun jobKey(uuid: String): String = "$uuid:job"
     fun inputKey(uuid: String): String = "$uuid:input"
     fun resultKey(uuid: String): String = "$uuid:result"
+    fun heartbeatKey(instanceName: String): String = "$instanceName:heartbeat"
 
-    fun extractUuid(key: String): String = key.split(":")[0]
+    fun extractUuid(jobKey: String): String = jobKey.split(":")[0]
+    fun extractInstanceName(heartbeatKey: String): String = heartbeatKey.split(":")[0]
 }
 
 /**

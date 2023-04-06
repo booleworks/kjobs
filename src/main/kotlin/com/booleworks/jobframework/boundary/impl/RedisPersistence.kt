@@ -6,6 +6,7 @@ package com.booleworks.jobframework.boundary.impl
 import com.booleworks.jobframework.boundary.Persistence
 import com.booleworks.jobframework.boundary.TransactionalPersistence
 import com.booleworks.jobframework.control.unreachable
+import com.booleworks.jobframework.data.Heartbeat
 import com.booleworks.jobframework.data.Job
 import com.booleworks.jobframework.data.JobResult
 import com.booleworks.jobframework.data.JobStatus
@@ -72,6 +73,15 @@ open class RedisPersistence<INPUT, RESULT>(
         return PersistenceAccessResult.result(resultDeserializer(resultBytes))
     }
 
+    override suspend fun fetchHeartBeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> {
+        val heartbeatKeys = pool.resource.use { it.keys(config.heartbeatPattern) }.toTypedArray()
+        val plainHeartbeats = pool.resource.use { it.mget(*heartbeatKeys) }
+        val filteredHeartbeats = plainHeartbeats.mapIndexed { index, beat ->
+            Heartbeat(config.extractInstanceName(heartbeatKeys[index]), LocalDateTime.parse(beat))
+        }.filter { it.lastBeat.isAfter(since) }
+        return PersistenceAccessResult.result(filteredHeartbeats)
+    }
+
     override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
         getAllJobsBy { jedis, key -> jedis.hget(key, "status") == status.toString() }
 
@@ -116,7 +126,6 @@ open class RedisTransactionalPersistence<INPUT, RESULT>(
 
     override suspend fun persistInput(job: Job, input: INPUT): PersistenceAccessResult<Unit> {
         transaction.set(config.inputKey(job.uuid).toByteArray(), inputSerializer(input))
-        kotlin.runCatching { }
         return PersistenceAccessResult.success
     }
 
@@ -125,7 +134,11 @@ open class RedisTransactionalPersistence<INPUT, RESULT>(
         return PersistenceAccessResult.success
     }
 
-    override suspend fun updateJob(job: Job): PersistenceAccessResult<Unit> = persistJob(job)
+    override suspend fun updateJob(job: Job): PersistenceAccessResult<Unit> {
+        persistJob(job)
+        transaction.hdel(config.jobKey(job.uuid), *job.nullFields().toTypedArray())
+        return PersistenceAccessResult.success
+    }
 
     override suspend fun deleteForUuid(uuid: String): PersistenceAccessResult<Unit> {
         transaction.del(config.jobKey(uuid))
@@ -133,24 +146,34 @@ open class RedisTransactionalPersistence<INPUT, RESULT>(
         transaction.del(config.resultKey(uuid))
         return PersistenceAccessResult.success
     }
+
+    override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
+        transaction.set(config.heartbeatKey(heartbeat.instanceName), heartbeat.lastBeat.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+        return PersistenceAccessResult.success
+    }
 }
 
-internal fun Job.toRedisMap(): Map<String, String> {
-    return mapOf(
-        "priority" to priority.toString(),
-        "createdBy" to createdBy,
-        "createdAt" to createdAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-        "status" to status.toString(),
-        "numRestarts" to numRestarts.toString(),
-    ) + listOf(
-        "tags" to tags.takeIf { it.isNotEmpty() }?.joinToString(TAG_SEPARATOR),
-        "customInfo" to customInfo,
-        "startedAt" to startedAt?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-        "executingInstance" to executingInstance,
-        "finishedAt" to finishedAt?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-        "timeout" to timeout?.toString()
-    ).filter { it.second != null }.associate { it.first to it.second as String }
-}
+internal fun Job.toRedisMap(): Map<String, String> =
+    mandatoryFields() + optionalFields().filter { it.second != null }.associate { it.first to it.second as String }
+
+internal fun Job.nullFields(): List<String> = optionalFields().filter { it.second == null }.map { it.first }
+
+private fun Job.mandatoryFields() = mapOf(
+    "priority" to priority.toString(),
+    "createdBy" to createdBy,
+    "createdAt" to createdAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+    "status" to status.toString(),
+    "numRestarts" to numRestarts.toString(),
+)
+
+private fun Job.optionalFields() = listOf(
+    "tags" to tags.takeIf { it.isNotEmpty() }?.joinToString(TAG_SEPARATOR),
+    "customInfo" to customInfo,
+    "startedAt" to startedAt?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+    "executingInstance" to executingInstance,
+    "finishedAt" to finishedAt?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+    "timeout" to timeout?.toString()
+)
 
 internal fun Map<String, String>.redisMapToJob(uuidIn: String? = null): PersistenceAccessResult<Job> = try {
     val uuid = uuidIn ?: this["uuid"] ?: run { return PersistenceAccessResult.internalError("Could not find field 'uuid'") }

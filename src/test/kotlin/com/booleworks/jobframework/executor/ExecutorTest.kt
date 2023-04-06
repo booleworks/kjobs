@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
 package com.booleworks.jobframework.executor
 
 import com.booleworks.jobframework.data.Job
 import com.booleworks.jobframework.data.JobResult
 import com.booleworks.jobframework.data.JobStatus
-import com.booleworks.jobframework.util.Either
 import com.booleworks.jobframework.util.TestInput
 import com.booleworks.jobframework.util.TestResult
 import com.booleworks.jobframework.util.defaultExecutor
 import com.booleworks.jobframework.util.defaultInstanceName
+import com.booleworks.jobframework.util.right
 import com.booleworks.jobframework.util.testWithRedis
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime.now
@@ -61,7 +64,9 @@ class ExecutorTest {
         assertThat(jobAfterComputation.finishedAt).isBetween(jobAfterComputation.startedAt, now())
         assertThat(jobAfterComputation.timeout).isAfter(now())
         assertThat(jobAfterComputation.numRestarts).isZero()
-        assertThat(fetchResult(job.uuid).right()).isEqualTo(JobResult.error<Any>(job.uuid, "Unexpected exception during computation: Test Exception Message"))
+        assertThat(fetchResult(job.uuid).right()).isEqualTo(
+            JobResult.error<Any>(job.uuid, "Unexpected exception during computation: Test Exception Message")
+        )
     }
 
     @Test
@@ -83,10 +88,10 @@ class ExecutorTest {
         assertThat(jobAfterComputation.finishedAt).isBetween(jobAfterComputation.startedAt, now())
         assertThat(jobAfterComputation.timeout).isBefore(now())
         assertThat(jobAfterComputation.numRestarts).isZero()
-        assertThat(fetchResult(job.uuid).right()).isEqualTo(JobResult.error<Any>(job.uuid, "The job did not finish within the configured timeout of 1ms"))
+        assertThat(fetchResult(job.uuid).right()).isEqualTo(
+            JobResult.error<Any>(job.uuid, "The job did not finish within the configured timeout of 1ms")
+        )
     }
 
     private fun newJob() = Job(UUID.randomUUID().toString(), emptyList(), null, 0, defaultInstanceName, now(), JobStatus.CREATED)
 }
-
-fun <R> Either<*, R>.right() = (this as Either.Right<R>).value

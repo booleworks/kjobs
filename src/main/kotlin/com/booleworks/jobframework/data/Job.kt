@@ -68,9 +68,7 @@ class JobResult<out T> private constructor(val uuid: String, val result: T?, val
         return error == other.error
     }
 
-    override fun toString(): String {
-        return "JobResult(uuid='$uuid', result=$result, error=$error)"
-    }
+    override fun toString() = "JobResult(uuid='$uuid', result=$result, error=$error)"
 }
 
 /**

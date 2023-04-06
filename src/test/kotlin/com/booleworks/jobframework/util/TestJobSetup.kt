@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
 package com.booleworks.jobframework.util
 
 import com.booleworks.jobframework.boundary.Persistence
@@ -19,7 +21,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import com.github.fppt.jedismock.RedisServer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import redis.clients.jedis.JedisPool
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -70,9 +72,10 @@ class TestException(message: String) : Exception(message)
 
 fun Any.ser() = jacksonObjectMapperWithTime().writeValueAsBytes(this)
 
-@OptIn(ExperimentalCoroutinesApi::class)
-fun testWithRedis(block: suspend RedisPersistence<TestInput, TestResult>.() -> Unit) = runTest {
+fun testWithRedis(block: suspend RedisPersistence<TestInput, TestResult>.() -> Unit) = runBlocking {
     val redis = RedisServer.newRedisServer().start()
     with(newRedisPersistence(redis)) { block() }
     redis.stop()
 }
+
+fun <R> Either<*, R>.right() = (this as Either.Right<R>).value

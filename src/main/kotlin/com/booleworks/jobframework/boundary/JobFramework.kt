@@ -25,7 +25,6 @@ import io.ktor.util.pipeline.PipelineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -133,20 +132,20 @@ class JobFrameworkBuilder<INPUT, RESULT> internal constructor(
     /**
      * Further configuration options about maintenance routines.
      *
-     * @param maxJobRestarts the maximum number of restarts of a job. A job is restarted if its timeout is reached. Default is [DEFAULT_MAX_JOB_RESTARTS].
+     * @param jobCheckInterval the interval with which the instance should check for new jobs to compute
+     * @param heartbeatInterval the interval with which the instance should update its heartbeat and check for dead instances
+     * @param oldJobDeletionInterval the interval with which the instance should check for old jobs to be deleted
      * @param deleteOldJobsAfter the time after which finished jobs should be deleted. Default is 365 days. Usually, this value can be set much lower (e.g.
      * to one day or even less). Note that, depending on the number of requests and the size of the input and result, the job database may become very large if
      * this value is set too high.
-     * @param jobCheckInterval the interval with which the instance should check for new jobs to compute
-     * @param jobRestartCheckInterval the interval with which the instance should check for jobs which need to be restarted
-     * @param oldJobDeletionInterval the interval with which the instance should check for old jobs to be deleted
+     * @param maxJobRestarts the maximum number of restarts of a job. A job is restarted if its timeout is reached. Default is [DEFAULT_MAX_JOB_RESTARTS].
      */
     class MaintenanceConfig internal constructor(
-        var maxJobRestarts: Int = DEFAULT_MAX_JOB_RESTARTS,
-        var deleteOldJobsAfter: Duration = 365.days,
         var jobCheckInterval: Duration = 5.seconds,
-        var jobRestartCheckInterval: Duration = 1.minutes,
+        var heartbeatInterval: Duration = 10.seconds,
         var oldJobDeletionInterval: Duration = 1.days,
+        var deleteOldJobsAfter: Duration = 365.days,
+        var maxJobRestarts: Int = DEFAULT_MAX_JOB_RESTARTS,
     )
 
     /**
@@ -168,13 +167,11 @@ class JobFrameworkBuilder<INPUT, RESULT> internal constructor(
         setupJobApi(generateJobApiDef())
         val executor = generateJobExecutor()
         application.scheduleForever(maintenanceConfig.jobCheckInterval) { executor.execute() }
-        application.scheduleForever(maintenanceConfig.oldJobDeletionInterval) { Maintenance.deleteOldJobs(persistence, maintenanceConfig.deleteOldJobsAfter) }
-        application.scheduleForever(maintenanceConfig.jobRestartCheckInterval) {
-            Maintenance.restartLongRunningJobs(
-                persistence,
-                maintenanceConfig.maxJobRestarts,
-            )
+        application.scheduleForever(maintenanceConfig.heartbeatInterval) { Maintenance.updateHeartbeat(persistence, myInstanceName) }
+        application.scheduleForever(maintenanceConfig.heartbeatInterval) {
+            Maintenance.restartJobsFromDeadInstances(persistence, maintenanceConfig.heartbeatInterval, maintenanceConfig.maxJobRestarts)
         }
+        application.scheduleForever(maintenanceConfig.oldJobDeletionInterval) { Maintenance.deleteOldJobs(persistence, maintenanceConfig.deleteOldJobsAfter) }
         if (cancellationConfig.enableCancellation) {
             application.scheduleForever(cancellationConfig.cancellationCheckInterval) { Maintenance.checkForCancellations(persistence) }
         }
