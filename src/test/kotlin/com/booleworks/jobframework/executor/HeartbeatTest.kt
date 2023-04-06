@@ -23,7 +23,7 @@ import kotlin.time.Duration.Companion.milliseconds
 class HeartbeatTest {
 
     @Test
-    fun testKeptAlive() = testWithRedis {
+    fun `test heartbeat keeps job alive`() = testWithRedis {
         val job = newJob().apply {
             status = JobStatus.RUNNING
             executingInstance = defaultInstanceName
@@ -43,7 +43,7 @@ class HeartbeatTest {
     }
 
     @Test
-    fun testInstanceDying() = testWithRedis {
+    fun `test dead instance`() = testWithRedis {
         val job = newJob().apply {
             status = JobStatus.RUNNING
             executingInstance = defaultInstanceName
@@ -77,7 +77,7 @@ class HeartbeatTest {
     }
 
     @Test
-    fun testInstanceDyingMaxRestartsReached() = testWithRedis {
+    fun `test dead instance and max restarts reached`() = testWithRedis {
         val job = newJob().apply {
             status = JobStatus.RUNNING
             executingInstance = defaultInstanceName
@@ -110,6 +110,44 @@ class HeartbeatTest {
             coroutineContext.cancelChildren()
         }
     }
-    
+
+    @Test
+    fun `test with live and dead jobs`() = testWithRedis {
+        val deadJob = newJob().apply {
+            status = JobStatus.RUNNING
+            executingInstance = "Dead instance"
+            startedAt = now()
+            timeout = now().plusSeconds(10)
+        }
+        val liveJob = newJob().apply {
+            status = JobStatus.RUNNING
+            executingInstance = "Live instance"
+            startedAt = now()
+            timeout = now().plusSeconds(10)
+        }
+        transaction { persistJob(deadJob); persistJob(liveJob) }
+        coroutineScope {
+            scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Live instance") }
+            scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Other instance") }
+            scheduleForever(5.milliseconds) { Maintenance.restartJobsFromDeadInstances(this@testWithRedis, 5.milliseconds, 3) }
+            delay(20.milliseconds)
+            with(fetchJob(deadJob.uuid).right()) {
+                assertThat(status).isEqualTo(JobStatus.CREATED)
+                assertThat(numRestarts).isOne()
+                assertThat(executingInstance).isNull()
+                assertThat(startedAt).isNull()
+                assertThat(timeout).isNull()
+            }
+            with(fetchJob(liveJob.uuid).right()) {
+                assertThat(status).isEqualTo(JobStatus.RUNNING)
+                assertThat(numRestarts).isZero()
+                assertThat(executingInstance).isEqualTo("Live instance")
+                assertThat(startedAt).isNotNull()
+                assertThat(timeout).isNotNull()
+            }
+            coroutineContext.cancelChildren()
+        }
+    }
+
     private fun newJob() = Job(UUID.randomUUID().toString(), emptyList(), null, 0, defaultInstanceName, now(), JobStatus.CREATED)
 }

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.booleworks.jobframework.executor
 
 import com.booleworks.jobframework.data.Job
@@ -14,7 +12,6 @@ import com.booleworks.jobframework.util.defaultExecutor
 import com.booleworks.jobframework.util.defaultInstanceName
 import com.booleworks.jobframework.util.right
 import com.booleworks.jobframework.util.testWithRedis
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime.now
@@ -24,7 +21,7 @@ import kotlin.time.Duration.Companion.milliseconds
 class ExecutorTest {
 
     @Test
-    fun testComputation() = testWithRedis {
+    fun `test simple computation`() = testWithRedis {
         val job = newJob()
         val input = TestInput(42)
         transaction { persistJob(job); persistInput(job, input) }
@@ -46,7 +43,7 @@ class ExecutorTest {
     }
 
     @Test
-    fun testComputationWithException() = testWithRedis {
+    fun `test computation with exception`() = testWithRedis {
         val job = newJob()
         val input = TestInput(42, throwException = true)
         transaction { persistJob(job); persistInput(job, input) }
@@ -70,7 +67,7 @@ class ExecutorTest {
     }
 
     @Test
-    fun testComputationWithTimeout() = testWithRedis {
+    fun `test computation with timeout`() = testWithRedis {
         val job = newJob()
         val input = TestInput(42, expectedDelay = 10, throwException = true)
         transaction { persistJob(job); persistInput(job, input) }

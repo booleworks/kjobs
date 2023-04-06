@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.booleworks.jobframework.util
 
 import com.booleworks.jobframework.boundary.Persistence
@@ -19,7 +17,6 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.github.fppt.jedismock.RedisServer
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import redis.clients.jedis.JedisPool
