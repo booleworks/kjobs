@@ -3,10 +3,10 @@
 
 package com.booleworks.jobframework.boundary
 
-import com.booleworks.jobframework.boundary.JobFramework.newApi
+import com.booleworks.jobframework.control.GeneralJobExecutor
 import com.booleworks.jobframework.control.JobApiDef
-import com.booleworks.jobframework.control.JobExecutor
 import com.booleworks.jobframework.control.Maintenance
+import com.booleworks.jobframework.control.SpecificExecutor
 import com.booleworks.jobframework.control.scheduleForever
 import com.booleworks.jobframework.control.setupJobApi
 import com.booleworks.jobframework.data.DefaultExecutionCapacityProvider
@@ -16,72 +16,82 @@ import com.booleworks.jobframework.data.Job
 import com.booleworks.jobframework.data.JobPrioritizer
 import com.booleworks.jobframework.data.JobStatus
 import com.booleworks.jobframework.data.TagMatcher
+import com.booleworks.jobframework.util.Either
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.routing.Route
-import io.ktor.server.routing.application
 import io.ktor.util.pipeline.PipelineContext
+import kotlinx.coroutines.CoroutineScope
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * The method [newApi] is the central point to generate a new API.
+ * Main entry point to setup the job framework.
+ * @param myInstanceName a unique identifier of this instance, e.g. in a Kubernetes environment.
+ * Can be an arbitrary, non-empty, string if there is only a single instance.
+ * @param jobPersistence an object allowing to store and retrieve jobs (and heartbeats) from some
+ * (usually external) data source, e.g. a redis cache or a postgres database
+ * @param executionEnvironment either a specific [CoroutineScope] or a ktor [Application] in which
+ * maintenance and execution jobs are launched
+ * @param configuration additional configuration options, in particular this includes the
+ * possibility to [add APIs][JobFrameworkBuilder.addApi] to a ktor application
  */
-object JobFramework {
+@Suppress("FunctionName")
+fun JobFramework(
+    myInstanceName: String,
+    jobPersistence: JobPersistence,
+    executionEnvironment: Either<CoroutineScope, Application>,
+    configuration: JobFrameworkBuilder.() -> Unit
+) = JobFrameworkBuilder(myInstanceName, jobPersistence, executionEnvironment).apply(configuration).build()
+
+class JobFrameworkBuilder internal constructor(
+    private val myInstanceName: String,
+    private val jobPersistence: JobPersistence,
+    private val executionBase: Either<CoroutineScope, Application>
+) {
+    private val executorConfig: ExecutorConfig = ExecutorConfig()
+    private val maintenanceConfig: MaintenanceConfig = MaintenanceConfig()
+    private val cancellationConfig: CancellationConfig = CancellationConfig()
+    private val apis: MutableList<ApiBuilder<*, *>> = mutableListOf()
+    private val specificExecutors: MutableMap<String, SpecificExecutor<*, *>> = mutableMapOf()
+    private val specificPersistences: MutableMap<String, DataPersistence<*, *>> = mutableMapOf()
 
     /**
-     * Generates a new API on the given [route]. The [configuration] is optional, but it is
+     * Generates a new API for a specific [job type][jobType]. The [configuration] is optional, but it is
      * strongly encouraged to take a look at what can further be configured there.
-     *  @param route the route on which the API should be setup, it is also used to access
-     *  the [ktor application's coroutine context][Application.coroutineContext]
-     *  @param persistence the persistence/database to use for storing jobs, inputs, and results
-     *  @param myInstanceName a unique identifier of this instance, e.g. in a Kubernetes environment.
-     *  Can be an arbitrary, non-empty, string if there is only a single instance.
-     *  @param inputReceiver a function which receives the [INPUT] in the ktor webservice,
-     *  e.g. via `call.receive()`
-     *  @param resultResponder a function which returns the [RESULT] in the ktor webservice,
-     *  e.g. via `call.respond(result)`
-     *  @param computation the action computation which should be performed by this asynchronous service.
-     *  It must only return `null` if it was cancelled.
-     *  @param configuration provides more detailed configuration options as described below
+     * @param jobType a unique name identifying this type of job
+     * @param route the route on which the API should be setup
+     * @param dataPersistence the persistence/database to use for storing the inputs and results
+     * for this specific job type
+     * @param inputReceiver a function which receives the [INPUT] in the ktor webservice,
+     * e.g. via `call.receive()`
+     * @param resultResponder a function which returns the [RESULT] in the ktor webservice,
+     * e.g. via `call.respond(result)`
+     * @param computation the actual computation which should be performed by this asynchronous service
+     * @param configuration provides more detailed configuration options as described below
      */
-    fun <INPUT, RESULT> newApi(
+    fun <INPUT, RESULT> addApi(
+        jobType: String,
         route: Route,
-        persistence: Persistence<INPUT, RESULT>,
-        myInstanceName: String,
+        dataPersistence: DataPersistence<INPUT, RESULT>,
         inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
         resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
         computation: suspend (Job, INPUT) -> RESULT,
-        configuration: JobFrameworkBuilder<INPUT, RESULT>.() -> Unit
-    ) = JobFrameworkBuilder(persistence, myInstanceName, inputReceiver, resultResponder, computation).apply {
+        configuration: ApiBuilder<INPUT, RESULT>.() -> Unit = {}
+    ) = ApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder, computation).apply {
         configuration()
-    }.build(route)
-}
-
-class JobFrameworkBuilder<INPUT, RESULT> internal constructor(
-    private val persistence: Persistence<INPUT, RESULT>,
-    private val myInstanceName: String,
-    private val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
-    private val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
-    private val computation: suspend (Job, INPUT) -> RESULT,
-) {
-    private val apiConfig: ApiConfig<INPUT> = ApiConfig()
-    private val jobConfig: JobConfig<INPUT> = JobConfig()
-    private val maintenanceConfig: MaintenanceConfig = MaintenanceConfig()
-    private val cancellationConfig: CancellationConfig = CancellationConfig()
+        specificExecutors[jobType] = specificExecutor()
+        specificPersistences[jobType] = dataPersistence
+        apis += this
+    }
 
     /**
-     * Provides further configuration options about the API.
+     * Provides further configuration options about the executor.
      */
-    fun apiConfig(configuration: ApiConfig<INPUT>.() -> Unit) = configuration(apiConfig)
-
-    /**
-     * Provides further configuration options about the handling of jobs.
-     */
-    fun jobConfig(configuration: JobConfig<INPUT>.() -> Unit) = configuration(jobConfig)
+    fun executorConfig(configuration: ExecutorConfig.() -> Unit) = configuration(executorConfig)
 
     /**
      * Provides further configuration options about maintenance routines.
@@ -94,39 +104,17 @@ class JobFrameworkBuilder<INPUT, RESULT> internal constructor(
     fun cancellationConfig(configuration: CancellationConfig.() -> Unit) = configuration(cancellationConfig)
 
     /**
-     * Further configuration options for the API.
-     * @param basePath an additional base path of the application (in addition to what is effectively predefined by the [Route] passed into [newApi]).
-     * Default is the empty string.
-     * @param inputValidation an optional validation of the input which is performed in the `submit` resource. Must return a list of error messages which
-     * is empty in case the validation did not find any errors. If the list is not empty, the request is rejected with [HttpStatusCode.NotFound] and
-     * a message constructed from the list. Default is an empty list.
-     */
-    class ApiConfig<INPUT> internal constructor(
-        var basePath: String? = null,
-        var inputValidation: (INPUT) -> List<String> = { emptyList() },
-    )
-
-    /**
-     * Further configuration options about the handling of jobs.
-     * @param tagProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.tags]. Default is an empty list.
-     * @param customInfoProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.customInfo].
-     * Default is an empty string.
-     * @param priorityProvider a function providing an integer priority for a job input. A smaller number means a higher priority. Default is 0.
+     * Further configuration options for the executor
      * @param executionCapacityProvider an execution capacity provider, see [ExecutionCapacityProvider] for detailed information.
      * The [default provider][DefaultExecutionCapacityProvider] will allow at most one job running on an instance.
      * @param jobPrioritizer a job prioritizer, see [JobPrioritizer] for detailed information. The [default prioritizer][DefaultJobPrioritizer] will prioritize
      * first by [Job.priority] and then by [Job.createdAt] (both ascending).
      * @param tagMatcher a tag matcher to this instance to select only jobs with specific [tags][Job.tags]. Default is [TagMatcher.Any].
-     * @param timeoutComputation a function providing a timeout for the given job. The default is 24 hours. In most cases this default should be set much lower.
      */
-    class JobConfig<INPUT> internal constructor(
-        var tagProvider: (INPUT) -> List<String> = { emptyList() },
-        var customInfoProvider: (INPUT) -> String = { "" },
-        var priorityProvider: (INPUT) -> Int = { 0 },
+    class ExecutorConfig internal constructor(
         var executionCapacityProvider: ExecutionCapacityProvider = DefaultExecutionCapacityProvider,
         var jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
         var tagMatcher: TagMatcher = TagMatcher.Any,
-        var timeoutComputation: (Job, INPUT) -> Duration = { _, _ -> 24.hours },
     )
 
     /**
@@ -163,42 +151,116 @@ class JobFrameworkBuilder<INPUT, RESULT> internal constructor(
         var cancellationCheckInterval: Duration = 1.seconds,
     )
 
-    internal fun build(route: Route) = with(route) {
-        setupJobApi(generateJobApiDef())
+    fun build() {
+        apis.forEach { it.build(cancellationConfig.enableCancellation) }
         val executor = generateJobExecutor()
-        application.scheduleForever(maintenanceConfig.jobCheckInterval) { executor.execute() }
-        application.scheduleForever(maintenanceConfig.heartbeatInterval) { Maintenance.updateHeartbeat(persistence, myInstanceName) }
-        application.scheduleForever(maintenanceConfig.heartbeatInterval) {
-            Maintenance.restartJobsFromDeadInstances(persistence, maintenanceConfig.heartbeatInterval, maintenanceConfig.maxJobRestarts)
+        executionBase.schedule(maintenanceConfig.jobCheckInterval) { executor.execute() }
+        executionBase.schedule(maintenanceConfig.heartbeatInterval) { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
+        executionBase.schedule(maintenanceConfig.heartbeatInterval) {
+            Maintenance.restartJobsFromDeadInstances(
+                jobPersistence,
+                specificPersistences,
+                maintenanceConfig.heartbeatInterval,
+                maintenanceConfig.maxJobRestarts
+            )
         }
-        application.scheduleForever(maintenanceConfig.oldJobDeletionInterval) { Maintenance.deleteOldJobs(persistence, maintenanceConfig.deleteOldJobsAfter) }
+        executionBase.schedule(maintenanceConfig.oldJobDeletionInterval) {
+            Maintenance.deleteOldJobs(
+                jobPersistence,
+                maintenanceConfig.deleteOldJobsAfter
+            )
+        }
         if (cancellationConfig.enableCancellation) {
-            application.scheduleForever(cancellationConfig.cancellationCheckInterval) { Maintenance.checkForCancellations(persistence) }
+            executionBase.schedule(cancellationConfig.cancellationCheckInterval) { Maintenance.checkForCancellations(jobPersistence) }
         }
     }
 
-    private fun generateJobApiDef() = JobApiDef(
-        persistence,
+    private fun generateJobExecutor(): GeneralJobExecutor = GeneralJobExecutor(
+        jobPersistence,
         myInstanceName,
-        inputReceiver,
-        resultResponder,
-        apiConfig.basePath,
-        apiConfig.inputValidation,
-        jobConfig.tagProvider,
-        jobConfig.customInfoProvider,
-        jobConfig.priorityProvider,
-        cancellationConfig.enableCancellation
+        executorConfig.executionCapacityProvider,
+        executorConfig.jobPrioritizer,
+        executorConfig.tagMatcher,
+        specificExecutors
     )
 
-    private fun generateJobExecutor(): JobExecutor<INPUT, RESULT> = JobExecutor(
-        persistence,
-        myInstanceName,
-        computation,
-        jobConfig.executionCapacityProvider,
-        jobConfig.timeoutComputation,
-        jobConfig.jobPrioritizer,
-        jobConfig.tagMatcher,
+    private val Either<CoroutineScope, Application>.schedule: (duration: Duration, task: suspend () -> Unit) -> kotlinx.coroutines.Job
+        get() = when (this) {
+            is Either.Left -> value::scheduleForever
+            is Either.Right -> value::scheduleForever
+        }
+}
+
+class ApiBuilder<INPUT, RESULT> internal constructor(
+    private val myInstanceName: String,
+    private val jobType: String,
+    private val route: Route,
+    private val persistence: DataPersistence<INPUT, RESULT>,
+    private val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
+    private val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
+    private val computation: suspend (Job, INPUT) -> RESULT,
+) {
+    private val apiConfig: ApiConfig<INPUT> = ApiConfig()
+    private val jobConfig: JobConfig<INPUT> = JobConfig()
+
+    /**
+     * Provides further configuration options about the API.
+     */
+    fun apiConfig(configuration: ApiConfig<INPUT>.() -> Unit) = configuration(apiConfig)
+
+    /**
+     * Provides further configuration options about the handling of jobs.
+     */
+    fun jobConfig(configuration: JobConfig<INPUT>.() -> Unit) = configuration(jobConfig)
+
+    /**
+     * Further configuration options for the API.
+     * @param basePath an additional base path of the application (in addition to what is effectively predefined by the [Route] passed into [newApi]).
+     * Default is the empty string.
+     * @param inputValidation an optional validation of the input which is performed in the `submit` resource. Must return a list of error messages which
+     * is empty in case the validation did not find any errors. If the list is not empty, the request is rejected with [HttpStatusCode.NotFound] and
+     * a message constructed from the list. Default is an empty list.
+     */
+    class ApiConfig<INPUT> internal constructor(
+        var basePath: String? = null,
+        var inputValidation: (INPUT) -> List<String> = { emptyList() },
     )
+
+    /**
+     * Further configuration options about the handling of jobs.
+     * @param tagProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.tags]. Default is an empty list.
+     * @param customInfoProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.customInfo].
+     * Default is an empty string.
+     * @param priorityProvider a function providing an integer priority for a job input. A smaller number means a higher priority. Default is 0.
+     * @param timeoutComputation a function providing a timeout for the given job. The default is 24 hours. In most cases this default should be set much lower.
+     */
+    class JobConfig<INPUT> internal constructor(
+        var tagProvider: (INPUT) -> List<String> = { emptyList() },
+        var customInfoProvider: (INPUT) -> String = { "" },
+        var priorityProvider: (INPUT) -> Int = { 0 },
+        var timeoutComputation: (Job, INPUT) -> Duration = { _, _ -> 24.hours },
+    )
+
+    internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> = SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation)
+
+    internal fun build(enableCancellation: Boolean) = with(route) {
+        setupJobApi(
+            JobApiDef(
+                jobType,
+                persistence,
+                myInstanceName,
+                inputReceiver,
+                resultResponder,
+                apiConfig.basePath,
+                apiConfig.inputValidation,
+                jobConfig.tagProvider,
+                jobConfig.customInfoProvider,
+                jobConfig.priorityProvider,
+                enableCancellation
+            )
+        )
+    }
+
 }
 
 const val DEFAULT_MAX_JOB_RESTARTS = 3

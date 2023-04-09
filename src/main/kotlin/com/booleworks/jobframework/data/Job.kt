@@ -9,6 +9,7 @@ import java.time.LocalDateTime
 /**
  * Contains all relevant information about a job except for its input and result.
  * @param uuid the UUID of this job which was automatically generated
+ * @param type the type of this job
  * @param tags a (possibly empty) list of tags associated with this job
  * @param customInfo optional custom information about this job, it's in the user's
  * responsibility to correctly set and read this information
@@ -27,6 +28,7 @@ import java.time.LocalDateTime
  */
 class Job(
     val uuid: String,
+    val type: String,
     val tags: List<String>,
     val customInfo: String?,
     val priority: Int,

@@ -12,36 +12,26 @@ import java.time.LocalDateTime
 
 /**
  * General interface for the persistence access (usually some kind of database like Redis or Postgres)
- * where jobs, their inputs, their results, and heartbeats are stored.
+ * where jobs and heartbeats are stored.
  *
- * Any kind of write access must be done by acquiring a [TransactionalPersistence] using [transaction].
+ * Any kind of write access must be done by acquiring a [JobTransactionalPersistence] using [transaction].
  *
- * The job's uuid can be used as primary key for all entities ([Job], [INPUT], and [RESULT]). For the
- * [Heartbeat] the primary key is the [instanceName][Heartbeat.instanceName].
+ * The job's uuid can be used as primary key. For the [Heartbeat] the primary key is the
+ * [instanceName][Heartbeat.instanceName].
  *
  * _If there will be many jobs in the database and if the database supports it, it may be useful to
  * create indices on the job's [JobStatus]_.
  */
-interface Persistence<INPUT, RESULT> {
+interface JobPersistence {
     /**
      * Opens a new transaction to allow write operations.
      */
-    suspend fun transaction(block: suspend TransactionalPersistence<INPUT, RESULT>.() -> Unit): PersistenceAccessResult<Unit>
+    suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit>
 
     /**
      * Fetches the job with the given uuid.
      */
     suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job>
-
-    /**
-     * Fetches the job input with the given uuid.
-     */
-    suspend fun fetchInput(uuid: String): PersistenceAccessResult<INPUT>
-
-    /**
-     * Fetches the job result with the given uuid.
-     */
-    suspend fun fetchResult(uuid: String): PersistenceAccessResult<JobResult<RESULT>>
 
     /**
      * Fetches all heartbeats since the given date.
@@ -69,7 +59,7 @@ interface Persistence<INPUT, RESULT> {
  * Read access within a transaction is not supported since Redis does not support it (reads in Redis can
  * only be evaluated after the transaction is successfully executed).
  */
-interface TransactionalPersistence<INPUT, RESULT> {
+interface JobTransactionalPersistence {
     /**
      * Persists the given job.
      *
@@ -77,19 +67,6 @@ interface TransactionalPersistence<INPUT, RESULT> {
      * the request is ignored, or an error is returned) is undefined.
      */
     suspend fun persistJob(job: Job): PersistenceAccessResult<Unit>
-
-    /**
-     * Persists the given job input.
-     *
-     * It is assumed that the job is not yet present, if it is, the behavior (whether the input is overridden,
-     * the request is ignored, or an error is returned) is undefined.
-     */
-    suspend fun persistInput(job: Job, input: INPUT): PersistenceAccessResult<Unit>
-
-    /**
-     * Persists the given job result. If the result is already present, it should be updated accordingly.
-     */
-    suspend fun persistOrUpdateResult(job: Job, result: JobResult<RESULT>): PersistenceAccessResult<Unit>
 
     /**
      * Updates the given job.
@@ -112,4 +89,50 @@ interface TransactionalPersistence<INPUT, RESULT> {
      * primary key).
      */
     suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit>
+}
+
+
+/**
+ * General interface for the persistence access (usually some kind of database like Redis or Postgres)
+ * where inputs and results for specific job types are stored.
+ *
+ * Any kind of write access must be done by acquiring a [DataTransactionalPersistence] using [dataTransaction].
+ *
+ * The job's uuid can be used as primary key for all entities.
+ */
+interface DataPersistence<INPUT, RESULT> : JobPersistence {
+    /**
+     * Opens a new transaction to allow write operations.
+     */
+    suspend fun dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> Unit): PersistenceAccessResult<Unit>
+
+    /**
+     * Fetches the job input with the given uuid.
+     */
+    suspend fun fetchInput(uuid: String): PersistenceAccessResult<INPUT>
+
+    /**
+     * Fetches the job result with the given uuid.
+     */
+    suspend fun fetchResult(uuid: String): PersistenceAccessResult<JobResult<RESULT>>
+}
+
+/**
+ * General interface for the persistence access through a transaction.
+ * Read access within a transaction is not supported since Redis does not support it (reads in Redis can
+ * only be evaluated after the transaction is successfully executed).
+ */
+interface DataTransactionalPersistence<INPUT, RESULT> : JobTransactionalPersistence {
+    /**
+     * Persists the given job input.
+     *
+     * It is assumed that the job is not yet present, if it is, the behavior (whether the input is overridden,
+     * the request is ignored, or an error is returned) is undefined.
+     */
+    suspend fun persistInput(job: Job, input: INPUT): PersistenceAccessResult<Unit>
+
+    /**
+     * Persists the given job result. If the result is already present, it should be updated accordingly.
+     */
+    suspend fun persistOrUpdateResult(job: Job, result: JobResult<RESULT>): PersistenceAccessResult<Unit>
 }

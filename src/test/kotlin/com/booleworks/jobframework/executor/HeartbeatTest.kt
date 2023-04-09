@@ -8,6 +8,7 @@ import com.booleworks.jobframework.control.scheduleForever
 import com.booleworks.jobframework.data.Job
 import com.booleworks.jobframework.data.JobStatus
 import com.booleworks.jobframework.util.defaultInstanceName
+import com.booleworks.jobframework.util.defaultJobType
 import com.booleworks.jobframework.util.right
 import com.booleworks.jobframework.util.testWithRedis
 import kotlinx.coroutines.cancelAndJoin
@@ -31,7 +32,14 @@ class HeartbeatTest {
         transaction { persistJob(job) }
         coroutineScope {
             scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
-            scheduleForever(5.milliseconds) { Maintenance.restartJobsFromDeadInstances(this@testWithRedis, 5.milliseconds, 3) }
+            scheduleForever(5.milliseconds) {
+                Maintenance.restartJobsFromDeadInstances(
+                    this@testWithRedis,
+                    mapOf(defaultJobType to this@testWithRedis),
+                    5.milliseconds,
+                    3
+                )
+            }
             delay(100.milliseconds)
             with(fetchJob(job.uuid).right()) {
                 assertThat(status).isEqualTo(JobStatus.RUNNING)
@@ -54,7 +62,14 @@ class HeartbeatTest {
         transaction { persistJob(job) }
         coroutineScope {
             val heartbeat = scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
-            scheduleForever(5.milliseconds) { Maintenance.restartJobsFromDeadInstances(this@testWithRedis, 5.milliseconds, 3) }
+            scheduleForever(5.milliseconds) {
+                Maintenance.restartJobsFromDeadInstances(
+                    this@testWithRedis,
+                    mapOf(defaultJobType to this@testWithRedis),
+                    5.milliseconds,
+                    3
+                )
+            }
             delay(20.milliseconds)
             with(fetchJob(job.uuid).right()) {
                 assertThat(status).isEqualTo(JobStatus.RUNNING)
@@ -88,7 +103,14 @@ class HeartbeatTest {
         transaction { persistJob(job) }
         coroutineScope {
             val heartbeat = scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
-            scheduleForever(5.milliseconds) { Maintenance.restartJobsFromDeadInstances(this@testWithRedis, 5.milliseconds, 3) }
+            scheduleForever(5.milliseconds) {
+                Maintenance.restartJobsFromDeadInstances(
+                    this@testWithRedis,
+                    mapOf(defaultJobType to this@testWithRedis),
+                    5.milliseconds,
+                    3
+                )
+            }
             delay(20.milliseconds)
             with(fetchJob(job.uuid).right()) {
                 assertThat(status).isEqualTo(JobStatus.RUNNING)
@@ -129,7 +151,14 @@ class HeartbeatTest {
         coroutineScope {
             scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Live instance") }
             scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Other instance") }
-            scheduleForever(5.milliseconds) { Maintenance.restartJobsFromDeadInstances(this@testWithRedis, 5.milliseconds, 3) }
+            scheduleForever(5.milliseconds) {
+                Maintenance.restartJobsFromDeadInstances(
+                    this@testWithRedis,
+                    mapOf(defaultJobType to this@testWithRedis),
+                    5.milliseconds,
+                    3
+                )
+            }
             delay(20.milliseconds)
             with(fetchJob(deadJob.uuid).right()) {
                 assertThat(status).isEqualTo(JobStatus.CREATED)
@@ -149,5 +178,5 @@ class HeartbeatTest {
         }
     }
 
-    private fun newJob() = Job(UUID.randomUUID().toString(), emptyList(), null, 0, defaultInstanceName, now(), JobStatus.CREATED)
+    private fun newJob() = Job(UUID.randomUUID().toString(), defaultJobType, emptyList(), null, 0, defaultInstanceName, now(), JobStatus.CREATED)
 }

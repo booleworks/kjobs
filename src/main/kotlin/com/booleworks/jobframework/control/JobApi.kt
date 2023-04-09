@@ -3,7 +3,7 @@
 
 package com.booleworks.jobframework.control
 
-import com.booleworks.jobframework.boundary.Persistence
+import com.booleworks.jobframework.boundary.DataPersistence
 import com.booleworks.jobframework.data.Job
 import com.booleworks.jobframework.data.JobResult
 import com.booleworks.jobframework.data.JobStatus
@@ -108,7 +108,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
     }
 }
 
-internal suspend fun <INPUT, RESULT> cancelJob(job: Job, uuid: UUID, persistence: Persistence<INPUT, RESULT>): String = when (job.status) {
+internal suspend fun <INPUT, RESULT> cancelJob(job: Job, uuid: UUID, persistence: DataPersistence<INPUT, RESULT>): String = when (job.status) {
     // TODO: what about the risk of the job status being overridden?
     //  The execution job could take the job at the same time and might not see the respective cancellation update.
     JobStatus.CREATED -> {
@@ -130,7 +130,8 @@ internal suspend fun <INPUT, RESULT> cancelJob(job: Job, uuid: UUID, persistence
 }
 
 internal class JobApiDef<INPUT, RESULT>(
-    val persistence: Persistence<INPUT, RESULT>,
+    val jobType: String,
+    val persistence: DataPersistence<INPUT, RESULT>,
     val myInstanceName: String,
     val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
     val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
@@ -151,8 +152,8 @@ private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.submit
         val uuid = UUID.randomUUID().toString()
         val tags = tagProvider(input)
         val customInfo = customInfoProvider(input)
-        val job = Job(uuid, tags, customInfo, priorityProvider(input), myInstanceName, LocalDateTime.now(), JobStatus.CREATED)
-        persistence.transaction {
+        val job = Job(uuid, jobType, tags, customInfo, priorityProvider(input), myInstanceName, LocalDateTime.now(), JobStatus.CREATED)
+        persistence.dataTransaction {
             persistJob(job)
             persistInput(job, input)
         }.orQuitWith {
@@ -162,7 +163,7 @@ private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.submit
         call.respondText(uuid)
     }
 
-private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: Persistence<*, *>): Job? {
+private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: DataPersistence<*, *>): Job? {
     return persistence.fetchJob(uuid.toString()).orQuitWith {
         when (it) {
             is PersistenceAccessError.InternalError -> call.respondText("Failed to access job with ID $uuid: $it", status = InternalServerError)
@@ -172,11 +173,11 @@ private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?,
     }
 }
 
-private suspend fun PipelineContext<Unit, ApplicationCall>.status(uuid: UUID, persistence: Persistence<*, *>) {
+private suspend fun PipelineContext<Unit, ApplicationCall>.status(uuid: UUID, persistence: DataPersistence<*, *>) {
     fetchJob(uuid, persistence)?.let { call.respondText(it.status.toString()) }
 }
 
-private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(job: Job, persistence: Persistence<*, RESULT>): JobResult<RESULT>? =
+private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(job: Job, persistence: DataPersistence<*, RESULT>): JobResult<RESULT>? =
     persistence.fetchResult(job.uuid).orQuitWith {
         call.respondText("Failed to retrieve job result for ID ${job.uuid}: $it")
         return null

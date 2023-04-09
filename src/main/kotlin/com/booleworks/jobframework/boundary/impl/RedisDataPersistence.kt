@@ -3,8 +3,9 @@
 
 package com.booleworks.jobframework.boundary.impl
 
-import com.booleworks.jobframework.boundary.Persistence
-import com.booleworks.jobframework.boundary.TransactionalPersistence
+import com.booleworks.jobframework.boundary.DataPersistence
+import com.booleworks.jobframework.boundary.DataTransactionalPersistence
+import com.booleworks.jobframework.boundary.JobTransactionalPersistence
 import com.booleworks.jobframework.control.unreachable
 import com.booleworks.jobframework.data.Heartbeat
 import com.booleworks.jobframework.data.Job
@@ -24,15 +25,15 @@ import redis.clients.jedis.Transaction
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-private val logger = LoggerFactory.getLogger(RedisPersistence::class.java)
+private val logger = LoggerFactory.getLogger(RedisDataPersistence::class.java)
 
 /**
- * [Persistence] implementation for redis. It requires a [JedisPool] providing the connection to
+ * [DataPersistence] implementation for redis. It requires a [JedisPool] providing the connection to
  * the Redis instance, serializers and deserializers for job inputs and results, and a
  * [Redis configuration][config].
  */
 // TODO error handling
-open class RedisPersistence<INPUT, RESULT>(
+open class RedisDataPersistence<INPUT, RESULT>(
     private val pool: JedisPool,
     private val inputSerializer: (INPUT) -> ByteArray,
     private val resultSerializer: (JobResult<RESULT>) -> ByteArray,
@@ -40,13 +41,14 @@ open class RedisPersistence<INPUT, RESULT>(
     private val resultDeserializer: (ByteArray) -> JobResult<RESULT>,
     private val config: RedisConfig = DefaultRedisConfig(),
 ) :
-    Persistence<INPUT, RESULT> {
+    DataPersistence<INPUT, RESULT> {
+    override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = dataTransaction(block)
 
-    override suspend fun transaction(block: suspend TransactionalPersistence<INPUT, RESULT>.() -> Unit): PersistenceAccessResult<Unit> =
+    override suspend fun dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> Unit): PersistenceAccessResult<Unit> =
         pool.resource.use { jedis ->
             jedis.multi().run {
                 runCatching {
-                    RedisTransactionalPersistence(this@run, inputSerializer, resultSerializer, config)
+                    RedisDataTransactionalPersistence(this@run, inputSerializer, resultSerializer, config)
                         .run { block() }
                         .also { exec() }
                 }.onFailure {
@@ -106,18 +108,18 @@ open class RedisPersistence<INPUT, RESULT>(
 }
 
 /**
- * [TransactionalPersistence] implementation for Jedis.
+ * [DataTransactionalPersistence] implementation for Jedis.
  *
  * Note that all methods will always return [PersistenceAccessResult.success] since commands within transaction are not yet
- * executed, so the only real kind of error would be connection problems which are ok to be caught in [RedisPersistence.transaction].
+ * executed, so the only real kind of error would be connection problems which are ok to be caught in [RedisDataPersistence.dataTransaction].
  */
-open class RedisTransactionalPersistence<INPUT, RESULT>(
+open class RedisDataTransactionalPersistence<INPUT, RESULT>(
     private val transaction: Transaction,
     private val inputSerializer: (INPUT) -> ByteArray,
     private val resultSerializer: (JobResult<RESULT>) -> ByteArray,
     private val config: RedisConfig
 ) :
-    TransactionalPersistence<INPUT, RESULT> {
+    DataTransactionalPersistence<INPUT, RESULT> {
 
     override suspend fun persistJob(job: Job): PersistenceAccessResult<Unit> {
         transaction.hset(config.jobKey(job.uuid), job.toRedisMap())
@@ -159,6 +161,7 @@ internal fun Job.toRedisMap(): Map<String, String> =
 internal fun Job.nullFields(): List<String> = optionalFields().filter { it.second == null }.map { it.first }
 
 private fun Job.mandatoryFields() = mapOf(
+    "type" to type,
     "priority" to priority.toString(),
     "createdBy" to createdBy,
     "createdAt" to createdAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
@@ -180,6 +183,7 @@ internal fun Map<String, String>.redisMapToJob(uuidIn: String? = null): Persiste
     PersistenceAccessResult.result(
         Job(
             uuid,
+            this["type"] ?: run { return PersistenceAccessResult.internalError("Could not find field 'type' for ID $uuid") },
             this["tags"]?.split(TAG_SEPARATOR) ?: emptyList(),
             this["customInfo"],
             this["priority"]?.toIntOrNull() ?: run { return PersistenceAccessResult.internalError("Could not find or convert field 'priority' for ID $uuid") },

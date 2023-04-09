@@ -3,7 +3,8 @@
 
 package com.booleworks.jobframework.control
 
-import com.booleworks.jobframework.boundary.Persistence
+import com.booleworks.jobframework.boundary.DataPersistence
+import com.booleworks.jobframework.boundary.JobPersistence
 import com.booleworks.jobframework.data.Heartbeat
 import com.booleworks.jobframework.data.JobResult
 import com.booleworks.jobframework.data.JobStatus
@@ -28,7 +29,7 @@ object Maintenance {
     /**
      * Updates the heartbeat for this instance in the [persistence].
      */
-    suspend fun updateHeartbeat(persistence: Persistence<*, *>, myInstanceName: String) {
+    suspend fun updateHeartbeat(persistence: JobPersistence, myInstanceName: String) {
         persistence.transaction { updateHeartbeat(Heartbeat(myInstanceName, LocalDateTime.now())) }
     }
 
@@ -36,7 +37,7 @@ object Maintenance {
      * Retrieves all jobs from the [persistence] in status [JobStatus.CANCEL_REQUESTED] and writes their
      * uuids to [jobsToBeCancelled].
      */
-    suspend fun checkForCancellations(persistence: Persistence<*, *>) {
+    suspend fun checkForCancellations(persistence: JobPersistence) {
         // we don't filter for instance here to also cancel jobs which might have been stolen from us
         jobsToBeCancelled = persistence.allJobsWithStatus(JobStatus.CANCEL_REQUESTED).map { jobs -> jobs.map { it.uuid } }.getOrElse { emptyList() }.toSet()
     }
@@ -45,17 +46,18 @@ object Maintenance {
      * Checks for jobs in status [JobStatus.RUNNING] which have exceeded their timeout. If the number of restarts
      * is less than [maxRestarts], the job is reset to [JobStatus.CREATED], otherwise the job is set to failure.
      */
-    suspend fun <RESULT> restartJobsFromDeadInstances(
-        persistence: Persistence<*, RESULT>,
+    suspend fun restartJobsFromDeadInstances(
+        jobPersistence: JobPersistence,
+        specificPersistences: Map<String, DataPersistence<*, *>>,
         pulse: Duration,
         maxRestarts: Int,
     ) {
-        val liveInstances = persistence.fetchHeartBeats(LocalDateTime.now().minus((pulse * 2).toJavaDuration())).orQuitWith {
+        val liveInstances = jobPersistence.fetchHeartBeats(LocalDateTime.now().minus((pulse * 2).toJavaDuration())).orQuitWith {
             logger.error("Failed to fetch heartbeats: $it")
             return
         }.map { it.instanceName }.toSet()
 
-        val runningJobs = persistence.allJobsWithStatus(JobStatus.RUNNING).orQuitWith {
+        val runningJobs = jobPersistence.allJobsWithStatus(JobStatus.RUNNING).orQuitWith {
             logger.error("Failed to fetch jobs: $it")
             return
         }
@@ -67,7 +69,8 @@ object Maintenance {
         }
 
         jobsWithDeadInstances.forEach { job ->
-            persistence.transaction {
+            val dataPersistence = specificPersistences[job.type]!!
+            dataPersistence.dataTransaction {
                 if (job.numRestarts >= maxRestarts) {
                     logger.debug(
                         "Setting job with ID ${job.uuid} to failure because its executing instance seems to be dead " +
@@ -92,7 +95,7 @@ object Maintenance {
     /**
      * Deletes all jobs, including their inputs and results, which have finished for longer than the given duration.
      */
-    suspend fun deleteOldJobs(persistence: Persistence<*, *>, after: Duration) {
+    suspend fun deleteOldJobs(persistence: JobPersistence, after: Duration) {
         persistence.allJobsFinishedBefore(LocalDateTime.now().minus(after.toJavaDuration())).orQuitWith {
             logger.error("Failed to fetch jobs: $it")
             return

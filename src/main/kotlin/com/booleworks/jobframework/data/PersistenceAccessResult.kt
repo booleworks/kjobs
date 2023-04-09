@@ -3,14 +3,14 @@
 
 package com.booleworks.jobframework.data
 
-import com.booleworks.jobframework.boundary.Persistence
-import com.booleworks.jobframework.boundary.TransactionalPersistence
+import com.booleworks.jobframework.boundary.DataPersistence
+import com.booleworks.jobframework.boundary.DataTransactionalPersistence
 import com.booleworks.jobframework.data.PersistenceAccessError.InternalError
 import com.booleworks.jobframework.data.PersistenceAccessError.NotFound
 import com.booleworks.jobframework.util.Either
 
 /**
- * The result of an interaction with [Persistence] or [TransactionalPersistence].
+ * The result of an interaction with [DataPersistence] or [DataTransactionalPersistence].
  * In case of a successful access it contains the result of type [R], otherwise
  * it contains a [PersistenceAccessError].
  */
@@ -68,6 +68,7 @@ val <R> PersistenceAccessResult<R>.successful: Boolean
 
 val Either.Companion.success: PersistenceAccessResult<Unit>
     get() = Either.Right(Unit)
+
 fun <R> Either.Companion.result(result: R): PersistenceAccessResult<R> = Either.Right(result)
 fun <R> Either.Companion.notFound(): PersistenceAccessResult<R> = Either.Left(NotFound)
 fun <R> Either.Companion.internalError(message: String): PersistenceAccessResult<R> = Either.Left(InternalError(message))

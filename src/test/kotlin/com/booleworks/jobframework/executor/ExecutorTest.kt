@@ -10,6 +10,7 @@ import com.booleworks.jobframework.util.TestInput
 import com.booleworks.jobframework.util.TestResult
 import com.booleworks.jobframework.util.defaultExecutor
 import com.booleworks.jobframework.util.defaultInstanceName
+import com.booleworks.jobframework.util.defaultJobType
 import com.booleworks.jobframework.util.right
 import com.booleworks.jobframework.util.testWithRedis
 import org.assertj.core.api.Assertions.assertThat
@@ -24,7 +25,7 @@ class ExecutorTest {
     fun `test simple computation`() = testWithRedis {
         val job = newJob()
         val input = TestInput(42)
-        transaction { persistJob(job); persistInput(job, input) }
+        dataTransaction { persistJob(job); persistInput(job, input) }
         defaultExecutor(this).execute()
         val jobAfterComputation = fetchJob(job.uuid).right()
         assertThat(jobAfterComputation.uuid).isEqualTo(job.uuid)
@@ -46,7 +47,7 @@ class ExecutorTest {
     fun `test computation with exception`() = testWithRedis {
         val job = newJob()
         val input = TestInput(42, throwException = true)
-        transaction { persistJob(job); persistInput(job, input) }
+        dataTransaction { persistJob(job); persistInput(job, input) }
         defaultExecutor(this).execute()
         val jobAfterComputation = fetchJob(job.uuid).right()
         assertThat(jobAfterComputation.uuid).isEqualTo(job.uuid)
@@ -70,7 +71,7 @@ class ExecutorTest {
     fun `test computation with timeout`() = testWithRedis {
         val job = newJob()
         val input = TestInput(42, expectedDelay = 10, throwException = true)
-        transaction { persistJob(job); persistInput(job, input) }
+        dataTransaction { persistJob(job); persistInput(job, input) }
         defaultExecutor(this, timeout = { _, _ -> 1.milliseconds }).execute()
         val jobAfterComputation = fetchJob(job.uuid).right()
         assertThat(jobAfterComputation.uuid).isEqualTo(job.uuid)
@@ -90,5 +91,5 @@ class ExecutorTest {
         )
     }
 
-    private fun newJob() = Job(UUID.randomUUID().toString(), emptyList(), null, 0, defaultInstanceName, now(), JobStatus.CREATED)
+    private fun newJob() = Job(UUID.randomUUID().toString(), defaultJobType, emptyList(), null, 0, defaultInstanceName, now(), JobStatus.CREATED)
 }

@@ -4,7 +4,7 @@
 package com.booleworks.jobframework.boundary.impl
 
 /**
- * Configuration for the [RedisPersistence].
+ * Configuration for the [RedisDataPersistence].
  */
 interface RedisConfig {
     val jobPattern: String

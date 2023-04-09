@@ -3,7 +3,8 @@
 
 package com.booleworks.jobframework.control
 
-import com.booleworks.jobframework.boundary.Persistence
+import com.booleworks.jobframework.boundary.DataPersistence
+import com.booleworks.jobframework.boundary.JobPersistence
 import com.booleworks.jobframework.data.ExecutionCapacity
 import com.booleworks.jobframework.data.ExecutionCapacityProvider
 import com.booleworks.jobframework.data.Job
@@ -29,7 +30,7 @@ import kotlin.time.toJavaDuration
 
 private typealias CoroutineJob = kotlinx.coroutines.Job
 
-private val log: Logger = LoggerFactory.getLogger(JobExecutor::class.java)
+private val log: Logger = LoggerFactory.getLogger("JobExecutor")
 
 /**
  * The central instance which is responsible to compute jobs.
@@ -37,14 +38,13 @@ private val log: Logger = LoggerFactory.getLogger(JobExecutor::class.java)
  * Required parameters are a [persistence] for job access, the [name of this instance][myInstanceName],
  * and the actual [computation] taking a [Job] and its input.
  */
-internal class JobExecutor<INPUT, RESULT>(
-    private val persistence: Persistence<INPUT, RESULT>,
+internal class GeneralJobExecutor(
+    private val persistence: JobPersistence,
     private val myInstanceName: String,
-    private val computation: suspend (Job, INPUT) -> RESULT,
     private val executionCapacityProvider: ExecutionCapacityProvider,
-    private val timeoutComputation: (Job, INPUT) -> Duration,
     private val jobPrioritizer: JobPrioritizer,
-    private val tagMatcher: TagMatcher
+    private val tagMatcher: TagMatcher,
+    private val specificExecutors: Map<String, SpecificExecutor<*, *>>
 ) {
     /**
      * The main execution routine of the job executor.
@@ -55,10 +55,9 @@ internal class JobExecutor<INPUT, RESULT>(
             log.debug("No capacity for further jobs.")
             return@coroutineScope
         }
-        val (job, jobInput) = getAndReserveJob(myCapacity) ?: return@coroutineScope
-        val uuid = job.uuid
-        val coroutineJob = launchComputationJob(uuid, job, jobInput)
-        launchCancellationCheck(coroutineJob, uuid)
+        val job = getAndReserveJob(myCapacity) ?: return@coroutineScope
+        val coroutineJob = with(specificExecutors[job.type]!!) { launchComputationJob(job) }
+        launchCancellationCheck(coroutineJob, job.uuid)
     }
 
     private suspend fun getExecutionCapacity(): ExecutionCapacity? {
@@ -69,7 +68,7 @@ internal class JobExecutor<INPUT, RESULT>(
         return executionCapacityProvider(allMyRunningJobs)
     }
 
-    private suspend fun getAndReserveJob(executionCapacity: ExecutionCapacity): Pair<Job, INPUT>? {
+    private suspend fun getAndReserveJob(executionCapacity: ExecutionCapacity): Job? {
         val job = selectJobWithHighestPriority(executionCapacity)
         if (job != null) {
             log.debug("Job executor selected job: ${job.uuid}")
@@ -83,11 +82,7 @@ internal class JobExecutor<INPUT, RESULT>(
                 log.error("Failed to update job with ID ${job.uuid}: $it")
                 return null
             }
-            val input = persistence.fetchInput(job.uuid).orQuitWith {
-                log.error("Could not fetch job input for ID ${job.uuid}: $it")
-                return null
-            }
-            return Pair(job, input)
+            return job
         } else {
             log.trace("No jobs left to execute.")
             return null
@@ -99,33 +94,7 @@ internal class JobExecutor<INPUT, RESULT>(
             log.warn("Job access failed with error: $it")
             return null
         }
-        return result.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.let(jobPrioritizer)
-    }
-
-    private fun CoroutineScope.launchComputationJob(uuid: String, job: Job, jobInput: INPUT) = launch {
-        // Parsing input may take some time, afterwards, we check if anyone might have "stolen" the job (because of overlapping transactions)
-        val executingInstance = persistence.fetchJob(uuid).orQuitWith {
-            log.error("Failed to fetch job: $it")
-            return@launch
-        }.executingInstance
-        if (executingInstance != myInstanceName) {
-            log.info("Job with ID $uuid was stolen from $myInstanceName by $executingInstance")
-            return@launch
-        } else {
-            val timeout = timeoutComputation(job, jobInput)
-            job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
-            persistence.transaction { updateJob(job) }
-
-            val result: JobResult<RESULT> = runCatching {
-                withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
-                    ?.let { JobResult.success(job.uuid, it) }
-                    ?: JobResult.error(job.uuid, "The job did not finish within the configured timeout of $timeout")
-            }.getOrElse {
-                yield() // for the case that the coroutine was cancelled
-                JobResult.error(job.uuid, "Unexpected exception during computation: ${it.message}")
-            }
-            writeResultToDb(uuid, result)
-        }
+        return result.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.let(jobPrioritizer::invoke)
     }
 
     private fun CoroutineScope.launchCancellationCheck(coroutineJob: CoroutineJob, uuid: String) = launch {
@@ -151,6 +120,44 @@ internal class JobExecutor<INPUT, RESULT>(
             delay(100.milliseconds)
         }
     }
+}
+
+internal class SpecificExecutor<INPUT, RESULT>(
+    private val myInstanceName: String,
+    private val persistence: DataPersistence<INPUT, RESULT>,
+    private val computation: suspend (Job, INPUT) -> RESULT,
+    private val timeoutComputation: (Job, INPUT) -> Duration
+) {
+    internal fun CoroutineScope.launchComputationJob(job: Job) = launch {
+        val uuid = job.uuid
+        val jobInput = persistence.fetchInput(uuid).orQuitWith {
+            log.error("Could not fetch job input for ID ${uuid}: $it")
+            return@launch
+        }
+        // Parsing input may take some time, afterwards, we check if anyone might have "stolen" the job (because of overlapping transactions)
+        val executingInstance = persistence.fetchJob(uuid).orQuitWith {
+            log.error("Failed to fetch job: $it")
+            return@launch
+        }.executingInstance
+        if (executingInstance != myInstanceName) {
+            log.info("Job with ID $uuid was stolen from $myInstanceName by $executingInstance")
+            return@launch
+        } else {
+            val timeout = timeoutComputation(job, jobInput)
+            job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
+            persistence.transaction { updateJob(job) }
+
+            val result: JobResult<RESULT> = runCatching {
+                withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
+                    ?.let { JobResult.success(uuid, it) }
+                    ?: JobResult.error(uuid, "The job did not finish within the configured timeout of $timeout")
+            }.getOrElse {
+                yield() // for the case that the coroutine was cancelled
+                JobResult.error(uuid, "Unexpected exception during computation: ${it.message}")
+            }
+            writeResultToDb(uuid, result)
+        }
+    }
 
     private suspend fun writeResultToDb(id: String, result: JobResult<RESULT>) {
         val job = persistence.fetchJob(id).orQuitWith {
@@ -167,14 +174,14 @@ internal class JobExecutor<INPUT, RESULT>(
         }
         job.finishedAt = LocalDateTime.now()
         job.status = if (result.isSuccess) JobStatus.SUCCESS else JobStatus.FAILURE
-        persistence.transaction {
+        persistence.dataTransaction {
             persistOrUpdateResult(job, result).orQuitWith {
                 // Here it's difficult to tell what we should do with the job, since we don't know why persisting the job failed.
                 // Should we do nothing, reset it to CREATED, or set it to FAILURE?
                 // Currently, we decide to do nothing and just wait for the cleanup tasks to reset the job.
                 // Also, we explicitly log an error, since this situation is generally bad.
                 log.error("Failed to persist result for ID $id: $it")
-                return@transaction
+                return@dataTransaction
             }
             updateJob(job).ifError {
                 log.error("Failed to update the job for ID $id after finishing the computation. The job will remain in an inconsistent state!")

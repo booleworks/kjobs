@@ -50,26 +50,29 @@ interface ExecutionCapacity {
  * Takes a (possibly empty) list of jobs which are currently running on this instance and
  * returns an execution capacity.
  */
-typealias ExecutionCapacityProvider = (List<Job>) -> ExecutionCapacity
+fun interface ExecutionCapacityProvider {
+    operator fun invoke(runningJobs: List<Job>): ExecutionCapacity
+}
 
 /**
  * Return the job with the highest priority from a given list of jobs.
  * If the list of jobs is not empty, the result must not be `null`.
  */
-typealias JobPrioritizer = (List<Job>) -> Job?
+fun interface JobPrioritizer {
+    operator fun invoke(jobs: List<Job>): Job?
+}
 
 /**
  * The default execution capacity provider which returns [AcceptingAnyJob] if the instance
  * is not computing anything and otherwise [AcceptingNoJob].
  */
-val DefaultExecutionCapacityProvider: ExecutionCapacityProvider =
-    { if (it.isEmpty()) AcceptingAnyJob else AcceptingNoJob }
+val DefaultExecutionCapacityProvider: ExecutionCapacityProvider = ExecutionCapacityProvider { if (it.isEmpty()) AcceptingAnyJob else AcceptingNoJob }
 
 /**
  * The default job prioritizer taking the job with the highest priority (i.e. lowest number)
  * and, if there are multiple of such jobs, the one with the earliest creation date.
  */
-val DefaultJobPrioritizer: JobPrioritizer = { jobs -> jobs.minWithOrNull(compareBy({ it.priority }, { it.createdAt })) }
+val DefaultJobPrioritizer: JobPrioritizer = JobPrioritizer { jobs -> jobs.minWithOrNull(compareBy({ it.priority }, { it.createdAt })) }
 
 /**
  * A tag matcher specifies whether an instance can compute jobs with the given list of tags.

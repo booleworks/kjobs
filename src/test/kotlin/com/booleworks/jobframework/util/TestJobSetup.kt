@@ -3,9 +3,10 @@
 
 package com.booleworks.jobframework.util
 
-import com.booleworks.jobframework.boundary.Persistence
-import com.booleworks.jobframework.boundary.impl.RedisPersistence
-import com.booleworks.jobframework.control.JobExecutor
+import com.booleworks.jobframework.boundary.DataPersistence
+import com.booleworks.jobframework.boundary.impl.RedisDataPersistence
+import com.booleworks.jobframework.control.GeneralJobExecutor
+import com.booleworks.jobframework.control.SpecificExecutor
 import com.booleworks.jobframework.data.DefaultExecutionCapacityProvider
 import com.booleworks.jobframework.data.DefaultJobPrioritizer
 import com.booleworks.jobframework.data.ExecutionCapacityProvider
@@ -30,7 +31,7 @@ data class TestInput(val value: Int = 0, val expectedDelay: Int = 1, val throwEx
 
 data class TestResult(val inputValue: Int = 0)
 
-fun newRedisPersistence(redis: RedisServer) = RedisPersistence<TestInput, TestResult>(
+fun newRedisPersistence(redis: RedisServer) = RedisDataPersistence<TestInput, TestResult>(
     JedisPool(redis.host, redis.bindPort),
     { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
     { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
@@ -46,30 +47,31 @@ val defaultComputation: suspend (Job, TestInput) -> TestResult = { _, input ->
     }
 }
 
+const val defaultJobType: String = "TestJob"
 const val defaultInstanceName: String = "ME"
 
 internal fun defaultExecutor(
-    persistence: Persistence<TestInput, TestResult>,
+    persistence: DataPersistence<TestInput, TestResult>,
     myInstanceName: String = defaultInstanceName,
     executionCapacityProvider: ExecutionCapacityProvider = DefaultExecutionCapacityProvider,
     timeout: (Job, TestInput) -> Duration = { _, _ -> 100.seconds },
     jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
     tagMatcher: TagMatcher = TagMatcher.Any,
-) = JobExecutor(
+    specificExecutors: Map<String, SpecificExecutor<*, *>>? = null
+) = GeneralJobExecutor(
     persistence,
     myInstanceName,
-    defaultComputation,
     executionCapacityProvider,
-    timeout,
     jobPrioritizer,
-    tagMatcher
+    tagMatcher,
+    specificExecutors ?: mapOf(defaultJobType to SpecificExecutor<TestInput, TestResult>(myInstanceName, persistence, defaultComputation, timeout)),
 )
 
 class TestException(message: String) : Exception(message)
 
 fun Any.ser() = jacksonObjectMapperWithTime().writeValueAsBytes(this)
 
-fun testWithRedis(block: suspend RedisPersistence<TestInput, TestResult>.() -> Unit) = runBlocking {
+fun testWithRedis(block: suspend RedisDataPersistence<TestInput, TestResult>.() -> Unit) = runBlocking {
     val redis = RedisServer.newRedisServer().start()
     with(newRedisPersistence(redis)) { block() }
     redis.stop()
