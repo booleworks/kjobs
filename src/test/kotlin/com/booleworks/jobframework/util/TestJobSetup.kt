@@ -5,7 +5,7 @@ package com.booleworks.jobframework.util
 
 import com.booleworks.jobframework.boundary.DataPersistence
 import com.booleworks.jobframework.boundary.impl.RedisDataPersistence
-import com.booleworks.jobframework.control.GeneralJobExecutor
+import com.booleworks.jobframework.control.MainJobExecutor
 import com.booleworks.jobframework.control.SpecificExecutor
 import com.booleworks.jobframework.data.DefaultExecutionCapacityProvider
 import com.booleworks.jobframework.data.DefaultJobPrioritizer
@@ -58,7 +58,7 @@ internal fun defaultExecutor(
     jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
     tagMatcher: TagMatcher = TagMatcher.Any,
     specificExecutors: Map<String, SpecificExecutor<*, *>>? = null
-) = GeneralJobExecutor(
+) = MainJobExecutor(
     persistence,
     myInstanceName,
     executionCapacityProvider,

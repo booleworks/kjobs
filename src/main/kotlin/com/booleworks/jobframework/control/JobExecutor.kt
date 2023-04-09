@@ -34,11 +34,8 @@ private val log: Logger = LoggerFactory.getLogger("JobExecutor")
 
 /**
  * The central instance which is responsible to compute jobs.
- *
- * Required parameters are a [persistence] for job access, the [name of this instance][myInstanceName],
- * and the actual [computation] taking a [Job] and its input.
  */
-internal class GeneralJobExecutor(
+internal class MainJobExecutor(
     private val persistence: JobPersistence,
     private val myInstanceName: String,
     private val executionCapacityProvider: ExecutionCapacityProvider,
@@ -122,6 +119,9 @@ internal class GeneralJobExecutor(
     }
 }
 
+/**
+ * The computation-specific part of the executor.
+ */
 internal class SpecificExecutor<INPUT, RESULT>(
     private val myInstanceName: String,
     private val persistence: DataPersistence<INPUT, RESULT>,

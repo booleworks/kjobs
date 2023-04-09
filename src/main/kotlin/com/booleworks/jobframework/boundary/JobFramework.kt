@@ -3,8 +3,8 @@
 
 package com.booleworks.jobframework.boundary
 
-import com.booleworks.jobframework.control.GeneralJobExecutor
 import com.booleworks.jobframework.control.JobApiDef
+import com.booleworks.jobframework.control.MainJobExecutor
 import com.booleworks.jobframework.control.Maintenance
 import com.booleworks.jobframework.control.SpecificExecutor
 import com.booleworks.jobframework.control.scheduleForever
@@ -175,7 +175,7 @@ class JobFrameworkBuilder internal constructor(
         }
     }
 
-    private fun generateJobExecutor(): GeneralJobExecutor = GeneralJobExecutor(
+    private fun generateJobExecutor(): MainJobExecutor = MainJobExecutor(
         jobPersistence,
         myInstanceName,
         executorConfig.executionCapacityProvider,

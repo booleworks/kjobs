@@ -5,6 +5,7 @@ package com.booleworks.jobframework.boundary.impl
 
 import com.booleworks.jobframework.boundary.DataPersistence
 import com.booleworks.jobframework.boundary.DataTransactionalPersistence
+import com.booleworks.jobframework.boundary.JobPersistence
 import com.booleworks.jobframework.boundary.JobTransactionalPersistence
 import com.booleworks.jobframework.control.unreachable
 import com.booleworks.jobframework.data.Heartbeat
@@ -40,8 +41,7 @@ open class RedisDataPersistence<INPUT, RESULT>(
     private val inputDeserializer: (ByteArray) -> INPUT,
     private val resultDeserializer: (ByteArray) -> JobResult<RESULT>,
     private val config: RedisConfig = DefaultRedisConfig(),
-) :
-    DataPersistence<INPUT, RESULT> {
+) : RedisJobPersistence(pool, config), DataPersistence<INPUT, RESULT> {
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = dataTransaction(block)
 
     override suspend fun dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> Unit): PersistenceAccessResult<Unit> =
@@ -62,9 +62,6 @@ open class RedisDataPersistence<INPUT, RESULT>(
             PersistenceAccessResult.success
         }
 
-    override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
-        pool.resource.use { it.hgetAll(config.jobKey(uuid)) }.redisMapToJob(uuid)
-
     override suspend fun fetchInput(uuid: String): PersistenceAccessResult<INPUT> {
         val inputBytes = pool.resource.use { it.get(config.inputKey(uuid).toByteArray()) }
         return PersistenceAccessResult.result(inputDeserializer(inputBytes))
@@ -74,6 +71,55 @@ open class RedisDataPersistence<INPUT, RESULT>(
         val resultBytes = pool.resource.use { it.get(config.resultKey(uuid).toByteArray()) }
         return PersistenceAccessResult.result(resultDeserializer(resultBytes))
     }
+}
+
+/**
+ * [DataTransactionalPersistence] implementation for Jedis.
+ *
+ * Note that all methods will always return [PersistenceAccessResult.success] since commands within transaction are not yet
+ * executed, so the only real kind of error would be connection problems which are ok to be caught in [RedisDataPersistence.dataTransaction].
+ */
+open class RedisDataTransactionalPersistence<INPUT, RESULT>(
+    private val transaction: Transaction,
+    private val inputSerializer: (INPUT) -> ByteArray,
+    private val resultSerializer: (JobResult<RESULT>) -> ByteArray,
+    private val config: RedisConfig
+) : RedisJobTransactionalPersistence(transaction, config), DataTransactionalPersistence<INPUT, RESULT> {
+
+    override suspend fun persistInput(job: Job, input: INPUT): PersistenceAccessResult<Unit> {
+        transaction.set(config.inputKey(job.uuid).toByteArray(), inputSerializer(input))
+        return PersistenceAccessResult.success
+    }
+
+    override suspend fun persistOrUpdateResult(job: Job, result: JobResult<RESULT>): PersistenceAccessResult<Unit> {
+        transaction.set(config.resultKey(job.uuid).toByteArray(), resultSerializer(result))
+        return PersistenceAccessResult.success
+    }
+}
+
+open class RedisJobPersistence(
+    private val pool: JedisPool,
+    private val config: RedisConfig = DefaultRedisConfig(),
+) : JobPersistence {
+    override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = pool.resource.use { jedis ->
+        jedis.multi().run {
+            runCatching {
+                RedisJobTransactionalPersistence(this@run, config)
+                    .run { block() }
+                    .also { exec() }
+            }.onFailure {
+                val message = it.message ?: "Undefined error"
+                logger.error("Jedis transaction failed with: $message", it)
+                val discardResult = discard()
+                logger.error("Discarded the transaction with result: $discardResult")
+                return PersistenceAccessResult.internalError(message)
+            }
+        }
+        PersistenceAccessResult.success
+    }
+
+    override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
+        pool.resource.use { it.hgetAll(config.jobKey(uuid)) }.redisMapToJob(uuid)
 
     override suspend fun fetchHeartBeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> {
         val heartbeatKeys = pool.resource.use { it.keys(config.heartbeatPattern) }.toTypedArray()
@@ -107,32 +153,12 @@ open class RedisDataPersistence<INPUT, RESULT>(
     }
 }
 
-/**
- * [DataTransactionalPersistence] implementation for Jedis.
- *
- * Note that all methods will always return [PersistenceAccessResult.success] since commands within transaction are not yet
- * executed, so the only real kind of error would be connection problems which are ok to be caught in [RedisDataPersistence.dataTransaction].
- */
-open class RedisDataTransactionalPersistence<INPUT, RESULT>(
+open class RedisJobTransactionalPersistence(
     private val transaction: Transaction,
-    private val inputSerializer: (INPUT) -> ByteArray,
-    private val resultSerializer: (JobResult<RESULT>) -> ByteArray,
     private val config: RedisConfig
-) :
-    DataTransactionalPersistence<INPUT, RESULT> {
-
+) : JobTransactionalPersistence {
     override suspend fun persistJob(job: Job): PersistenceAccessResult<Unit> {
         transaction.hset(config.jobKey(job.uuid), job.toRedisMap())
-        return PersistenceAccessResult.success
-    }
-
-    override suspend fun persistInput(job: Job, input: INPUT): PersistenceAccessResult<Unit> {
-        transaction.set(config.inputKey(job.uuid).toByteArray(), inputSerializer(input))
-        return PersistenceAccessResult.success
-    }
-
-    override suspend fun persistOrUpdateResult(job: Job, result: JobResult<RESULT>): PersistenceAccessResult<Unit> {
-        transaction.set(config.resultKey(job.uuid).toByteArray(), resultSerializer(result))
         return PersistenceAccessResult.success
     }
 
