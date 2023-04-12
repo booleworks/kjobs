@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.kjobs.boundary
+package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.control.JobApiDef
 import com.booleworks.kjobs.control.MainJobExecutor

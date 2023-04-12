@@ -5,11 +5,11 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.booleworks</groupId>
   <artifactId>kjobs</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>1.0.0-RC1</version>
   <packaging>jar</packaging>
 
   <name>Kotlin Job Framework</name>
-  <description>Job Framework for Asynchronous Webservices in Kotlin and Ktor</description>
+  <description>A Job Framework for Asynchronous Webservices in Kotlin and Ktor</description>
 
   <developers>
     <developer>
@@ -40,7 +40,6 @@
     <version.assertj>3.24.2</version.assertj>
     <version.mockk>1.13.4</version.mockk>
     <version.jedis-mock>1.0.7</version.jedis-mock>
-    <version.coroutines-test>1.6.4</version.coroutines-test>
     <version.jacoco>0.8.8</version.jacoco>
     <version.dokka>1.8.10</version.dokka>
     <version.detekt>1.22.0</version.detekt>
@@ -258,12 +257,6 @@
       <groupId>io.ktor</groupId>
       <artifactId>ktor-client-mock-jvm</artifactId>
       <version>${version.ktor}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.jetbrains.kotlinx</groupId>
-      <artifactId>kotlinx-coroutines-test-jvm</artifactId>
-      <version>${version.coroutines-test}</version>
       <scope>test</scope>
     </dependency>
     <dependency>

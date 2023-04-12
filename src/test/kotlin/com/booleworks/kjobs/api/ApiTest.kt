@@ -3,7 +3,6 @@
 
 package com.booleworks.kjobs.api
 
-import com.booleworks.kjobs.boundary.JobFramework
 import com.booleworks.kjobs.util.Either
 import com.booleworks.kjobs.util.TestInput
 import com.booleworks.kjobs.util.TestResult

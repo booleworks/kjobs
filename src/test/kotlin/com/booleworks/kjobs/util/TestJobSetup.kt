@@ -3,8 +3,8 @@
 
 package com.booleworks.kjobs.util
 
-import com.booleworks.kjobs.boundary.DataPersistence
-import com.booleworks.kjobs.boundary.impl.RedisDataPersistence
+import com.booleworks.kjobs.api.DataPersistence
+import com.booleworks.kjobs.api.impl.RedisDataPersistence
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.SpecificExecutor
 import com.booleworks.kjobs.data.DefaultExecutionCapacityProvider

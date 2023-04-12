@@ -3,8 +3,8 @@
 
 package com.booleworks.kjobs.control
 
-import com.booleworks.kjobs.boundary.DataPersistence
-import com.booleworks.kjobs.boundary.JobPersistence
+import com.booleworks.kjobs.api.DataPersistence
+import com.booleworks.kjobs.api.JobPersistence
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus

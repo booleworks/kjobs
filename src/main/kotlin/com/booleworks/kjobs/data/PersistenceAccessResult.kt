@@ -3,8 +3,8 @@
 
 package com.booleworks.kjobs.data
 
-import com.booleworks.kjobs.boundary.DataPersistence
-import com.booleworks.kjobs.boundary.DataTransactionalPersistence
+import com.booleworks.kjobs.api.DataPersistence
+import com.booleworks.kjobs.api.DataTransactionalPersistence
 import com.booleworks.kjobs.data.PersistenceAccessError.InternalError
 import com.booleworks.kjobs.data.PersistenceAccessError.NotFound
 import com.booleworks.kjobs.util.Either
