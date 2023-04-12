@@ -166,14 +166,14 @@ internal class SpecificExecutor<INPUT, RESULT>(
         }
         if (job.executingInstance != myInstanceName) {
             log.warn("Job with ID $id was stolen from $myInstanceName by ${job.executingInstance} after the computation!")
-            if (result.isSuccess && job.status != JobStatus.SUCCESS) {
+            if (result.success() && job.status != JobStatus.SUCCESS) {
                 job.executingInstance = myInstanceName
             } else {
                 return
             }
         }
         job.finishedAt = LocalDateTime.now()
-        job.status = if (result.isSuccess) JobStatus.SUCCESS else JobStatus.FAILURE
+        job.status = if (result.success()) JobStatus.SUCCESS else JobStatus.FAILURE
         persistence.dataTransaction {
             persistOrUpdateResult(job, result).orQuitWith {
                 // Here it's difficult to tell what we should do with the job, since we don't know why persisting the job failed.

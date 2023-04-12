@@ -203,19 +203,6 @@
       <version>${version.slf4j}</version>
     </dependency>
 
-    <!-- Jackson -->
-    <dependency>
-      <groupId>io.ktor</groupId>
-      <artifactId>ktor-serialization-jackson-jvm</artifactId>
-      <version>${version.ktor}</version>
-    </dependency>
-
-    <dependency>
-      <groupId>com.fasterxml.jackson.datatype</groupId>
-      <artifactId>jackson-datatype-jsr310</artifactId>
-      <version>${version.jackson}</version>
-    </dependency>
-
     <!-- Redis -->
     <dependency>
       <groupId>redis.clients</groupId>
@@ -240,6 +227,18 @@
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-test-junit5</artifactId>
       <version>${version.kotlin}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.ktor</groupId>
+      <artifactId>ktor-serialization-jackson-jvm</artifactId>
+      <version>${version.ktor}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+      <version>${version.jackson}</version>
       <scope>test</scope>
     </dependency>
     <dependency>

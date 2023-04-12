@@ -3,7 +3,6 @@
 
 package com.booleworks.kjobs.data
 
-import com.fasterxml.jackson.annotation.JsonIgnore
 import java.time.LocalDateTime
 
 /**
@@ -46,8 +45,8 @@ class Job(
  * The result of a job with ID [uuid]. It is guaranteed that either [result] (x)or [error] is non-`null`.
  */
 class JobResult<out T> private constructor(val uuid: String, val result: T?, val error: String?) {
-    @JsonIgnore
-    val isSuccess = result != null
+
+    internal fun success() = result != null
 
     companion object {
         fun <T> success(uuid: String, result: T) = JobResult(uuid, result, null)
