@@ -41,7 +41,7 @@
     <version.mockk>1.13.4</version.mockk>
     <version.jedis-mock>1.0.7</version.jedis-mock>
     <version.jacoco>0.8.8</version.jacoco>
-    <version.dokka>1.8.10</version.dokka>
+    <version.dokka>1.7.20</version.dokka>
     <version.detekt>1.22.0</version.detekt>
     <version.nexus-staging>1.6.13</version.nexus-staging>
     <version.maven-gpg>1.6</version.maven-gpg>
@@ -149,9 +149,10 @@
         <version>${version.dokka}</version>
         <executions>
           <execution>
-            <phase>pre-site</phase>
+            <phase>prepare-package</phase>
             <goals>
               <goal>dokka</goal>
+              <goal>javadocJar</goal>
             </goals>
           </execution>
         </executions>
@@ -269,6 +270,12 @@
       <groupId>com.github.fppt</groupId>
       <artifactId>jedis-mock</artifactId>
       <version>${version.jedis-mock}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <version>${version.logback}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

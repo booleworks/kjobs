@@ -7,6 +7,7 @@ import com.booleworks.kjobs.control.JobApiDef
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
 import com.booleworks.kjobs.control.SpecificExecutor
+import com.booleworks.kjobs.control.SyncMockConfiguration
 import com.booleworks.kjobs.control.scheduleForever
 import com.booleworks.kjobs.control.setupJobApi
 import com.booleworks.kjobs.data.DefaultExecutionCapacityProvider
@@ -26,6 +27,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -202,6 +204,7 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
 ) {
     private val apiConfig: ApiConfig<INPUT> = ApiConfig()
     private val jobConfig: JobConfig<INPUT> = JobConfig()
+    private val syncConfig: SynchronousResourceConfig<INPUT> = SynchronousResourceConfig()
 
     /**
      * Provides further configuration options about the API.
@@ -212,6 +215,11 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
      * Provides further configuration options about the handling of jobs.
      */
     fun jobConfig(configuration: JobConfig<INPUT>.() -> Unit) = configuration(jobConfig)
+
+    /**
+     * Provides configuration options for the synchronous resource.
+     */
+    fun synchronousResourceConfig(configuration: SynchronousResourceConfig<INPUT>.() -> Unit) = configuration(syncConfig)
 
     /**
      * Further configuration options for the API.
@@ -241,6 +249,31 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
         var timeoutComputation: (Job, INPUT) -> Duration = { _, _ -> 24.hours },
     )
 
+    /**
+     * Configuration options for the synchronous resource.
+     *
+     * The synchronous resource is a wrapper around the asynchronous resources (`submit`, `status`, `result`, etc). It does not perform the computation itself,
+     * but (like the asynchronous API) stores the job in the database and then waits for the job to be computed.
+     *
+     * To accelerate the selection of such jobs you might want to configure a [custom priority provider][customPriorityProvider].
+     *
+     * Note that even with a small [checkInterval] and if there are no other jobs running, it might take up to the duration specified in
+     * [JobFrameworkBuilder.MaintenanceConfig.jobCheckInterval] until the computation of the job actually starts.
+     *
+     * By default, the synchronous API is disabled.
+     * @param enabled whether the synchronous resource is enabled for this API
+     * @param checkInterval the interval in which the job status should be checked after it was submitted
+     * @param maxWaitingTime the maximum time to wait for the job to complete. If this time is exceeded, status 400 is returned including the information
+     * about the UUID of the generated job.
+     * @param customPriorityProvider a custom priority provider for jobs from the synchronous resource
+     */
+    class SynchronousResourceConfig<INPUT>(
+        var enabled: Boolean = false,
+        var checkInterval: Duration = 200.milliseconds,
+        var maxWaitingTime: Duration = 1.hours,
+        var customPriorityProvider: (INPUT) -> Int = { 0 }
+    )
+
     internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> = SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation)
 
     internal fun build(enableCancellation: Boolean) = with(route) {
@@ -256,7 +289,8 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
                 jobConfig.tagProvider,
                 jobConfig.customInfoProvider,
                 jobConfig.priorityProvider,
-                enableCancellation
+                enableCancellation,
+                SyncMockConfiguration(syncConfig.enabled, syncConfig.checkInterval, syncConfig.maxWaitingTime, syncConfig.customPriorityProvider),
             )
         )
     }

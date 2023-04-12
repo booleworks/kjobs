@@ -10,6 +10,7 @@ import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.orQuitWith
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.InternalServerError
 import io.ktor.http.HttpStatusCode.Companion.NotFound
 import io.ktor.server.application.ApplicationCall
@@ -21,8 +22,10 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.util.pipeline.PipelineContext
+import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.util.*
+import kotlin.time.Duration
 
 /**
  * Setup all routings according to a given [JobApiDef].
@@ -57,8 +60,7 @@ import java.util.*
 internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = with(def) {
     route(basePath ?: "") {
         post("submit") {
-            val input = inputReceiver()
-            submit(def, input)
+            submit(def, inputReceiver(), def.priorityProvider)?.let { call.respond(it) }
         }
 
         get("status/{uuid}") {
@@ -105,6 +107,36 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
                 }
             }
         }
+
+        if (syncMockConfig.enabled) {
+            post("synchronous") {
+                val uuid = submit(def, inputReceiver(), syncMockConfig.priorityProvider) ?: return@post
+                var status = JobStatus.CREATED
+                val timeout = LocalDateTime.now().plusSeconds(syncMockConfig.maxWaitingTime.inWholeSeconds)
+                while (status in setOf(JobStatus.CREATED, JobStatus.RUNNING) && LocalDateTime.now() < timeout) {
+                    delay(syncMockConfig.checkInterval)
+                    status = persistence.fetchJob(uuid).orQuitWith {
+                        call.respondText("Synchronous computation failed during job access: ${it.message}", status = InternalServerError)
+                        return@post
+                    }.status
+                }
+                if (status != JobStatus.SUCCESS) {
+                    if (LocalDateTime.now() > timeout) {
+                        call.respondText(
+                            "The job did not finish within the timeout of ${syncMockConfig.maxWaitingTime}. " +
+                                    "You may be able to retrieve the result later using the job id $uuid.", status = BadRequest
+                        )
+                    } else {
+                        call.respondText("Job finished in unexpected status $status", status = InternalServerError)
+                    }
+                } else {
+                    val result = persistence.fetchResult(uuid).orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@post }
+                    result.result?.let { resultResponder(it) } ?: run {
+                        call.respondText("Expected the JobResult for ID $uuid to have a result.", status = InternalServerError)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -141,27 +173,38 @@ internal class JobApiDef<INPUT, RESULT>(
     val customInfoProvider: (INPUT) -> String,
     val priorityProvider: (INPUT) -> Int,
     val enableCancellation: Boolean,
+    val syncMockConfig: SyncMockConfiguration<INPUT>
 )
 
-private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.submit(def: JobApiDef<INPUT, *>, input: INPUT) =
-    with(def) {
-        inputValidation(input).takeIf { it.isNotEmpty() }?.let {
-            call.respond(HttpStatusCode.BadRequest, it.joinToString(", "))
-            return
-        }
-        val uuid = UUID.randomUUID().toString()
-        val tags = tagProvider(input)
-        val customInfo = customInfoProvider(input)
-        val job = Job(uuid, jobType, tags, customInfo, priorityProvider(input), myInstanceName, LocalDateTime.now(), JobStatus.CREATED)
-        persistence.dataTransaction {
-            persistJob(job)
-            persistInput(job, input)
-        }.orQuitWith {
-            call.respond(InternalServerError, "Failed to persist job: $it")
-            return
-        }
-        call.respondText(uuid)
+internal class SyncMockConfiguration<INPUT>(
+    val enabled: Boolean,
+    val checkInterval: Duration,
+    val maxWaitingTime: Duration,
+    val priorityProvider: (INPUT) -> Int
+)
+
+private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.submit(
+    def: JobApiDef<INPUT, *>,
+    input: INPUT,
+    customPriorityProvider: (INPUT) -> Int
+): String? = with(def) {
+    inputValidation(input).takeIf { it.isNotEmpty() }?.let {
+        call.respond(HttpStatusCode.BadRequest, it.joinToString(", "))
+        return null
     }
+    val uuid = UUID.randomUUID().toString()
+    val tags = tagProvider(input)
+    val customInfo = customInfoProvider(input)
+    val job = Job(uuid, jobType, tags, customInfo, customPriorityProvider(input), myInstanceName, LocalDateTime.now(), JobStatus.CREATED)
+    persistence.dataTransaction {
+        persistJob(job)
+        persistInput(job, input)
+    }.orQuitWith {
+        call.respondText("Failed to persist job: $it", status = InternalServerError)
+        return null
+    }
+    uuid
+}
 
 private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: DataPersistence<*, *>): Job? {
     return persistence.fetchJob(uuid.toString()).orQuitWith {
@@ -179,7 +222,7 @@ private suspend fun PipelineContext<Unit, ApplicationCall>.status(uuid: UUID, pe
 
 private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(job: Job, persistence: DataPersistence<*, RESULT>): JobResult<RESULT>? =
     persistence.fetchResult(job.uuid).orQuitWith {
-        call.respondText("Failed to retrieve job result for ID ${job.uuid}: $it")
+        call.respondText("Failed to retrieve job result for ID ${job.uuid}: $it", status = InternalServerError)
         return null
     }
 
