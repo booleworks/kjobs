@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.boundary.impl
+package com.booleworks.kjobs.boundary.impl
 
-import com.booleworks.jobframework.boundary.DataPersistence
-import com.booleworks.jobframework.boundary.DataTransactionalPersistence
-import com.booleworks.jobframework.boundary.JobPersistence
-import com.booleworks.jobframework.boundary.JobTransactionalPersistence
-import com.booleworks.jobframework.control.unreachable
-import com.booleworks.jobframework.data.Heartbeat
-import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobResult
-import com.booleworks.jobframework.data.JobStatus
-import com.booleworks.jobframework.data.PersistenceAccessResult
-import com.booleworks.jobframework.data.internalError
-import com.booleworks.jobframework.data.mapResult
-import com.booleworks.jobframework.data.result
-import com.booleworks.jobframework.data.success
-import com.booleworks.jobframework.data.successful
-import com.booleworks.jobframework.util.Either
+import com.booleworks.kjobs.boundary.DataPersistence
+import com.booleworks.kjobs.boundary.DataTransactionalPersistence
+import com.booleworks.kjobs.boundary.JobPersistence
+import com.booleworks.kjobs.boundary.JobTransactionalPersistence
+import com.booleworks.kjobs.control.unreachable
+import com.booleworks.kjobs.data.Heartbeat
+import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobResult
+import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.PersistenceAccessResult
+import com.booleworks.kjobs.data.internalError
+import com.booleworks.kjobs.data.mapResult
+import com.booleworks.kjobs.data.result
+import com.booleworks.kjobs.data.success
+import com.booleworks.kjobs.data.successful
+import com.booleworks.kjobs.util.Either
 import org.slf4j.LoggerFactory
 import redis.clients.jedis.Jedis
 import redis.clients.jedis.JedisPool

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.util
+package com.booleworks.kjobs.util
 
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.SerializationFeature

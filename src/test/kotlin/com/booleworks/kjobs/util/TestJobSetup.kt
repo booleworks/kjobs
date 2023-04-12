@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.util
+package com.booleworks.kjobs.util
 
-import com.booleworks.jobframework.boundary.DataPersistence
-import com.booleworks.jobframework.boundary.impl.RedisDataPersistence
-import com.booleworks.jobframework.control.MainJobExecutor
-import com.booleworks.jobframework.control.SpecificExecutor
-import com.booleworks.jobframework.data.DefaultExecutionCapacityProvider
-import com.booleworks.jobframework.data.DefaultJobPrioritizer
-import com.booleworks.jobframework.data.ExecutionCapacityProvider
-import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobPrioritizer
-import com.booleworks.jobframework.data.TagMatcher
+import com.booleworks.kjobs.boundary.DataPersistence
+import com.booleworks.kjobs.boundary.impl.RedisDataPersistence
+import com.booleworks.kjobs.control.MainJobExecutor
+import com.booleworks.kjobs.control.SpecificExecutor
+import com.booleworks.kjobs.data.DefaultExecutionCapacityProvider
+import com.booleworks.kjobs.data.DefaultJobPrioritizer
+import com.booleworks.kjobs.data.ExecutionCapacityProvider
+import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobPrioritizer
+import com.booleworks.kjobs.data.TagMatcher
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper

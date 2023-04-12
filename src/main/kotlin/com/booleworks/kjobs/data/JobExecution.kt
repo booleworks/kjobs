@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.data
+package com.booleworks.kjobs.data
 
-import com.booleworks.jobframework.data.ExecutionCapacity.Companion.AcceptingAnyJob
-import com.booleworks.jobframework.data.ExecutionCapacity.Companion.AcceptingNoJob
+import com.booleworks.kjobs.data.ExecutionCapacity.Companion.AcceptingAnyJob
+import com.booleworks.kjobs.data.ExecutionCapacity.Companion.AcceptingNoJob
 
 /**
  * Interface for specifying the execution capacity of an instance.

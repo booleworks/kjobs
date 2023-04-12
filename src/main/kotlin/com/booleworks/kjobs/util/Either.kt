@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.util
+package com.booleworks.kjobs.util
 
-import com.booleworks.jobframework.util.Either.Left
-import com.booleworks.jobframework.util.Either.Right
+import com.booleworks.kjobs.util.Either.Left
+import com.booleworks.kjobs.util.Either.Right
 
 /**
  * An implementation of Either, inspired by [Arrow](https://arrow-kt.io/)

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.control
+package com.booleworks.kjobs.control
 
-import com.booleworks.jobframework.boundary.DataPersistence
-import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobResult
-import com.booleworks.jobframework.data.JobStatus
-import com.booleworks.jobframework.data.PersistenceAccessError
-import com.booleworks.jobframework.data.orQuitWith
+import com.booleworks.kjobs.boundary.DataPersistence
+import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobResult
+import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.PersistenceAccessError
+import com.booleworks.kjobs.data.orQuitWith
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.HttpStatusCode.Companion.InternalServerError
 import io.ktor.http.HttpStatusCode.Companion.NotFound

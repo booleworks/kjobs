@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.control
+package com.booleworks.kjobs.control
 
-import com.booleworks.jobframework.boundary.DataPersistence
-import com.booleworks.jobframework.boundary.JobPersistence
-import com.booleworks.jobframework.data.ExecutionCapacity
-import com.booleworks.jobframework.data.ExecutionCapacityProvider
-import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobPrioritizer
-import com.booleworks.jobframework.data.JobResult
-import com.booleworks.jobframework.data.JobStatus
-import com.booleworks.jobframework.data.TagMatcher
-import com.booleworks.jobframework.data.ifError
-import com.booleworks.jobframework.data.orQuitWith
+import com.booleworks.kjobs.boundary.DataPersistence
+import com.booleworks.kjobs.boundary.JobPersistence
+import com.booleworks.kjobs.data.ExecutionCapacity
+import com.booleworks.kjobs.data.ExecutionCapacityProvider
+import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobPrioritizer
+import com.booleworks.kjobs.data.JobResult
+import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.TagMatcher
+import com.booleworks.kjobs.data.ifError
+import com.booleworks.kjobs.data.orQuitWith
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope

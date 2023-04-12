@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.control
+package com.booleworks.kjobs.control
 
-import com.booleworks.jobframework.boundary.DataPersistence
-import com.booleworks.jobframework.boundary.JobPersistence
-import com.booleworks.jobframework.data.Heartbeat
-import com.booleworks.jobframework.data.JobResult
-import com.booleworks.jobframework.data.JobStatus
-import com.booleworks.jobframework.data.ifError
-import com.booleworks.jobframework.data.orQuitWith
-import com.booleworks.jobframework.util.getOrElse
+import com.booleworks.kjobs.boundary.DataPersistence
+import com.booleworks.kjobs.boundary.JobPersistence
+import com.booleworks.kjobs.data.Heartbeat
+import com.booleworks.kjobs.data.JobResult
+import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.ifError
+import com.booleworks.kjobs.data.orQuitWith
+import com.booleworks.kjobs.util.getOrElse
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime

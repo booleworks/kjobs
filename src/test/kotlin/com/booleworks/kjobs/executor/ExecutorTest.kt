@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.executor
+package com.booleworks.kjobs.executor
 
-import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobResult
-import com.booleworks.jobframework.data.JobStatus
-import com.booleworks.jobframework.util.TestInput
-import com.booleworks.jobframework.util.TestResult
-import com.booleworks.jobframework.util.defaultExecutor
-import com.booleworks.jobframework.util.defaultInstanceName
-import com.booleworks.jobframework.util.defaultJobType
-import com.booleworks.jobframework.util.right
-import com.booleworks.jobframework.util.testWithRedis
+import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobResult
+import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.util.TestInput
+import com.booleworks.kjobs.util.TestResult
+import com.booleworks.kjobs.util.defaultExecutor
+import com.booleworks.kjobs.util.defaultInstanceName
+import com.booleworks.kjobs.util.defaultJobType
+import com.booleworks.kjobs.util.right
+import com.booleworks.kjobs.util.testWithRedis
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime.now

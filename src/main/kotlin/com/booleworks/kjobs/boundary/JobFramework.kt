@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.boundary
+package com.booleworks.kjobs.boundary
 
-import com.booleworks.jobframework.control.JobApiDef
-import com.booleworks.jobframework.control.MainJobExecutor
-import com.booleworks.jobframework.control.Maintenance
-import com.booleworks.jobframework.control.SpecificExecutor
-import com.booleworks.jobframework.control.scheduleForever
-import com.booleworks.jobframework.control.setupJobApi
-import com.booleworks.jobframework.data.DefaultExecutionCapacityProvider
-import com.booleworks.jobframework.data.DefaultJobPrioritizer
-import com.booleworks.jobframework.data.ExecutionCapacityProvider
-import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobPrioritizer
-import com.booleworks.jobframework.data.JobStatus
-import com.booleworks.jobframework.data.TagMatcher
-import com.booleworks.jobframework.util.Either
+import com.booleworks.kjobs.control.JobApiDef
+import com.booleworks.kjobs.control.MainJobExecutor
+import com.booleworks.kjobs.control.Maintenance
+import com.booleworks.kjobs.control.SpecificExecutor
+import com.booleworks.kjobs.control.scheduleForever
+import com.booleworks.kjobs.control.setupJobApi
+import com.booleworks.kjobs.data.DefaultExecutionCapacityProvider
+import com.booleworks.kjobs.data.DefaultJobPrioritizer
+import com.booleworks.kjobs.data.ExecutionCapacityProvider
+import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobPrioritizer
+import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.TagMatcher
+import com.booleworks.kjobs.util.Either
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall

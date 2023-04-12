@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.api
+package com.booleworks.kjobs.api
 
-import com.booleworks.jobframework.boundary.JobFramework
-import com.booleworks.jobframework.util.Either
-import com.booleworks.jobframework.util.TestInput
-import com.booleworks.jobframework.util.TestResult
-import com.booleworks.jobframework.util.defaultComputation
-import com.booleworks.jobframework.util.defaultInstanceName
-import com.booleworks.jobframework.util.defaultJobType
-import com.booleworks.jobframework.util.defaultRedis
-import com.booleworks.jobframework.util.newRedisPersistence
-import com.booleworks.jobframework.util.ser
-import com.booleworks.jobframework.util.testJobFramework
+import com.booleworks.kjobs.boundary.JobFramework
+import com.booleworks.kjobs.util.Either
+import com.booleworks.kjobs.util.TestInput
+import com.booleworks.kjobs.util.TestResult
+import com.booleworks.kjobs.util.defaultComputation
+import com.booleworks.kjobs.util.defaultInstanceName
+import com.booleworks.kjobs.util.defaultJobType
+import com.booleworks.kjobs.util.defaultRedis
+import com.booleworks.kjobs.util.newRedisPersistence
+import com.booleworks.kjobs.util.ser
+import com.booleworks.kjobs.util.testJobFramework
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.request.get

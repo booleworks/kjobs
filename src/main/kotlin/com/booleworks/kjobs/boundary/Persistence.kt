@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.boundary
+package com.booleworks.kjobs.boundary
 
-import com.booleworks.jobframework.data.Heartbeat
-import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobResult
-import com.booleworks.jobframework.data.JobStatus
-import com.booleworks.jobframework.data.PersistenceAccessResult
+import com.booleworks.kjobs.data.Heartbeat
+import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobResult
+import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.PersistenceAccessResult
 import java.time.LocalDateTime
 
 /**

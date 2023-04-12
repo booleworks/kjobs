@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.data
+package com.booleworks.kjobs.data
 
-import com.booleworks.jobframework.boundary.DataPersistence
-import com.booleworks.jobframework.boundary.DataTransactionalPersistence
-import com.booleworks.jobframework.data.PersistenceAccessError.InternalError
-import com.booleworks.jobframework.data.PersistenceAccessError.NotFound
-import com.booleworks.jobframework.util.Either
+import com.booleworks.kjobs.boundary.DataPersistence
+import com.booleworks.kjobs.boundary.DataTransactionalPersistence
+import com.booleworks.kjobs.data.PersistenceAccessError.InternalError
+import com.booleworks.kjobs.data.PersistenceAccessError.NotFound
+import com.booleworks.kjobs.util.Either
 
 /**
  * The result of an interaction with [DataPersistence] or [DataTransactionalPersistence].

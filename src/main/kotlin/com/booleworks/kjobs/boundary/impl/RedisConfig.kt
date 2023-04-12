@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.boundary.impl
+package com.booleworks.kjobs.boundary.impl
 
 /**
  * Configuration for the [RedisDataPersistence].

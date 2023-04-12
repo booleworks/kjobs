@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.data
+package com.booleworks.kjobs.data
 
 import com.fasterxml.jackson.annotation.JsonIgnore
 import java.time.LocalDateTime

@@ -1,6 +1,6 @@
-package com.booleworks.jobframework.data
+package com.booleworks.kjobs.data
 
-import com.booleworks.jobframework.control.Maintenance
+import com.booleworks.kjobs.control.Maintenance
 import java.time.LocalDateTime
 
 /**

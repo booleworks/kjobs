@@ -4,12 +4,12 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.booleworks</groupId>
-  <artifactId>job-framework</artifactId>
+  <artifactId>kjobs</artifactId>
   <version>1.0.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
-  <name>Async Job Framework</name>
-  <description>A Job Framework for Asynchronous Webservices</description>
+  <name>Kotlin Job Framework</name>
+  <description>Job Framework for Asynchronous Webservices in Kotlin and Ktor</description>
 
   <developers>
     <developer>
@@ -44,6 +44,8 @@
     <version.jacoco>0.8.8</version.jacoco>
     <version.dokka>1.8.10</version.dokka>
     <version.detekt>1.22.0</version.detekt>
+    <version.nexus-staging>1.6.13</version.nexus-staging>
+    <version.maven-gpg>1.6</version.maven-gpg>
 
     <version.maven-surefire-plugin>3.0.0</version.maven-surefire-plugin>
     <version.maven-source>3.2.1</version.maven-source>
@@ -193,35 +195,12 @@
       <artifactId>ktor-server-cio-jvm</artifactId>
       <version>${version.ktor}</version>
     </dependency>
-    <dependency>
-      <groupId>io.ktor</groupId>
-      <artifactId>ktor-server-status-pages-jvm</artifactId>
-      <version>${version.ktor}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.ktor</groupId>
-      <artifactId>ktor-server-call-logging-jvm</artifactId>
-      <version>${version.ktor}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.ktor</groupId>
-      <artifactId>ktor-server-cors-jvm</artifactId>
-      <version>${version.ktor}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.ktor</groupId>
-      <artifactId>ktor-server-content-negotiation-jvm</artifactId>
-      <version>${version.ktor}</version>
-    </dependency>
+
+    <!-- Logging -->
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
       <version>${version.slf4j}</version>
-    </dependency>
-    <dependency>
-      <groupId>ch.qos.logback</groupId>
-      <artifactId>logback-classic</artifactId>
-      <version>${version.logback}</version>
     </dependency>
 
     <!-- Jackson -->
@@ -271,6 +250,12 @@
     </dependency>
     <dependency>
       <groupId>io.ktor</groupId>
+      <artifactId>ktor-server-content-negotiation-jvm</artifactId>
+      <version>${version.ktor}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.ktor</groupId>
       <artifactId>ktor-client-mock-jvm</artifactId>
       <version>${version.ktor}</version>
       <scope>test</scope>
@@ -294,4 +279,49 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <!-- Deploy to Maven Central -->
+          <plugin>
+            <groupId>org.sonatype.plugins</groupId>
+            <artifactId>nexus-staging-maven-plugin</artifactId>
+            <version>${version.nexus-staging}</version>
+            <extensions>true</extensions>
+            <configuration>
+              <serverId>ossrh-s01</serverId>
+              <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
+              <autoReleaseAfterClose>false</autoReleaseAfterClose>
+            </configuration>
+          </plugin>
+
+          <!-- Sign components -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>${version.maven-gpg}</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
+  <distributionManagement>
+    <snapshotRepository>
+      <id>ossrh-s01</id>
+      <url>https://s01.oss.sonatype.org/content/repositories/snapshots/</url>
+    </snapshotRepository>
+  </distributionManagement>
 </project>

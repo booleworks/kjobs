@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.jobframework.executor
+package com.booleworks.kjobs.executor
 
-import com.booleworks.jobframework.control.Maintenance
-import com.booleworks.jobframework.control.scheduleForever
-import com.booleworks.jobframework.data.Job
-import com.booleworks.jobframework.data.JobStatus
-import com.booleworks.jobframework.util.defaultInstanceName
-import com.booleworks.jobframework.util.defaultJobType
-import com.booleworks.jobframework.util.right
-import com.booleworks.jobframework.util.testWithRedis
+import com.booleworks.kjobs.control.Maintenance
+import com.booleworks.kjobs.control.scheduleForever
+import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.util.defaultInstanceName
+import com.booleworks.kjobs.util.defaultJobType
+import com.booleworks.kjobs.util.right
+import com.booleworks.kjobs.util.testWithRedis
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
