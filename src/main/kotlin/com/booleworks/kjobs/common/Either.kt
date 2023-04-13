@@ -1,26 +1,43 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.kjobs.util
+package com.booleworks.kjobs.common
 
-import com.booleworks.kjobs.util.Either.Left
-import com.booleworks.kjobs.util.Either.Right
+import com.booleworks.kjobs.common.Either.Left
+import com.booleworks.kjobs.common.Either.Right
+import com.booleworks.kjobs.data.PersistenceAccessResult
 
 /**
- * An implementation of Either, inspired by [Arrow](https://arrow-kt.io/)
+ * An implementation of Either, inspired by [Arrow](https://arrow-kt.io/).
+ * It holds either a [Left] or a [Right] value.
  *
  * Can especially be used for computation results where, by convention, [Left]
  * would hold an error and [Right] would hold the result.
+ *
+ * The type alias [PersistenceAccessResult] is defined base of this class.
  */
 sealed class Either<out L, out R> {
+    /**
+     * Whether this is a [Left] value or not (if not, it is a [Right] value).
+     */
     abstract val isLeft: Boolean
+
+    /**
+     * Whether this is a [Right] value of not (if not, it is a [Left] value).
+     */
     abstract val isRight: Boolean
 
+    /**
+     * A Left value.
+     */
     data class Left<out L>(val value: L) : Either<L, Nothing>() {
         override val isLeft = true
         override val isRight = false
     }
 
+    /**
+     * A Right value.
+     */
     data class Right<out R>(val value: R) : Either<Nothing, R>() {
         override val isLeft = false
         override val isRight = true
@@ -68,7 +85,7 @@ sealed class Either<out L, out R> {
     }
 
     /**
-     * Empty companion object to allow extension functions on it like [Either.Companion.result].
+     * Empty companion object to allow extension functions on it like `Either.Companion.result`.
      */
     companion object
 }

@@ -32,22 +32,22 @@
     <version.kotlin>1.8.20</version.kotlin>
     <version.ktor>2.2.4</version.ktor>
     <version.slf4j>1.7.36</version.slf4j>
-    <version.logback>1.2.11</version.logback>
-    <version.jackson>2.14.2</version.jackson>
     <version.redis>4.3.2</version.redis>
 
     <version.junit>5.9.2</version.junit>
     <version.assertj>3.24.2</version.assertj>
     <version.mockk>1.13.4</version.mockk>
     <version.jedis-mock>1.0.7</version.jedis-mock>
-    <version.jacoco>0.8.8</version.jacoco>
-    <version.dokka>1.7.20</version.dokka>
-    <version.detekt>1.22.0</version.detekt>
-    <version.nexus-staging>1.6.13</version.nexus-staging>
-    <version.maven-gpg>1.6</version.maven-gpg>
+    <version.jackson>2.14.2</version.jackson>
+    <version.logback>1.2.11</version.logback>
 
     <version.maven-surefire-plugin>3.0.0</version.maven-surefire-plugin>
     <version.maven-source>3.2.1</version.maven-source>
+    <version.jacoco>0.8.8</version.jacoco>
+    <version.dokka>1.7.20</version.dokka>
+    <version.detekt>1.22.0</version.detekt>
+    <version.maven-gpg>1.6</version.maven-gpg>
+    <version.nexus-staging>1.6.13</version.nexus-staging>
 
     <maven.compiler.source>11</maven.compiler.source>
     <maven.compiler.target>11</maven.compiler.target>
@@ -183,6 +183,7 @@
   </build>
 
   <dependencies>
+    <!-- Kotlin -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-stdlib</artifactId>
@@ -192,7 +193,7 @@
     <!-- KTOR -->
     <dependency>
       <groupId>io.ktor</groupId>
-      <artifactId>ktor-server-cio-jvm</artifactId>
+      <artifactId>ktor-server-core-jvm</artifactId>
       <version>${version.ktor}</version>
     </dependency>
 
@@ -210,7 +211,7 @@
       <version>${version.redis}</version>
     </dependency>
 
-    <!-- Testing -->
+    <!-- Testing Framework -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
@@ -229,6 +230,26 @@
       <version>${version.kotlin}</version>
       <scope>test</scope>
     </dependency>
+
+    <!-- Ktor and Jackson Test Dependencies-->
+    <dependency>
+      <groupId>io.ktor</groupId>
+      <artifactId>ktor-server-test-host-jvm</artifactId>
+      <version>${version.ktor}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.ktor</groupId>
+      <artifactId>ktor-client-mock-jvm</artifactId>
+      <version>${version.ktor}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.ktor</groupId>
+      <artifactId>ktor-server-content-negotiation-jvm</artifactId>
+      <version>${version.ktor}</version>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>io.ktor</groupId>
       <artifactId>ktor-serialization-jackson-jvm</artifactId>
@@ -242,23 +263,13 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>io.ktor</groupId>
-      <artifactId>ktor-server-test-host-jvm</artifactId>
-      <version>${version.ktor}</version>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <version>${version.logback}</version>
       <scope>test</scope>
     </dependency>
-    <dependency>
-      <groupId>io.ktor</groupId>
-      <artifactId>ktor-server-content-negotiation-jvm</artifactId>
-      <version>${version.ktor}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>io.ktor</groupId>
-      <artifactId>ktor-client-mock-jvm</artifactId>
-      <version>${version.ktor}</version>
-      <scope>test</scope>
-    </dependency>
+
+    <!-- Mocking -->
     <dependency>
       <groupId>io.mockk</groupId>
       <artifactId>mockk-jvm</artifactId>
@@ -269,12 +280,6 @@
       <groupId>com.github.fppt</groupId>
       <artifactId>jedis-mock</artifactId>
       <version>${version.jedis-mock}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>ch.qos.logback</groupId>
-      <artifactId>logback-classic</artifactId>
-      <version>${version.logback}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -320,7 +325,7 @@
   <distributionManagement>
     <snapshotRepository>
       <id>ossrh-s01</id>
-      <url>https://s01.oss.sonatype.org/content/repositories/snapshots/</url>
+      <url>https://s01.oss.sonatype.org/content/repositories/releases/</url>
     </snapshotRepository>
   </distributionManagement>
 </project>

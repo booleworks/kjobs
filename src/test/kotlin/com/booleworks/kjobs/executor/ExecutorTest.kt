@@ -3,23 +3,43 @@
 
 package com.booleworks.kjobs.executor
 
+import com.booleworks.kjobs.common.TestInput
+import com.booleworks.kjobs.common.TestResult
+import com.booleworks.kjobs.common.defaultExecutor
+import com.booleworks.kjobs.common.defaultInstanceName
+import com.booleworks.kjobs.common.defaultJobType
+import com.booleworks.kjobs.common.right
+import com.booleworks.kjobs.common.testWithRedis
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
-import com.booleworks.kjobs.util.TestInput
-import com.booleworks.kjobs.util.TestResult
-import com.booleworks.kjobs.util.defaultExecutor
-import com.booleworks.kjobs.util.defaultInstanceName
-import com.booleworks.kjobs.util.defaultJobType
-import com.booleworks.kjobs.util.right
-import com.booleworks.kjobs.util.testWithRedis
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import redis.clients.jedis.JedisPool
+import redis.clients.jedis.JedisPoolConfig
 import java.time.LocalDateTime.now
 import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
 
 class ExecutorTest {
+
+    @Test
+    fun `redis temp test`() {
+        val poolConfig = JedisPoolConfig()
+        val pool = JedisPool(poolConfig, "http://localhost:6379")
+        pool.resource.use { jedis ->
+            jedis.set("A", "C")
+            jedis.multi().use {
+                it.set("A", "B")
+                it.lpop("A")
+                it.get("A")
+                it.set("C", "D")
+                val exec = it.exec()
+                println(exec)
+                exec
+            }
+        }
+    }
 
     @Test
     fun `test simple computation`() = testWithRedis {

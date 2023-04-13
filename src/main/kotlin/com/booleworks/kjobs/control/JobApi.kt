@@ -3,7 +3,9 @@
 
 package com.booleworks.kjobs.control
 
+import com.booleworks.kjobs.api.ApiBuilder
 import com.booleworks.kjobs.api.DataPersistence
+import com.booleworks.kjobs.api.JobFrameworkBuilder
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
@@ -31,29 +33,41 @@ import kotlin.time.Duration
  * Setup all routings according to a given [JobApiDef].
  *
  * The following routes will be created:
- * - `POST submit`
- *     - receives its input using [JobApiDef.inputReceiver]
- *     - optionally validates the input using [JobApiDef.inputValidation]
- *     - creates a new [Job] stores the job and the input in the [persistence][JobApiDef.persistence]
- * - `GET status/{uuid}`
- *     - returns the status of the job with the given uuid
- *     - if no such job exists, status 404 is returned
- * - `GET result/{uuid}`
- *     - returns the result using [JobApiDef.resultResponder]
- *     - if no such job exists or it is not in status `SUCCESS`, status 404 is returned
- * - `GET failure/{uuid}`
- *     - returns the failure of the job with the given uuid
- *     - if no such job exists or it is not in status `FAILURE`, status 404 is returned
- * - `POST cancel/{uuid}` (if enabled via [JobApiDef.enableCancellation])
- *     - cancels the job with the given uuid
- *     - if no such job exists, status 404 is returned
- *     - if the job is in status `CREATED`, it is cancelled immediately
- *     - if the job is in status `CANCEL_REQUESTED`, `CANCELLED`, `SUCCESS`, or `FAILURE`, the request is ignored
- *       with http status 200 and a respective message
- *     - if the job is in status `RUNNING` it will go to `CANCEL_REQUESTED`. As soon as the computation is aborted
- *       the job will change to status `CANCELLED`. However, if the computation finishes (with `SUCCESS` or
- *       `FAILURE`) before it is aborted, the respecting finishing status will be set instead of `CANCELLED`
- *       and the result (or error) will be stored.
+ *
+ * ### `POST submit`
+ * - receives its input using [JobApiDef.inputReceiver]
+ * - optionally validates the input using [JobApiDef.inputValidation] and returns respective error
+ * messages with status 400 if it fails
+ * - creates a new [Job] stores the job and the input in the [persistence][JobApiDef.persistence]
+ * - returns the UUID of the generated job
+ *
+ * ### `GET status/{uuid}`
+ * - returns the status of the job with the given uuid
+ * - if no such job exists, status 404 is returned
+ *
+ * ### `GET result/{uuid}`
+ * - returns the result using [JobApiDef.resultResponder]
+ * - if no such job exists or it is not in status `SUCCESS`, status 404 is returned
+ *
+ * ### `GET failure/{uuid}`
+ * - returns the failure of the job with the given uuid
+ * - if no such job exists or it is not in status `FAILURE`, status 404 is returned
+ *
+ * ### `POST cancel/{uuid}` (if enabled via [JobFrameworkBuilder.CancellationConfig.enabled])
+ * - cancels the job with the given uuid
+ * - if no such job exists, status 404 is returned
+ * - if the job is in status `CREATED`, it is cancelled immediately
+ * - if the job is in status `CANCEL_REQUESTED`, `CANCELLED`, `SUCCESS`, or `FAILURE`, the request is ignored
+ *     with http status 200 and a respective message
+ * - if the job is in status `RUNNING` it will go to `CANCEL_REQUESTED`. As soon as the computation is aborted
+ *     the job will change to status `CANCELLED`. However, if the computation finishes (with `SUCCESS` or
+ *     `FAILURE`) before it is aborted, the respecting finishing status will be set instead of `CANCELLED`
+ *     and the result (or error) will be stored.
+ *
+ * ### `POST synchronous` (if enabled via [ApiBuilder.SynchronousResourceConfig.enabled])
+ * - performs the same steps as `submit` but does not return the UUID
+ * - waits until the job is computed (computation might be performed by another instance)
+ * - returns the result of the computation using [JobApiDef.resultResponder]
  *
  * If the persistence access in any of the routes fails, status 500 with a respective message is returned.
  */

@@ -5,13 +5,13 @@ package com.booleworks.kjobs.data
 
 import com.booleworks.kjobs.api.DataPersistence
 import com.booleworks.kjobs.api.DataTransactionalPersistence
+import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.data.PersistenceAccessError.InternalError
 import com.booleworks.kjobs.data.PersistenceAccessError.NotFound
-import com.booleworks.kjobs.util.Either
 
 /**
  * The result of an interaction with [DataPersistence] or [DataTransactionalPersistence].
- * In case of a successful access it contains the result of type [R], otherwise
+ * In case of a successful access it contains the result of type `R`, otherwise
  * it contains a [PersistenceAccessError].
  */
 typealias PersistenceAccessResult<R> = Either<PersistenceAccessError, R>
@@ -63,12 +63,27 @@ inline fun <R> PersistenceAccessResult<R>.ifError(block: (PersistenceAccessError
  */
 fun <R, T> PersistenceAccessResult<R>.mapResult(mapper: (R) -> T): PersistenceAccessResult<T> = this.map(mapper)
 
-val <R> PersistenceAccessResult<R>.successful: Boolean
-    get() = this is Either.Right
+/**
+ * Whether this persistence access was successful.
+ */
+val <R> PersistenceAccessResult<R>.successful: Boolean get() = this is Either.Right
 
-val Either.Companion.success: PersistenceAccessResult<Unit>
-    get() = Either.Right(Unit)
+/**
+ * Returns an object indicating a successful persistence access.
+ */
+val Either.Companion.success: PersistenceAccessResult<Unit> get() = Either.Right(Unit)
 
+/**
+ * Returns an object containing the [result] of a successful persistence access.
+ */
 fun <R> Either.Companion.result(result: R): PersistenceAccessResult<R> = Either.Right(result)
+
+/**
+ * Returns an object indicating that the persistence access failed because the item was not found.
+ */
 fun <R> Either.Companion.notFound(): PersistenceAccessResult<R> = Either.Left(NotFound)
+
+/**
+ * Returns an object indicating that the persistence access failed with a given error [message].
+ */
 fun <R> Either.Companion.internalError(message: String): PersistenceAccessResult<R> = Either.Left(InternalError(message))

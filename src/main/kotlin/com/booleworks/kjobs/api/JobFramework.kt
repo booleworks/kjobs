@@ -3,6 +3,7 @@
 
 package com.booleworks.kjobs.api
 
+import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.control.JobApiDef
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
@@ -17,7 +18,6 @@ import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobPrioritizer
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.TagMatcher
-import com.booleworks.kjobs.util.Either
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
@@ -49,6 +49,9 @@ fun JobFramework(
     configuration: JobFrameworkBuilder.() -> Unit
 ) = JobFrameworkBuilder(myInstanceName, jobPersistence, executionEnvironment).apply(configuration).build()
 
+/**
+ * Builder for the KJobs Job Framework. Can be instantiated and configured using [JobFramework].
+ */
 class JobFrameworkBuilder internal constructor(
     private val myInstanceName: String,
     private val jobPersistence: JobPersistence,
@@ -141,20 +144,20 @@ class JobFrameworkBuilder internal constructor(
     /**
      * Configuration options for the cancellation of jobs.
      *
-     * [cancellationCheckInterval] is needed to update the set of jobs in status [JobStatus.CANCEL_REQUESTED] from the database. These are jobs which are
+     * [checkInterval] is needed to update the set of jobs in status [JobStatus.CANCEL_REQUESTED] from the database. These are jobs which are
      * already running and will try to be aborted by cancelling their [coroutine job][kotlinx.coroutines.Job].
      *
-     * @param enableCancellation whether cancellation is enabled or not. This will enable the resource `POST cancel/{uuid}`. Default is `false`.
-     * @param cancellationCheckInterval the interval with which the instance should check for cancelled jobs. Default is 1 second. This value can be set much
+     * @param enabled whether cancellation is enabled or not. This will enable the resource `POST cancel/{uuid}`. Default is `false`.
+     * @param checkInterval the interval with which the instance should check for cancelled jobs. Default is 1 second. This value can be set much
      * higher depending on your needs (i.e. how urgent it is to abort a cancelled job which is still running).
      */
     class CancellationConfig internal constructor(
-        var enableCancellation: Boolean = false,
-        var cancellationCheckInterval: Duration = 1.seconds,
+        var enabled: Boolean = false,
+        var checkInterval: Duration = 1.seconds,
     )
 
     fun build() {
-        apis.forEach { it.build(cancellationConfig.enableCancellation) }
+        apis.forEach { it.build(cancellationConfig.enabled) }
         val executor = generateJobExecutor()
         executionBase.schedule(maintenanceConfig.jobCheckInterval) { executor.execute() }
         executionBase.schedule(maintenanceConfig.heartbeatInterval) { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
@@ -172,8 +175,8 @@ class JobFrameworkBuilder internal constructor(
                 maintenanceConfig.deleteOldJobsAfter
             )
         }
-        if (cancellationConfig.enableCancellation) {
-            executionBase.schedule(cancellationConfig.cancellationCheckInterval) { Maintenance.checkForCancellations(jobPersistence) }
+        if (cancellationConfig.enabled) {
+            executionBase.schedule(cancellationConfig.checkInterval) { Maintenance.checkForCancellations(jobPersistence) }
         }
     }
 
@@ -193,6 +196,9 @@ class JobFrameworkBuilder internal constructor(
         }
 }
 
+/**
+ * Builder for an API.
+ */
 class ApiBuilder<INPUT, RESULT> internal constructor(
     private val myInstanceName: String,
     private val jobType: String,
@@ -223,8 +229,8 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
 
     /**
      * Further configuration options for the API.
-     * @param basePath an additional base path of the application (in addition to what is effectively predefined by the [Route] passed into [newApi]).
-     * Default is the empty string.
+     * @param basePath an additional base path of the application (in addition to what is effectively predefined by the [Route] passed into
+     * [JobFrameworkBuilder.addApi]). Default is the empty string.
      * @param inputValidation an optional validation of the input which is performed in the `submit` resource. Must return a list of error messages which
      * is empty in case the validation did not find any errors. If the list is not empty, the request is rejected with [HttpStatusCode.NotFound] and
      * a message constructed from the list. Default is an empty list.
@@ -297,4 +303,4 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
 
 }
 
-const val DEFAULT_MAX_JOB_RESTARTS = 3
+internal const val DEFAULT_MAX_JOB_RESTARTS = 3

@@ -5,12 +5,12 @@ package com.booleworks.kjobs.control
 
 import com.booleworks.kjobs.api.DataPersistence
 import com.booleworks.kjobs.api.JobPersistence
+import com.booleworks.kjobs.common.getOrElse
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.ifError
 import com.booleworks.kjobs.data.orQuitWith
-import com.booleworks.kjobs.util.getOrElse
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime

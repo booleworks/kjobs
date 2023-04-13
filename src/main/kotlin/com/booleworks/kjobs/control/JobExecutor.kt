@@ -13,6 +13,7 @@ import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.TagMatcher
 import com.booleworks.kjobs.data.ifError
+import com.booleworks.kjobs.data.isSuccess
 import com.booleworks.kjobs.data.orQuitWith
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancelAndJoin
@@ -113,9 +114,15 @@ internal class MainJobExecutor(
                 }
                 return@launch
             }
-            // TODO make configurable? The operation performed in this loop (basically a map lookup) is really cheap, so a small value is ok.
-            delay(100.milliseconds)
+            delay(INTERNAL_CANCELLATION_CHECK_INTERVAL)
         }
+    }
+
+    companion object {
+        /**
+         * The interval in which [Maintenance.jobsToBeCancelled] is checked during the run of a job.
+         */
+        val INTERNAL_CANCELLATION_CHECK_INTERVAL = 100.milliseconds
     }
 }
 
@@ -166,14 +173,14 @@ internal class SpecificExecutor<INPUT, RESULT>(
         }
         if (job.executingInstance != myInstanceName) {
             log.warn("Job with ID $id was stolen from $myInstanceName by ${job.executingInstance} after the computation!")
-            if (result.success() && job.status != JobStatus.SUCCESS) {
+            if (result.isSuccess && job.status != JobStatus.SUCCESS) {
                 job.executingInstance = myInstanceName
             } else {
                 return
             }
         }
         job.finishedAt = LocalDateTime.now()
-        job.status = if (result.success()) JobStatus.SUCCESS else JobStatus.FAILURE
+        job.status = if (result.isSuccess) JobStatus.SUCCESS else JobStatus.FAILURE
         persistence.dataTransaction {
             persistOrUpdateResult(job, result).orQuitWith {
                 // Here it's difficult to tell what we should do with the job, since we don't know why persisting the job failed.

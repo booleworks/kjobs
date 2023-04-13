@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.kjobs.util
+package com.booleworks.kjobs.common
 
 import com.booleworks.kjobs.api.DataPersistence
 import com.booleworks.kjobs.api.impl.RedisDataPersistence

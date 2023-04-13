@@ -46,8 +46,6 @@ class Job(
  */
 class JobResult<out T> private constructor(val uuid: String, val result: T?, val error: String?) {
 
-    internal fun success() = result != null
-
     companion object {
         fun <T> success(uuid: String, result: T) = JobResult(uuid, result, null)
         fun <T> error(uuid: String, error: String) = JobResult<T>(uuid, null, error)
@@ -71,6 +69,8 @@ class JobResult<out T> private constructor(val uuid: String, val result: T?, val
 
     override fun toString() = "JobResult(uuid='$uuid', result=$result, error=$error)"
 }
+
+internal val <T> JobResult<T>.isSuccess: Boolean get() = result != null
 
 /**
  * Enumeration of all job stati:

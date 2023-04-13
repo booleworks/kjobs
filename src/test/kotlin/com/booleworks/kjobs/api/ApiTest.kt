@@ -3,16 +3,16 @@
 
 package com.booleworks.kjobs.api
 
-import com.booleworks.kjobs.util.Either
-import com.booleworks.kjobs.util.TestInput
-import com.booleworks.kjobs.util.TestResult
-import com.booleworks.kjobs.util.defaultComputation
-import com.booleworks.kjobs.util.defaultInstanceName
-import com.booleworks.kjobs.util.defaultJobType
-import com.booleworks.kjobs.util.defaultRedis
-import com.booleworks.kjobs.util.newRedisPersistence
-import com.booleworks.kjobs.util.ser
-import com.booleworks.kjobs.util.testJobFramework
+import com.booleworks.kjobs.common.Either
+import com.booleworks.kjobs.common.TestInput
+import com.booleworks.kjobs.common.TestResult
+import com.booleworks.kjobs.common.defaultComputation
+import com.booleworks.kjobs.common.defaultInstanceName
+import com.booleworks.kjobs.common.defaultJobType
+import com.booleworks.kjobs.common.defaultRedis
+import com.booleworks.kjobs.common.newRedisPersistence
+import com.booleworks.kjobs.common.ser
+import com.booleworks.kjobs.common.testJobFramework
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.request.get

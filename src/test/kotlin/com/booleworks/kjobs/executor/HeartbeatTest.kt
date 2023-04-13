@@ -3,14 +3,14 @@
 
 package com.booleworks.kjobs.executor
 
+import com.booleworks.kjobs.common.defaultInstanceName
+import com.booleworks.kjobs.common.defaultJobType
+import com.booleworks.kjobs.common.right
+import com.booleworks.kjobs.common.testWithRedis
 import com.booleworks.kjobs.control.Maintenance
 import com.booleworks.kjobs.control.scheduleForever
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
-import com.booleworks.kjobs.util.defaultInstanceName
-import com.booleworks.kjobs.util.defaultJobType
-import com.booleworks.kjobs.util.right
-import com.booleworks.kjobs.util.testWithRedis
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
