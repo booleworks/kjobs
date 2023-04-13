@@ -10,6 +10,14 @@
 
   <name>Kotlin Job Framework</name>
   <description>A Job Framework for Asynchronous Webservices in Kotlin and Ktor</description>
+  <url>https://github.com/booleworks/kjobs</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/license/mit</url>
+    </license>
+  </licenses>
 
   <developers>
     <developer>
@@ -23,6 +31,10 @@
       <email>steffen.hildebrandt@booleworks.com</email>
     </developer>
   </developers>
+
+  <scm>
+    <url>https://github.com/booleworks/kjobs.git</url>
+  </scm>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
