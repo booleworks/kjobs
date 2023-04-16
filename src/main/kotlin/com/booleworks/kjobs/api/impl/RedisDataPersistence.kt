@@ -7,16 +7,16 @@ import com.booleworks.kjobs.api.DataPersistence
 import com.booleworks.kjobs.api.DataTransactionalPersistence
 import com.booleworks.kjobs.api.JobPersistence
 import com.booleworks.kjobs.api.JobTransactionalPersistence
-import com.booleworks.kjobs.common.Either
+import com.booleworks.kjobs.common.unwrapOrReturnFirstError
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
-import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.internalError
 import com.booleworks.kjobs.data.notFound
 import com.booleworks.kjobs.data.result
 import com.booleworks.kjobs.data.success
+import com.booleworks.kjobs.data.uuidNotFound
 import org.slf4j.LoggerFactory
 import redis.clients.jedis.Jedis
 import redis.clients.jedis.JedisPool
@@ -25,6 +25,109 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 private val logger = LoggerFactory.getLogger(RedisDataPersistence::class.java)
+
+/**
+ * [JobPersistence] implementation for Redis. It requires a [JedisPool] providing the connection to
+ * the Redis instance and a [Redis configuration][config].
+ */
+open class RedisJobPersistence(
+    private val pool: JedisPool,
+    private val config: RedisConfig = DefaultRedisConfig(),
+) : JobPersistence {
+    override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = pool.resource.use { jedis ->
+        jedis.multi().run {
+            runCatching {
+                RedisJobTransactionalPersistence(this@run, config)
+                    .run { block() }
+                    .also { exec() }
+            }.onFailure {
+                val message = it.message ?: "Undefined error"
+                logger.error("Jedis transaction failed with: $message", it)
+                val discardResult = discard()
+                logger.error("Discarded the transaction with result: $discardResult")
+                return PersistenceAccessResult.internalError(message)
+            }
+        }
+        PersistenceAccessResult.success
+    }
+
+    override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
+        pool.resource.use { it.hgetAll(config.jobKey(uuid)) }
+            .ifEmpty { return@fetchJob PersistenceAccessResult.notFound() }
+            .redisMapToJob(uuid)
+
+    override suspend fun fetchHeartBeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> {
+        val heartbeatKeys = pool.resource.use { it.keys(config.heartbeatPattern) }.toTypedArray()
+        val plainHeartbeats = pool.resource.use { it.mget(*heartbeatKeys) } ?: run { return PersistenceAccessResult.notFound() }
+        val filteredHeartbeats = plainHeartbeats.mapIndexed { index, beat ->
+            Heartbeat(config.extractInstanceName(heartbeatKeys[index]), LocalDateTime.parse(beat))
+        }.filter { it.lastBeat.isAfter(since) }
+        return PersistenceAccessResult.result(filteredHeartbeats)
+    }
+
+    override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
+        getAllJobsBy { jedis, key -> jedis.hget(key, "status") == status.toString() }
+
+    override suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>> =
+        getAllJobsBy { jedis, key -> jedis.hmget(key, "status", "executingInstance") == listOf(status.toString(), instance) }
+
+    override suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>> = getAllJobsBy { jedis, key ->
+        val statusAndFinishedAt = jedis.hmget(key, "status", "finishedAt")
+        (statusAndFinishedAt[0] == JobStatus.SUCCESS.toString() || statusAndFinishedAt[0] == JobStatus.FAILURE.toString())
+                && statusAndFinishedAt.getOrNull(1)?.let { LocalDateTime.parse(it) }?.isBefore(date) ?: false
+    }
+
+    override suspend fun fetchStati(uuids: List<String>): PersistenceAccessResult<List<JobStatus>> {
+        return PersistenceAccessResult.result(
+            pool.resource.use { jedis ->
+                uuids.map { uuid ->
+                    jedis.hget(uuid, "status")?.let { status -> JobStatus.valueOf(status) } ?: return@fetchStati PersistenceAccessResult.uuidNotFound(uuid)
+                }
+            })
+    }
+
+    private fun getAllJobsBy(condition: (Jedis, String) -> Boolean): PersistenceAccessResult<List<Job>> {
+        return pool.resource.use { jedis ->
+            jedis.keys(config.jobPattern)
+                .filter { condition(jedis, it) }
+                .map { jedis.hgetAll(it).redisMapToJob(config.extractUuid(it)) }
+        }.unwrapOrReturnFirstError { return@getAllJobsBy it }
+    }
+}
+
+/**
+ * [JobTransactionalPersistence] implementation for Redis.
+ *
+ * Note that all methods will always return `PersistenceAccessResult.success`, since commands within transaction are not yet
+ * executed, so the only real kind of error would be connection problems which are ok to be caught in [RedisJobPersistence.transaction].
+ */
+open class RedisJobTransactionalPersistence(
+    private val transaction: Transaction,
+    private val config: RedisConfig
+) : JobTransactionalPersistence {
+    override suspend fun persistJob(job: Job): PersistenceAccessResult<Unit> {
+        transaction.hset(config.jobKey(job.uuid), job.toRedisMap())
+        return PersistenceAccessResult.success
+    }
+
+    override suspend fun updateJob(job: Job): PersistenceAccessResult<Unit> {
+        persistJob(job)
+        transaction.hdel(config.jobKey(job.uuid), *job.nullFields().toTypedArray())
+        return PersistenceAccessResult.success
+    }
+
+    override suspend fun deleteForUuid(uuid: String, persistencesPerType: Map<String, DataPersistence<*, *>>): PersistenceAccessResult<Unit> {
+        transaction.del(config.jobKey(uuid))
+        transaction.del(config.inputKey(uuid))
+        transaction.del(config.resultKey(uuid))
+        return PersistenceAccessResult.success
+    }
+
+    override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
+        transaction.set(config.heartbeatKey(heartbeat.instanceName), heartbeat.lastBeat.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+        return PersistenceAccessResult.success
+    }
+}
 
 /**
  * [DataPersistence] implementation for Redis. It requires a [JedisPool] providing the connection to
@@ -104,102 +207,6 @@ open class RedisDataTransactionalPersistence<INPUT, RESULT>(
 
     override suspend fun persistOrUpdateFailure(job: Job, failure: String): PersistenceAccessResult<Unit> {
         transaction.set(config.failureKey(job.uuid), failure)
-        return PersistenceAccessResult.success
-    }
-}
-
-/**
- * [JobPersistence] implementation for Redis. It requires a [JedisPool] providing the connection to
- * the Redis instance and a [Redis configuration][config].
- */
-open class RedisJobPersistence(
-    private val pool: JedisPool,
-    private val config: RedisConfig = DefaultRedisConfig(),
-) : JobPersistence {
-    override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = pool.resource.use { jedis ->
-        jedis.multi().run {
-            runCatching {
-                RedisJobTransactionalPersistence(this@run, config)
-                    .run { block() }
-                    .also { exec() }
-            }.onFailure {
-                val message = it.message ?: "Undefined error"
-                logger.error("Jedis transaction failed with: $message", it)
-                val discardResult = discard()
-                logger.error("Discarded the transaction with result: $discardResult")
-                return PersistenceAccessResult.internalError(message)
-            }
-        }
-        PersistenceAccessResult.success
-    }
-
-    override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
-        pool.resource.use { it.hgetAll(config.jobKey(uuid)) }
-            .ifEmpty { return@fetchJob PersistenceAccessResult.notFound() }
-            .redisMapToJob(uuid)
-
-    override suspend fun fetchHeartBeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> {
-        val heartbeatKeys = pool.resource.use { it.keys(config.heartbeatPattern) }.toTypedArray()
-        val plainHeartbeats = pool.resource.use { it.mget(*heartbeatKeys) } ?: run { return PersistenceAccessResult.notFound() }
-        val filteredHeartbeats = plainHeartbeats.mapIndexed { index, beat ->
-            Heartbeat(config.extractInstanceName(heartbeatKeys[index]), LocalDateTime.parse(beat))
-        }.filter { it.lastBeat.isAfter(since) }
-        return PersistenceAccessResult.result(filteredHeartbeats)
-    }
-
-    override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy { jedis, key -> jedis.hget(key, "status") == status.toString() }
-
-    override suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy { jedis, key -> jedis.hmget(key, "status", "executingInstance") == listOf(status.toString(), instance) }
-
-    override suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>> = getAllJobsBy { jedis, key ->
-        val statusAndFinishedAt = jedis.hmget(key, "status", "finishedAt")
-        (statusAndFinishedAt[0] == JobStatus.SUCCESS.toString() || statusAndFinishedAt[0] == JobStatus.FAILURE.toString())
-                && statusAndFinishedAt.getOrNull(1)?.let { LocalDateTime.parse(it) }?.isBefore(date) ?: false
-    }
-
-    private fun getAllJobsBy(condition: (Jedis, String) -> Boolean): PersistenceAccessResult<List<Job>> {
-        val jobResults = pool.resource.use { jedis ->
-            jedis.keys(config.jobPattern)
-                .filter { condition(jedis, it) }
-                .map { jedis.hgetAll(it).redisMapToJob(config.extractUuid(it)) }
-        }
-        jobResults.filterIsInstance<Either.Left<PersistenceAccessError>>().firstOrNull()?.let { return@getAllJobsBy it }
-        return jobResults.map { (it as Either.Right).value }.let { PersistenceAccessResult.result(it) }
-    }
-}
-
-/**
- * [JobTransactionalPersistence] implementation for Redis.
- *
- * Note that all methods will always return `PersistenceAccessResult.success`, since commands within transaction are not yet
- * executed, so the only real kind of error would be connection problems which are ok to be caught in [RedisJobPersistence.transaction].
- */
-open class RedisJobTransactionalPersistence(
-    private val transaction: Transaction,
-    private val config: RedisConfig
-) : JobTransactionalPersistence {
-    override suspend fun persistJob(job: Job): PersistenceAccessResult<Unit> {
-        transaction.hset(config.jobKey(job.uuid), job.toRedisMap())
-        return PersistenceAccessResult.success
-    }
-
-    override suspend fun updateJob(job: Job): PersistenceAccessResult<Unit> {
-        persistJob(job)
-        transaction.hdel(config.jobKey(job.uuid), *job.nullFields().toTypedArray())
-        return PersistenceAccessResult.success
-    }
-
-    override suspend fun deleteForUuid(uuid: String, persistencesPerType: Map<String, DataPersistence<*, *>>): PersistenceAccessResult<Unit> {
-        transaction.del(config.jobKey(uuid))
-        transaction.del(config.inputKey(uuid))
-        transaction.del(config.resultKey(uuid))
-        return PersistenceAccessResult.success
-    }
-
-    override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
-        transaction.set(config.heartbeatKey(heartbeat.instanceName), heartbeat.lastBeat.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
         return PersistenceAccessResult.success
     }
 }

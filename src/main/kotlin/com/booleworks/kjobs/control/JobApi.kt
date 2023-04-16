@@ -6,11 +6,11 @@ package com.booleworks.kjobs.control
 import com.booleworks.kjobs.api.ApiBuilder
 import com.booleworks.kjobs.api.DataPersistence
 import com.booleworks.kjobs.api.JobFrameworkBuilder
-import com.booleworks.kjobs.common.getOrElse
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.PersistenceAccessResult
+import com.booleworks.kjobs.data.mapResult
 import com.booleworks.kjobs.data.orQuitWith
 import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.InternalServerError
@@ -34,15 +34,15 @@ import kotlin.time.Duration
 private val apiLog = LoggerFactory.getLogger("ApiLog")
 
 /**
- * Setup all routings according to a given [JobApiDef].
+ * Setup all routings according to a given [ApiConfig] and [JobConfig].
  *
  * The following routes will be created:
  *
  * ### `POST submit`
- * - receives its input using [JobApiDef.inputReceiver]
- * - optionally validates the input using [JobApiDef.inputValidation] and returns respective error
+ * - receives its input using [ApiConfig.inputReceiver]
+ * - optionally validates the input using [ApiConfig.inputValidation] and returns respective error
  * messages with status 400 if it fails
- * - creates a new [Job] stores the job and the input in the [persistence][JobApiDef.persistence]
+ * - creates a new [Job] stores the job and the input in the [persistence][JobConfig.persistence]
  * - returns the UUID of the generated job
  *
  * ### `GET status/{uuid}`
@@ -50,7 +50,7 @@ private val apiLog = LoggerFactory.getLogger("ApiLog")
  * - if no such job exists, status 404 is returned
  *
  * ### `GET result/{uuid}`
- * - returns the result using [JobApiDef.resultResponder]
+ * - returns the result using [ApiConfig.resultResponder]
  * - if no such job exists or it is not in status `SUCCESS`, status 404 is returned
  *
  * ### `GET failure/{uuid}`
@@ -68,12 +68,12 @@ private val apiLog = LoggerFactory.getLogger("ApiLog")
  *     `FAILURE`) before it is aborted, the respecting finishing status will be set instead of `CANCELLED`
  *     and the result (or error) will be stored.
  *
- * ### `POST synchronous` (if enabled via [ApiBuilder.SynchronousResourceConfig.enabled])
+ * ### `POST synchronous` (if enabled via [ApiBuilder.SynchronousResourceConfigBuilder.enabled])
  * - performs the same steps as `submit` but does not return the UUID
  * - waits until the job is computed (computation might be performed by another instance)
- * - returns the result of the computation using [JobApiDef.resultResponder]
+ * - returns the result of the computation using [ApiConfig.resultResponder]
  *
- * ### `DELETE delete/{uuid}` (if enabled via [ApiBuilder.ApiConfig.enableDeletion])
+ * ### `DELETE delete/{uuid}` (if enabled via [ApiConfig.enableDeletion])
  * - deletes the job with the given uuid
  * - the job must have the `jobType` of this API, otherwise status 400 is returned. So only jobs belonging
  *     to this API can be deleted.
@@ -83,44 +83,34 @@ private val apiLog = LoggerFactory.getLogger("ApiLog")
  *
  * If the persistence access in any of the routes fails, status 500 with a respective message is returned.
  */
-internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = with(def) {
-    route(basePath ?: "") {
+internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESULT>, jobConfig: JobConfig<INPUT, RESULT>) = with(apiConfig) {
+    route(apiConfig.basePath ?: "") {
         post("submit") {
-            val input = inputReceiver()
-            inputValidation(input).takeIf { it.isNotEmpty() }?.let {
-                call.respond(BadRequest, it.joinToString(", "))
-                return@post
-            }
-            submit(def.jobType, input, def.myInstanceName, def.persistence, def.tagProvider, def.customInfoProvider, def.priorityProvider).getOrElse {
-                call.respondText("Failed to persist job: ${it.message}", status = InternalServerError)
-                return@post
-            }.let {
-                call.respond(it)
-            }
+            validateAndSubmit(apiConfig, jobConfig, inputReceiver())?.let { call.respond(it) }
         }
 
         get("status/{uuid}") {
-            parseUuid()?.let { resultStatus(it, persistence) }
+            parseUuid()?.let { resultStatus(it, jobConfig.persistence) }
         }
 
         get("result/{uuid}") {
             parseUuid()?.let { uuid ->
-                val job = fetchJob(uuid, persistence) ?: return@get
+                val job = fetchJob(uuid, jobConfig.persistence) ?: return@get
                 if (job.status != JobStatus.SUCCESS) {
                     call.respondText("Cannot return the result for job with ID $uuid and status ${job.status}.", status = BadRequest)
                 } else {
-                    result(job, persistence)?.let { resultResponder(it) }
+                    result(job, jobConfig.persistence)?.let { resultResponder(it) }
                 }
             }
         }
 
         get("failure/{uuid}") {
             parseUuid()?.let { uuid ->
-                val job = fetchJob(uuid, persistence) ?: return@get
+                val job = fetchJob(uuid, jobConfig.persistence) ?: return@get
                 if (job.status != JobStatus.FAILURE) {
                     call.respondText("Cannot return a failure for job with ID $uuid and status ${job.status}.", status = BadRequest)
                 } else {
-                    failure(job, persistence)?.let { call.respondText(it) }
+                    failure(job, jobConfig.persistence)?.let { call.respondText(it) }
                 }
             }
         }
@@ -128,8 +118,8 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
         if (enableDeletion) {
             delete("delete/{uuid}") {
                 parseUuid()?.let { uuid ->
-                    fetchJob(uuid, persistence)?.let { job ->
-                        if (job.type != jobType) {
+                    fetchJob(uuid, jobConfig.persistence)?.let { job ->
+                        if (job.type != jobConfig.jobType) {
                             call.respond(
                                 BadRequest,
                                 "The job with ID $uuid belongs to another job type. Please call the delete resource with the correct path."
@@ -137,7 +127,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
                         } else if (job.status in setOf(JobStatus.CREATED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)) {
                             call.respond(BadRequest, "Cannot delete job with ID $uuid, because it is in a wrong status: ${job.status}")
                         } else {
-                            persistence.transaction { deleteForUuid(uuid.toString(), mapOf(jobType to persistence)) }
+                            jobConfig.persistence.transaction { deleteForUuid(uuid.toString(), mapOf(jobConfig.jobType to jobConfig.persistence)) }
                                 .onLeft { call.respond(InternalServerError, "Deletion of Job with ID $uuid failed with: $it") }
                                 .onRight { call.respond("Deleted") }
                         }
@@ -149,42 +139,32 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
         if (enableCancellation) {
             post("cancel/{uuid}") {
                 parseUuid()?.let { uuid ->
-                    val job = fetchJob(uuid, persistence) ?: return@post
-                    call.respond(cancelJob(job, uuid, persistence))
+                    val job = fetchJob(uuid, jobConfig.persistence) ?: return@post
+                    call.respond(cancelJob(job, jobConfig.persistence))
                 }
             }
         }
 
         if (syncMockConfig.enabled) {
             post(syncMockConfig.path) {
-                val input = inputReceiver()
-                inputValidation(input).takeIf { it.isNotEmpty() }?.let {
-                    call.respond(BadRequest, it.joinToString(", "))
-                    return@post
-                }
-                val uuid =
-                    submit(def.jobType, input, def.myInstanceName, def.persistence, def.tagProvider, def.customInfoProvider, syncMockConfig.priorityProvider)
-                        .getOrElse {
-                            call.respondText("Failed to persist job: ${it.message}", status = InternalServerError)
-                            return@post
-                        }
+                val uuid = validateAndSubmit(apiConfig, jobConfig.copy(priorityProvider = syncMockConfig.priorityProvider), inputReceiver()) ?: return@post
                 apiLog.trace("Submitted job for synchronous computation, got ID $uuid")
                 var status: JobStatus
                 val timeout = LocalDateTime.now().plusSeconds(syncMockConfig.maxWaitingTime.inWholeSeconds)
                 do {
                     delay(syncMockConfig.checkInterval)
-                    status = persistence.fetchJob(uuid).orQuitWith {
+                    status = jobConfig.persistence.fetchJob(uuid).orQuitWith {
                         call.respondText("Synchronous computation failed during job access: ${it.message}", status = InternalServerError)
                         return@post
                     }.status
                     apiLog.trace("Synchronous job with ID {} is in status {}", uuid, status)
                 } while (status in setOf(JobStatus.CREATED, JobStatus.RUNNING) && LocalDateTime.now() < timeout)
                 if (status == JobStatus.SUCCESS) {
-                    persistence.fetchResult(uuid)
+                    jobConfig.persistence.fetchResult(uuid)
                         .orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@post }
                         .let { resultResponder(it) }
                 } else if (status == JobStatus.FAILURE) {
-                    persistence.fetchFailure(uuid)
+                    jobConfig.persistence.fetchFailure(uuid)
                         .orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@post }
                         .let { call.respond(InternalServerError, "Computation failed with message: $it") }
                 } else {
@@ -202,44 +182,48 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
     }
 }
 
-internal suspend fun <INPUT, RESULT> cancelJob(job: Job, uuid: UUID, persistence: DataPersistence<INPUT, RESULT>): String = when (job.status) {
+internal suspend fun <INPUT, RESULT> cancelJob(job: Job, persistence: DataPersistence<INPUT, RESULT>): String = when (job.status) {
     // TODO: what about the risk of the job status being overridden?
     //  The execution job could take the job at the same time and might not see the respective cancellation update.
     JobStatus.CREATED -> {
         job.status = JobStatus.CANCELLED
         job.finishedAt = LocalDateTime.now()
         persistence.transaction { updateJob(job) }
-        "Job with id $uuid was cancelled successfully"
+        "Job with id ${job.uuid} was cancelled successfully"
     }
 
     JobStatus.RUNNING -> {
         job.status = JobStatus.CANCEL_REQUESTED
         persistence.transaction { updateJob(job) }
-        "Job with id $uuid is currently running and will be cancelled as soon as possible. If it finishes in the meantime, the cancel request will be ignored."
+        "Job with id ${job.uuid} is currently running and will be cancelled as soon as possible. " +
+                "If it finishes in the meantime, the cancel request will be ignored."
     }
 
-    JobStatus.CANCEL_REQUESTED -> "Cancellation for job with id $uuid has already been requested"
+    JobStatus.CANCEL_REQUESTED -> "Cancellation for job with id ${job.uuid} has already been requested"
     JobStatus.SUCCESS, JobStatus.FAILURE, JobStatus.CANCELLED ->
-        "Job with id $uuid has already finished with status ${job.status}"
+        "Job with id ${job.uuid} has already finished with status ${job.status}"
 }
 
-internal class JobApiDef<INPUT, RESULT>(
-    val jobType: String,
-    val persistence: DataPersistence<INPUT, RESULT>,
-    val myInstanceName: String,
+internal class ApiConfig<INPUT, RESULT>(
     val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
     val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
     val basePath: String?,
     val inputValidation: (INPUT) -> List<String>,
     val enableDeletion: Boolean,
+    val enableCancellation: Boolean,
+    val syncMockConfig: SynchronousResourceConfig<INPUT>
+)
+
+internal data class JobConfig<INPUT, RESULT>(
+    val jobType: String,
+    val persistence: DataPersistence<INPUT, RESULT>,
+    val myInstanceName: String,
     val tagProvider: (INPUT) -> List<String>,
     val customInfoProvider: (INPUT) -> String,
     val priorityProvider: (INPUT) -> Int,
-    val enableCancellation: Boolean,
-    val syncMockConfig: SyncMockConfiguration<INPUT>
 )
 
-internal class SyncMockConfiguration<INPUT>(
+internal class SynchronousResourceConfig<INPUT>(
     val enabled: Boolean,
     val path: String,
     val checkInterval: Duration,
@@ -248,27 +232,38 @@ internal class SyncMockConfiguration<INPUT>(
 )
 
 internal suspend inline fun <INPUT> submit(
-    jobType: String,
     input: INPUT,
-    myInstanceName: String,
-    persistence: DataPersistence<INPUT, *>,
-    tagProvider: (INPUT) -> List<String>,
-    customInfoProvider: (INPUT) -> String,
-    priorityProvider: (INPUT) -> Int
-): PersistenceAccessResult<String> {
+    jobConfig: JobConfig<INPUT, *>
+): PersistenceAccessResult<Job> = with(jobConfig) {
     val uuid = UUID.randomUUID().toString()
     val tags = tagProvider(input)
     val customInfo = customInfoProvider(input)
     val job = Job(uuid, jobType, tags, customInfo, priorityProvider(input), myInstanceName, LocalDateTime.now(), JobStatus.CREATED)
     apiLog.trace("Persisting job with ID $uuid")
-    return persistence.dataTransaction { persistJob(job); persistInput(job, input) }.map { uuid }
+    return persistence.dataTransaction { persistJob(job); persistInput(job, input) }.mapResult { job }
+}
+
+private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.validateAndSubmit(
+    apiConfig: ApiConfig<INPUT, *>,
+    jobConfig: JobConfig<INPUT, *>,
+    input: INPUT
+): String? {
+    apiConfig.inputValidation(input).takeIf { it.isNotEmpty() }?.let {
+        call.respond(BadRequest, it.joinToString(", "))
+        return null
+    }
+    return submit(input, jobConfig).orQuitWith {
+        call.respondText("Failed to persist job: $it", status = InternalServerError)
+        return null
+    }.uuid
 }
 
 private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: DataPersistence<*, *>): Job? {
     return persistence.fetchJob(uuid.toString()).orQuitWith {
         when (it) {
             is PersistenceAccessError.InternalError -> call.respondText("Failed to access job with ID $uuid: $it", status = InternalServerError)
-            is PersistenceAccessError.NotFound -> call.respondText("No job with ID $uuid could be found.", status = NotFound)
+            is PersistenceAccessError.NotFound, is PersistenceAccessError.UuidNotFound ->
+                call.respondText("No job with ID $uuid could be found.", status = NotFound)
         }
         return null
     }
@@ -291,11 +286,7 @@ private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.failu
     }
 
 private suspend fun PipelineContext<Unit, ApplicationCall>.parseUuid(): UUID? = call.parameters["uuid"]?.let {
-    try {
-        return UUID.fromString(it)
-    } catch (@Suppress("SwallowedException") e: IllegalArgumentException) {
-        null
-    }
+    runCatching { UUID.fromString(it) }.getOrNull()
 } ?: run {
     call.respondText("The given uuid ${call.parameters["uuid"]} has a wrong format.", status = BadRequest)
     return null

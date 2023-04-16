@@ -46,7 +46,15 @@ sealed class Either<out L, out R> {
     /**
      * Applies the given function to the right value and does nothing if this is a left value.
      */
-    inline fun <T> map(f: (R) -> T): Either<L, T> = when (this) {
+    inline fun <T> map(fl: (L) -> T, fr: (R) -> T): T = when (this) {
+        is Left -> fl(value)
+        is Right -> fr(value)
+    }
+
+    /**
+     * Applies the given function to the right value and does nothing if this is a left value.
+     */
+    inline fun <T> mapRight(f: (R) -> T): Either<L, T> = when (this) {
         is Left -> this
         is Right -> Right(f(value))
     }
@@ -97,3 +105,10 @@ inline fun <L, R> Either<L, R>.getOrElse(f: (L) -> R): R = when (this) {
     is Left -> f(value)
     is Right -> value
 }
+
+/**
+ * Unwraps all [results][R] of this collection. If any element is a Left (error) value the first of them is
+ * passed to [onError] s.t. this function does not return anymore.
+ */
+inline fun <reified L, R> Iterable<Either<L, R>>.unwrapOrReturnFirstError(onError: (Left<L>) -> Nothing): Right<List<R>> =
+    Right(map { (it as? Right<R>)?.value ?: onError(it as Left<L>) })

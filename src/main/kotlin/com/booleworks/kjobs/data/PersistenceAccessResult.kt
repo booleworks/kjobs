@@ -33,6 +33,14 @@ sealed interface PersistenceAccessError {
     }
 
     /**
+     * Indicates that a persistence access failed because the item with id `uuid` was not found.
+     */
+    class UuidNotFound(uuid: String) : PersistenceAccessError {
+        override val message = "UUID not found: $uuid"
+        override fun toString() = message
+    }
+
+    /**
      * Indicates that a persistence access failed because of an internal error (e.g. a connection problem).
      */
     data class InternalError(override val message: String) : PersistenceAccessError {
@@ -61,7 +69,7 @@ inline fun <R> PersistenceAccessResult<R>.ifError(block: (PersistenceAccessError
 /**
  * Maps the result using the given mapping function.
  */
-fun <R, T> PersistenceAccessResult<R>.mapResult(mapper: (R) -> T): PersistenceAccessResult<T> = this.map(mapper)
+fun <R, T> PersistenceAccessResult<R>.mapResult(mapper: (R) -> T): PersistenceAccessResult<T> = this.mapRight(mapper)
 
 /**
  * Whether this persistence access was successful.
@@ -82,6 +90,11 @@ fun <R> Either.Companion.result(result: R): PersistenceAccessResult<R> = Either.
  * Returns an object indicating that the persistence access failed because the item was not found.
  */
 fun <R> Either.Companion.notFound(): PersistenceAccessResult<R> = Either.Left(NotFound)
+
+/**
+ * Returns an object indicating that the persistence access failed because the item with id [uuid] was not found.
+ */
+fun <R> Either.Companion.uuidNotFound(uuid: String): PersistenceAccessResult<R> = Either.Left(PersistenceAccessError.UuidNotFound(uuid))
 
 /**
  * Returns an object indicating that the persistence access failed with a given error [message].

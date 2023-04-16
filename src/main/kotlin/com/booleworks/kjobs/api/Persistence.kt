@@ -3,10 +3,12 @@
 
 package com.booleworks.kjobs.api
 
+import com.booleworks.kjobs.common.unwrapOrReturnFirstError
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessResult
+import com.booleworks.kjobs.data.mapResult
 import java.time.LocalDateTime
 
 /**
@@ -51,6 +53,13 @@ interface JobPersistence {
      * Fetches all jobs which have been finished before the given date.
      */
     suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>>
+
+    /**
+     * Returns the status of the jobs with the given uuids.
+     */
+    suspend fun fetchStati(uuids: List<String>): PersistenceAccessResult<List<JobStatus>> =
+        uuids.map { fetchJob(it) }.unwrapOrReturnFirstError { return@fetchStati it }
+            .mapResult { jobs -> jobs.map { it.status } }
 }
 
 /**

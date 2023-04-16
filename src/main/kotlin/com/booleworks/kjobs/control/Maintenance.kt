@@ -46,7 +46,8 @@ object Maintenance {
      */
     suspend fun checkForCancellations(persistence: JobPersistence) {
         // we don't filter for instance here to also cancel jobs which might have been stolen from us
-        jobsToBeCancelled = persistence.allJobsWithStatus(JobStatus.CANCEL_REQUESTED).map { jobs -> jobs.map { it.uuid } }.getOrElse { emptyList() }.toSet()
+        jobsToBeCancelled =
+            persistence.allJobsWithStatus(JobStatus.CANCEL_REQUESTED).mapRight { jobs -> jobs.map { it.uuid } }.getOrElse { emptyList() }.toSet()
     }
 
     /**

@@ -5,11 +5,13 @@ package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.api.JobFrameworkBuilder.MaintenanceConfig
 import com.booleworks.kjobs.common.Either
+import com.booleworks.kjobs.control.JobConfig
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
 import com.booleworks.kjobs.control.SpecificExecutor
 import com.booleworks.kjobs.control.submit
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
+import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobPrioritizer
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher
@@ -81,9 +83,12 @@ class JobFrameworkTestingApi internal constructor(
         tagProvider: (INPUT) -> List<String> = { emptyList() },
         customInfoProvider: (INPUT) -> String = { "" },
         priorityProvider: (INPUT) -> Int = { 0 }
-    ): PersistenceAccessResult<String> = runBlocking {
+    ): PersistenceAccessResult<Job> = runBlocking {
         @Suppress("UNCHECKED_CAST")
-        submit(jobType, input, instance, persistencesPerType[jobType] as DataPersistence<INPUT, *>, tagProvider, customInfoProvider, priorityProvider)
+        submit(
+            input,
+            JobConfig(jobType, persistencesPerType[jobType] as DataPersistence<INPUT, *>, instance, tagProvider, customInfoProvider, priorityProvider)
+        )
     }
 
     /**
