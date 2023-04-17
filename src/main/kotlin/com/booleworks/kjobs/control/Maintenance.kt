@@ -7,6 +7,7 @@ import com.booleworks.kjobs.api.DataPersistence
 import com.booleworks.kjobs.api.JobPersistence
 import com.booleworks.kjobs.common.getOrElse
 import com.booleworks.kjobs.data.Heartbeat
+import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.ifError
@@ -68,28 +69,7 @@ object Maintenance {
             logger.warn("Detected jobs executed by seemingly dead instances. Dead instances are: ${deadInstances.joinToString()}")
         }
 
-        jobsWithDeadInstances.forEach { job ->
-            val dataPersistence = specificPersistences[job.type]!!
-            dataPersistence.dataTransaction {
-                if (job.numRestarts >= maxRestarts) {
-                    logger.debug(
-                        "Setting job with ID ${job.uuid} to failure because its executing instance seems to be dead " +
-                                "and the maximum number of restarts has been reached"
-                    )
-                    job.status = JobStatus.FAILURE
-                    job.finishedAt = LocalDateTime.now()
-                    persistOrUpdateResult(job, JobResult.error(job.uuid, "The job was aborted because it exceeded the number of $maxRestarts restarts"))
-                } else {
-                    logger.debug("Restarting job with ID ${job.uuid} because its executing instance seems to be dead")
-                    job.status = JobStatus.CREATED
-                    job.numRestarts += 1
-                    job.executingInstance = null
-                    job.startedAt = null
-                    job.timeout = null
-                }
-                updateJob(job)
-            }.ifError { logger.error("Updating job in timeout failed with: $it") }
-        }
+        restartJobs(jobsWithDeadInstances, specificPersistences, maxRestarts, "its executing instance seems to be dead")
     }
 
     /**
@@ -104,4 +84,45 @@ object Maintenance {
                 .ifError { logger.error("Failed to delete old jobs: $it") }
         }
     }
+
+    /**
+     * Resets all [running][JobStatus.RUNNING] jobs of this instance to [JobStatus.CREATED].
+     *
+     * This may be useful on startup after a possible restart where the instance name did not change.
+     *
+     * If a job was restarted more than [maxRestarts] times, the result is set to failure.
+     */
+    suspend fun resetMyRunningJobs(
+        persistence: JobPersistence, myInstanceName: String, specificPersistences: Map<String, DataPersistence<*, *>>, maxRestarts: Int,
+    ) {
+        val myRunningJobs = persistence.allJobsOfInstance(JobStatus.RUNNING, myInstanceName).orQuitWith {
+            logger.error("Failed to fetch jobs: $it")
+            return
+        }
+        restartJobs(myRunningJobs, specificPersistences, maxRestarts, "its instance has been restarted")
+    }
+
+    private suspend fun restartJobs(jobs: List<Job>, specificPersistences: Map<String, DataPersistence<*, *>>, maxRestarts: Int, hint: String) =
+        jobs.forEach { job ->
+            val dataPersistence = specificPersistences[job.type]!!
+            dataPersistence.dataTransaction {
+                if (job.numRestarts >= maxRestarts) {
+                    logger.debug(
+                        "Setting job with ID ${job.uuid} to failure because $hint " +
+                                "and the maximum number of restarts has been reached"
+                    )
+                    job.status = JobStatus.FAILURE
+                    job.finishedAt = LocalDateTime.now()
+                    persistOrUpdateResult(job, JobResult.error(job.uuid, "The job was aborted because it exceeded the number of $maxRestarts restarts"))
+                } else {
+                    logger.debug("Restarting job with ID ${job.uuid} because $hint")
+                    job.status = JobStatus.CREATED
+                    job.numRestarts += 1
+                    job.executingInstance = null
+                    job.startedAt = null
+                    job.timeout = null
+                }
+                updateJob(job)
+            }.ifError { logger.error("Updating job failed with: $it") }
+        }
 }

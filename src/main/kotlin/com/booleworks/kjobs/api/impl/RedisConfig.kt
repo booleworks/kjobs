@@ -7,18 +7,16 @@ package com.booleworks.kjobs.api.impl
  * Configuration for the [RedisDataPersistence].
  */
 interface RedisConfig {
-    val jobPattern: String
-        get() = "*:job"
-    val heartbeatPattern: String
-        get() = "*:heartbeat"
+    val jobPattern: String get() = "job:*"
+    val heartbeatPattern: String get() = "heartbeat:*"
 
-    fun jobKey(uuid: String): String = "$uuid:job"
-    fun inputKey(uuid: String): String = "$uuid:input"
-    fun resultKey(uuid: String): String = "$uuid:result"
-    fun heartbeatKey(instanceName: String): String = "$instanceName:heartbeat"
+    fun jobKey(uuid: String): String = "job:$uuid"
+    fun inputKey(uuid: String): String = "input:$uuid"
+    fun resultKey(uuid: String): String = "result:$uuid"
+    fun heartbeatKey(instanceName: String): String = "heartbeat:$instanceName"
 
-    fun extractUuid(jobKey: String): String = jobKey.split(":")[0]
-    fun extractInstanceName(heartbeatKey: String): String = heartbeatKey.split(":")[0]
+    fun extractUuid(jobKey: String): String = jobKey.split(":")[1]
+    fun extractInstanceName(heartbeatKey: String): String = heartbeatKey.split(":")[1]
 }
 
 /**

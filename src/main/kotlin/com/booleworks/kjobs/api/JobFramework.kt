@@ -24,6 +24,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.routing.Route
 import io.ktor.util.pipeline.PipelineContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.runBlocking
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
@@ -131,6 +132,11 @@ class JobFrameworkBuilder internal constructor(
      * @param deleteOldJobsAfter the time after which finished jobs should be deleted. Default is 365 days. Usually, this value can be set much lower (e.g.
      * to one day or even less). Note that, depending on the number of requests and the size of the input and result, the job database may become very large if
      * this value is set too high.
+     * @param restartRunningJobsOnStartup whether we should check for running jobs of this instance at startup and restart them. The intention is that this
+     * instance might have been restarted for whatever reason and still have the same name. If the instance was restarted when a job was running, this job would
+     * still be in [JobStatus.RUNNING] state and nobody (including the instance itself) would recognize that the job is actually not computed anymore. So it is
+     * highly recommended to set this property to `true`. *Note that this will block the instance on startup while the jobs are being reset, but this should
+     * usually be a very short amount of time.*
      * @param maxJobRestarts the maximum number of restarts of a job. A job is restarted if its timeout is reached. Default is [DEFAULT_MAX_JOB_RESTARTS].
      */
     class MaintenanceConfig internal constructor(
@@ -138,6 +144,7 @@ class JobFrameworkBuilder internal constructor(
         var heartbeatInterval: Duration = 10.seconds,
         var oldJobDeletionInterval: Duration = 1.days,
         var deleteOldJobsAfter: Duration = 365.days,
+        var restartRunningJobsOnStartup: Boolean = true,
         var maxJobRestarts: Int = DEFAULT_MAX_JOB_RESTARTS,
     )
 
@@ -157,6 +164,9 @@ class JobFrameworkBuilder internal constructor(
     )
 
     fun build() {
+        if (maintenanceConfig.restartRunningJobsOnStartup) runBlocking {
+            Maintenance.resetMyRunningJobs(jobPersistence, myInstanceName, specificPersistences, maintenanceConfig.maxJobRestarts)
+        }
         apis.forEach { it.build(cancellationConfig.enabled) }
         val executor = generateJobExecutor()
         executionBase.schedule(maintenanceConfig.jobCheckInterval) { executor.execute() }

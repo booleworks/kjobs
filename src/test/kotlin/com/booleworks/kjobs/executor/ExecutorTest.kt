@@ -15,31 +15,11 @@ import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import redis.clients.jedis.JedisPool
-import redis.clients.jedis.JedisPoolConfig
 import java.time.LocalDateTime.now
 import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
 
 class ExecutorTest {
-
-    @Test
-    fun `redis temp test`() {
-        val poolConfig = JedisPoolConfig()
-        val pool = JedisPool(poolConfig, "http://localhost:6379")
-        pool.resource.use { jedis ->
-            jedis.set("A", "C")
-            jedis.multi().use {
-                it.set("A", "B")
-                it.lpop("A")
-                it.get("A")
-                it.set("C", "D")
-                val exec = it.exec()
-                println(exec)
-                exec
-            }
-        }
-    }
 
     @Test
     fun `test simple computation`() = testWithRedis {
