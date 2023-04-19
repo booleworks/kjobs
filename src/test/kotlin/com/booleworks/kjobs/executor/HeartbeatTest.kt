@@ -128,7 +128,7 @@ class HeartbeatTest {
                 assertThat(startedAt).isNotNull()
                 assertThat(timeout).isNotNull()
             }
-            assertThat(fetchResult(job.uuid).right().error).isEqualTo("The job was aborted because it exceeded the number of 3 restarts")
+            assertThat(fetchResult(job.uuid).right().error).isEqualTo("The job was aborted because it exceeded the maximum number of 3 restarts")
             coroutineContext.cancelChildren()
         }
     }

@@ -6,12 +6,13 @@ package com.booleworks.kjobs.control
 import com.booleworks.kjobs.api.ApiBuilder
 import com.booleworks.kjobs.api.DataPersistence
 import com.booleworks.kjobs.api.JobFrameworkBuilder
+import com.booleworks.kjobs.common.getOrElse
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
+import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.orQuitWith
-import io.ktor.http.HttpStatusCode
 import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.InternalServerError
 import io.ktor.http.HttpStatusCode.Companion.NotFound
@@ -74,7 +75,17 @@ import kotlin.time.Duration
 internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = with(def) {
     route(basePath ?: "") {
         post("submit") {
-            submit(def, inputReceiver(), def.priorityProvider)?.let { call.respond(it) }
+            val input = inputReceiver()
+            inputValidation(input).takeIf { it.isNotEmpty() }?.let {
+                call.respond(BadRequest, it.joinToString(", "))
+                return@post
+            }
+            submit(def.jobType, input, def.myInstanceName, def.persistence, def.tagProvider, def.customInfoProvider, def.priorityProvider).getOrElse {
+                call.respondText("Failed to persist job: ${it.message}", status = InternalServerError)
+                return@post
+            }.let {
+                call.respond(it)
+            }
         }
 
         get("status/{uuid}") {
@@ -85,7 +96,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
             parseUuid()?.let { uuid ->
                 val job = fetchJob(uuid, persistence) ?: return@get
                 if (job.status != JobStatus.SUCCESS) {
-                    call.respondText("Cannot return the result for job with ID $uuid and status ${job.status}.", status = HttpStatusCode.BadRequest)
+                    call.respondText("Cannot return the result for job with ID $uuid and status ${job.status}.", status = BadRequest)
                 } else {
                     val result = result(job, persistence) ?: return@get
                     result.result?.let {
@@ -101,7 +112,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
             parseUuid()?.let { uuid ->
                 val job = fetchJob(uuid, persistence) ?: return@get
                 if (job.status != JobStatus.FAILURE) {
-                    call.respondText("Cannot return a failure for job with ID $uuid and status ${job.status}.", status = HttpStatusCode.BadRequest)
+                    call.respondText("Cannot return a failure for job with ID $uuid and status ${job.status}.", status = BadRequest)
                 } else {
                     val result = result(job, persistence) ?: return@get
                     result.error?.let {
@@ -124,7 +135,17 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
 
         if (syncMockConfig.enabled) {
             post("synchronous") {
-                val uuid = submit(def, inputReceiver(), syncMockConfig.priorityProvider) ?: return@post
+                val input = inputReceiver()
+                inputValidation(input).takeIf { it.isNotEmpty() }?.let {
+                    call.respond(BadRequest, it.joinToString(", "))
+                    return@post
+                }
+                val uuid =
+                    submit(def.jobType, input, def.myInstanceName, def.persistence, def.tagProvider, def.customInfoProvider, syncMockConfig.priorityProvider)
+                        .getOrElse {
+                            call.respondText("Failed to persist job: ${it.message}", status = InternalServerError)
+                            return@post
+                        }
                 var status = JobStatus.CREATED
                 val timeout = LocalDateTime.now().plusSeconds(syncMockConfig.maxWaitingTime.inWholeSeconds)
                 while (status in setOf(JobStatus.CREATED, JobStatus.RUNNING) && LocalDateTime.now() < timeout) {
@@ -197,27 +218,20 @@ internal class SyncMockConfiguration<INPUT>(
     val priorityProvider: (INPUT) -> Int
 )
 
-private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.submit(
-    def: JobApiDef<INPUT, *>,
+internal suspend inline fun <INPUT> submit(
+    jobType: String,
     input: INPUT,
-    customPriorityProvider: (INPUT) -> Int
-): String? = with(def) {
-    inputValidation(input).takeIf { it.isNotEmpty() }?.let {
-        call.respond(HttpStatusCode.BadRequest, it.joinToString(", "))
-        return null
-    }
+    myInstanceName: String,
+    persistence: DataPersistence<INPUT, *>,
+    tagProvider: (INPUT) -> List<String>,
+    customInfoProvider: (INPUT) -> String,
+    priorityProvider: (INPUT) -> Int
+): PersistenceAccessResult<String> {
     val uuid = UUID.randomUUID().toString()
     val tags = tagProvider(input)
     val customInfo = customInfoProvider(input)
-    val job = Job(uuid, jobType, tags, customInfo, customPriorityProvider(input), myInstanceName, LocalDateTime.now(), JobStatus.CREATED)
-    persistence.dataTransaction {
-        persistJob(job)
-        persistInput(job, input)
-    }.orQuitWith {
-        call.respondText("Failed to persist job: $it", status = InternalServerError)
-        return null
-    }
-    uuid
+    val job = Job(uuid, jobType, tags, customInfo, priorityProvider(input), myInstanceName, LocalDateTime.now(), JobStatus.CREATED)
+    return persistence.dataTransaction { persistJob(job); persistInput(job, input) }.map { uuid }
 }
 
 private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: DataPersistence<*, *>): Job? {
@@ -247,6 +261,6 @@ private suspend fun PipelineContext<Unit, ApplicationCall>.parseUuid(): UUID? = 
         null
     }
 } ?: run {
-    call.respondText("The given uuid ${call.parameters["uuid"]} has a wrong format.", status = HttpStatusCode.BadRequest)
+    call.respondText("The given uuid ${call.parameters["uuid"]} has a wrong format.", status = BadRequest)
     return null
 }

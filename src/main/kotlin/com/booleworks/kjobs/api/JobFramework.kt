@@ -3,6 +3,7 @@
 
 package com.booleworks.kjobs.api
 
+import com.booleworks.kjobs.api.JobBuilder.JobConfig
 import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.control.JobApiDef
 import com.booleworks.kjobs.control.MainJobExecutor
@@ -56,14 +57,15 @@ fun JobFramework(
 class JobFrameworkBuilder internal constructor(
     private val myInstanceName: String,
     private val jobPersistence: JobPersistence,
-    private val executionBase: Either<CoroutineScope, Application>
+    private val executionBase: Either<CoroutineScope, Application>,
+    private val maintenanceEnabled: Boolean = true
 ) {
     private val executorConfig: ExecutorConfig = ExecutorConfig()
     private val maintenanceConfig: MaintenanceConfig = MaintenanceConfig()
     private val cancellationConfig: CancellationConfig = CancellationConfig()
     private val apis: MutableList<ApiBuilder<*, *>> = mutableListOf()
-    private val specificExecutors: MutableMap<String, SpecificExecutor<*, *>> = mutableMapOf()
-    private val specificPersistences: MutableMap<String, DataPersistence<*, *>> = mutableMapOf()
+    private val executorsPerType: MutableMap<String, SpecificExecutor<*, *>> = mutableMapOf()
+    private val persistencesPerType: MutableMap<String, DataPersistence<*, *>> = mutableMapOf()
 
     /**
      * Generates a new API for a specific [job type][jobType]. The [configuration] is optional, but it is
@@ -89,9 +91,28 @@ class JobFrameworkBuilder internal constructor(
         configuration: ApiBuilder<INPUT, RESULT>.() -> Unit = {}
     ) = ApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder, computation).apply {
         configuration()
-        specificExecutors[jobType] = specificExecutor()
-        specificPersistences[jobType] = dataPersistence
+        executorsPerType[jobType] = specificExecutor()
+        persistencesPerType[jobType] = dataPersistence
         apis += this
+    }
+
+    /**
+     * Adds a job to the framework without adding routes. This usually only makes sense in testing mode.
+     * @param jobType a unique name identifying this type of job
+     * @param dataPersistence the persistence/database to use for storing the inputs and results
+     * for this specific job type
+     * @param computation the actual computation which should be performed by this asynchronous service
+     * @param configuration provides more detailed configuration options as described below
+     */
+    fun <INPUT, RESULT> addJob(
+        jobType: String,
+        dataPersistence: DataPersistence<INPUT, RESULT>,
+        computation: suspend (Job, INPUT) -> RESULT,
+        configuration: JobBuilder<INPUT, RESULT>.() -> Unit
+    ) = JobBuilder(myInstanceName, dataPersistence, computation).apply {
+        configuration()
+        executorsPerType[jobType] = specificExecutor()
+        persistencesPerType[jobType] = dataPersistence
     }
 
     /**
@@ -165,29 +186,41 @@ class JobFrameworkBuilder internal constructor(
 
     fun build() {
         if (maintenanceConfig.restartRunningJobsOnStartup) runBlocking {
-            Maintenance.resetMyRunningJobs(jobPersistence, myInstanceName, specificPersistences, maintenanceConfig.maxJobRestarts)
+            Maintenance.resetMyRunningJobs(jobPersistence, myInstanceName, persistencesPerType, maintenanceConfig.maxJobRestarts)
         }
         apis.forEach { it.build(cancellationConfig.enabled) }
-        val executor = generateJobExecutor()
-        executionBase.schedule(maintenanceConfig.jobCheckInterval) { executor.execute() }
-        executionBase.schedule(maintenanceConfig.heartbeatInterval) { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
-        executionBase.schedule(maintenanceConfig.heartbeatInterval) {
-            Maintenance.restartJobsFromDeadInstances(
-                jobPersistence,
-                specificPersistences,
-                maintenanceConfig.heartbeatInterval,
-                maintenanceConfig.maxJobRestarts
-            )
+        if (maintenanceEnabled) {
+            val executor = generateJobExecutor()
+            executionBase.schedule(maintenanceConfig.jobCheckInterval) { executor.execute() }
+            executionBase.schedule(maintenanceConfig.heartbeatInterval) { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
+            executionBase.schedule(maintenanceConfig.heartbeatInterval) {
+                Maintenance.restartJobsFromDeadInstances(
+                    jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, maintenanceConfig.maxJobRestarts
+                )
+            }
+            executionBase.schedule(maintenanceConfig.oldJobDeletionInterval) {
+                Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter)
+            }
+            if (cancellationConfig.enabled) {
+                executionBase.schedule(cancellationConfig.checkInterval) { Maintenance.checkForCancellations(jobPersistence) }
+            }
         }
-        executionBase.schedule(maintenanceConfig.oldJobDeletionInterval) {
-            Maintenance.deleteOldJobs(
-                jobPersistence,
-                maintenanceConfig.deleteOldJobsAfter
-            )
-        }
-        if (cancellationConfig.enabled) {
-            executionBase.schedule(cancellationConfig.checkInterval) { Maintenance.checkForCancellations(jobPersistence) }
-        }
+    }
+
+    fun buildTestingMode(): JobFrameworkTestingApi {
+        build()
+        return JobFrameworkTestingApi(
+            jobPersistence,
+            myInstanceName,
+            persistencesPerType,
+            executorsPerType,
+            executorConfig.executionCapacityProvider,
+            executorConfig.jobPrioritizer,
+            executorConfig.tagMatcher,
+            maintenanceConfig.heartbeatInterval,
+            maintenanceConfig.deleteOldJobsAfter,
+            maintenanceConfig.maxJobRestarts
+        )
     }
 
     private fun generateJobExecutor(): MainJobExecutor = MainJobExecutor(
@@ -196,7 +229,7 @@ class JobFrameworkBuilder internal constructor(
         executorConfig.executionCapacityProvider,
         executorConfig.jobPrioritizer,
         executorConfig.tagMatcher,
-        specificExecutors
+        executorsPerType
     )
 
     private val Either<CoroutineScope, Application>.schedule: (duration: Duration, task: suspend () -> Unit) -> kotlinx.coroutines.Job
@@ -251,21 +284,6 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
     )
 
     /**
-     * Further configuration options about the handling of jobs.
-     * @param tagProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.tags]. Default is an empty list.
-     * @param customInfoProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.customInfo].
-     * Default is an empty string.
-     * @param priorityProvider a function providing an integer priority for a job input. A smaller number means a higher priority. Default is 0.
-     * @param timeoutComputation a function providing a timeout for the given job. The default is 24 hours. In most cases this default should be set much lower.
-     */
-    class JobConfig<INPUT> internal constructor(
-        var tagProvider: (INPUT) -> List<String> = { emptyList() },
-        var customInfoProvider: (INPUT) -> String = { "" },
-        var priorityProvider: (INPUT) -> Int = { 0 },
-        var timeoutComputation: (Job, INPUT) -> Duration = { _, _ -> 24.hours },
-    )
-
-    /**
      * Configuration options for the synchronous resource.
      *
      * The synchronous resource is a wrapper around the asynchronous resources (`submit`, `status`, `result`, etc). It does not perform the computation itself,
@@ -310,7 +328,39 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
             )
         )
     }
+}
 
+/**
+ * Builder for job without a route.
+ */
+class JobBuilder<INPUT, RESULT> internal constructor(
+    private val myInstanceName: String,
+    private val persistence: DataPersistence<INPUT, RESULT>,
+    private val computation: suspend (Job, INPUT) -> RESULT,
+) {
+    private val jobConfig: JobConfig<INPUT> = JobConfig()
+
+    /**
+     * Provides further configuration options about the handling of jobs.
+     */
+    fun jobConfig(configuration: JobConfig<INPUT>.() -> Unit) = configuration(jobConfig)
+
+    /**
+     * Further configuration options about the handling of jobs.
+     * @param tagProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.tags]. Default is an empty list.
+     * @param customInfoProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.customInfo].
+     * Default is an empty string.
+     * @param priorityProvider a function providing an integer priority for a job input. A smaller number means a higher priority. Default is 0.
+     * @param timeoutComputation a function providing a timeout for the given job. The default is 24 hours. In most cases this default should be set much lower.
+     */
+    class JobConfig<INPUT> internal constructor(
+        var tagProvider: (INPUT) -> List<String> = { emptyList() },
+        var customInfoProvider: (INPUT) -> String = { "" },
+        var priorityProvider: (INPUT) -> Int = { 0 },
+        var timeoutComputation: (Job, INPUT) -> Duration = { _, _ -> 24.hours },
+    )
+
+    internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> = SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation)
 }
 
 internal const val DEFAULT_MAX_JOB_RESTARTS = 3

@@ -36,8 +36,8 @@ private val log: Logger = LoggerFactory.getLogger("JobExecutor")
 /**
  * The central instance which is responsible to compute jobs.
  */
-internal class MainJobExecutor(
-    private val persistence: JobPersistence,
+class MainJobExecutor(
+    private val jobPersistence: JobPersistence,
     private val myInstanceName: String,
     private val executionCapacityProvider: ExecutionCapacityProvider,
     private val jobPrioritizer: JobPrioritizer,
@@ -59,7 +59,7 @@ internal class MainJobExecutor(
     }
 
     private suspend fun getExecutionCapacity(): ExecutionCapacity? {
-        val allMyRunningJobs = persistence.allJobsOfInstance(JobStatus.RUNNING, myInstanceName).orQuitWith {
+        val allMyRunningJobs = jobPersistence.allJobsOfInstance(JobStatus.RUNNING, myInstanceName).orQuitWith {
             log.warn("Failed to retrieve all running jobs: $it")
             return null
         }
@@ -76,7 +76,7 @@ internal class MainJobExecutor(
             // timeout will be recomputed shortly, but we need to set a timeout for the case that the pod is restarted in between
             // (jobs will not be restarted without a timeout being set)
             job.timeout = LocalDateTime.now().plusMinutes(2)
-            persistence.transaction { updateJob(job) }.orQuitWith {
+            jobPersistence.transaction { updateJob(job) }.orQuitWith {
                 log.error("Failed to update job with ID ${job.uuid}: $it")
                 return null
             }
@@ -88,7 +88,7 @@ internal class MainJobExecutor(
     }
 
     private suspend fun selectJobWithHighestPriority(executionCapacity: ExecutionCapacity): Job? {
-        val result = persistence.allJobsWithStatus(JobStatus.CREATED).orQuitWith {
+        val result = jobPersistence.allJobsWithStatus(JobStatus.CREATED).orQuitWith {
             log.warn("Job access failed with error: $it")
             return null
         }
@@ -99,13 +99,13 @@ internal class MainJobExecutor(
         while (coroutineJob.isActive) {
             if (Maintenance.jobsToBeCancelled.contains(uuid)) {
                 coroutineJob.cancelAndJoin()
-                persistence.fetchJob(uuid).onRight { job ->
+                jobPersistence.fetchJob(uuid).onRight { job ->
                     if (job.status == JobStatus.SUCCESS || job.status == JobStatus.FAILURE) {
                         log.info("Job with ID $uuid was cancelled, but finished before the cancellation was processed.")
                     } else {
                         job.status = JobStatus.CANCELLED
                         job.finishedAt = LocalDateTime.now()
-                        persistence.transaction { updateJob(job) }.orQuitWith {
+                        jobPersistence.transaction { updateJob(job) }.orQuitWith {
                             log.error("Failed to update job with ID $uuid to status CANCELLED: $it")
                             return@launch
                         }
@@ -129,7 +129,7 @@ internal class MainJobExecutor(
 /**
  * The computation-specific part of the executor.
  */
-internal class SpecificExecutor<INPUT, RESULT>(
+class SpecificExecutor<INPUT, RESULT>(
     private val myInstanceName: String,
     private val persistence: DataPersistence<INPUT, RESULT>,
     private val computation: suspend (Job, INPUT) -> RESULT,

@@ -19,13 +19,20 @@ import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
 /**
+ * This factor multiplied by the `heartbeatInterval` denotes the acceptable time in which a heartbeat
+ * may be delayed. The intension is that we allow no more than one missed heartbeat (which would be
+ * factor 2) and wait some more time for the job to write the heartbeat in the database.
+ */
+private const val HEARTBEAT_TIMEOUT_FACTOR = 2.1
+
+/**
  * A collection of maintenance jobs.
  */
 object Maintenance {
     private val logger: Logger = LoggerFactory.getLogger(Maintenance::class.java)
 
     var jobsToBeCancelled = setOf<String>()
-        private set
+        internal set
 
     /**
      * Updates the heartbeat for this instance in the [persistence].
@@ -44,19 +51,23 @@ object Maintenance {
     }
 
     /**
-     * Checks for jobs in status [JobStatus.RUNNING] which have exceeded their timeout. If the number of restarts
-     * is less than [maxRestarts], the job is reset to [JobStatus.CREATED], otherwise the job is set to failure.
+     * Checks for jobs in status [JobStatus.RUNNING] belonging to instances which seem to be dead. An instance
+     * is assumed to be dead *if it missed to update its heartbeat at least twice*.
+     * If such a job has had less than [maxRestarts] restarts, the job is reset to [JobStatus.CREATED],
+     * otherwise the job is set to failure. (The assumption is multiple restarts of the same job may indicate
+     * that the job's computation is responsible for the death of the instance.)
      */
     suspend fun restartJobsFromDeadInstances(
         jobPersistence: JobPersistence,
         specificPersistences: Map<String, DataPersistence<*, *>>,
-        pulse: Duration,
+        heartbeatInterval: Duration,
         maxRestarts: Int,
     ) {
-        val liveInstances = jobPersistence.fetchHeartBeats(LocalDateTime.now().minus((pulse * 2).toJavaDuration())).orQuitWith {
-            logger.error("Failed to fetch heartbeats: $it")
-            return
-        }.map { it.instanceName }.toSet()
+        val liveInstances =
+            jobPersistence.fetchHeartBeats(LocalDateTime.now().minus((heartbeatInterval * HEARTBEAT_TIMEOUT_FACTOR).toJavaDuration())).orQuitWith {
+                logger.error("Failed to fetch heartbeats: $it")
+                return
+            }.map { it.instanceName }.toSet()
 
         val runningJobs = jobPersistence.allJobsWithStatus(JobStatus.RUNNING).orQuitWith {
             logger.error("Failed to fetch jobs: $it")
@@ -107,13 +118,10 @@ object Maintenance {
             val dataPersistence = specificPersistences[job.type]!!
             dataPersistence.dataTransaction {
                 if (job.numRestarts >= maxRestarts) {
-                    logger.debug(
-                        "Setting job with ID ${job.uuid} to failure because $hint " +
-                                "and the maximum number of restarts has been reached"
-                    )
+                    logger.debug("Setting job with ID ${job.uuid} to failure because $hint and the maximum number of restarts has been reached")
                     job.status = JobStatus.FAILURE
                     job.finishedAt = LocalDateTime.now()
-                    persistOrUpdateResult(job, JobResult.error(job.uuid, "The job was aborted because it exceeded the number of $maxRestarts restarts"))
+                    persistOrUpdateResult(job, JobResult.error(job.uuid, "The job was aborted because it exceeded the maximum number of $maxRestarts restarts"))
                 } else {
                     logger.debug("Restarting job with ID ${job.uuid} because $hint")
                     job.status = JobStatus.CREATED
