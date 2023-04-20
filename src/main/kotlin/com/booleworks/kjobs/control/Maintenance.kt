@@ -86,12 +86,12 @@ object Maintenance {
     /**
      * Deletes all jobs, including their inputs and results, which have finished for longer than the given duration.
      */
-    suspend fun deleteOldJobs(persistence: JobPersistence, after: Duration) {
+    suspend fun deleteOldJobs(persistence: JobPersistence, after: Duration, persistencesPerType: Map<String, DataPersistence<*, *>>) {
         persistence.allJobsFinishedBefore(LocalDateTime.now().minus(after.toJavaDuration())).orQuitWith {
             logger.error("Failed to fetch jobs: $it")
             return
         }.let { jobs ->
-            persistence.transaction { jobs.forEach { deleteForUuid(it.uuid) } }
+            persistence.transaction { jobs.forEach { deleteForUuid(it.uuid, persistencesPerType) } }
                 .ifError { logger.error("Failed to delete old jobs: $it") }
         }
     }
@@ -104,13 +104,13 @@ object Maintenance {
      * If a job was restarted more than [maxRestarts] times, the result is set to failure.
      */
     suspend fun resetMyRunningJobs(
-        persistence: JobPersistence, myInstanceName: String, specificPersistences: Map<String, DataPersistence<*, *>>, maxRestarts: Int,
+        persistence: JobPersistence, myInstanceName: String, persistencesPerType: Map<String, DataPersistence<*, *>>, maxRestarts: Int,
     ) {
         val myRunningJobs = persistence.allJobsOfInstance(JobStatus.RUNNING, myInstanceName).orQuitWith {
             logger.error("Failed to fetch jobs: $it")
             return
         }
-        restartJobs(myRunningJobs, specificPersistences, maxRestarts, "its instance has been restarted")
+        restartJobs(myRunningJobs, persistencesPerType, maxRestarts, "its instance has been restarted")
     }
 
     private suspend fun restartJobs(jobs: List<Job>, specificPersistences: Map<String, DataPersistence<*, *>>, maxRestarts: Int, hint: String) =

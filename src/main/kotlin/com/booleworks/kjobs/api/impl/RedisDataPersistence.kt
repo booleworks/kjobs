@@ -125,7 +125,9 @@ open class RedisJobPersistence(
     }
 
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
-        pool.resource.use { it.hgetAll(config.jobKey(uuid)) }.redisMapToJob(uuid)
+        pool.resource.use { it.hgetAll(config.jobKey(uuid)) }
+            .ifEmpty { return@fetchJob PersistenceAccessResult.notFound() }
+            .redisMapToJob(uuid)
 
     override suspend fun fetchHeartBeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> {
         val heartbeatKeys = pool.resource.use { it.keys(config.heartbeatPattern) }.toTypedArray()
@@ -180,7 +182,7 @@ open class RedisJobTransactionalPersistence(
         return PersistenceAccessResult.success
     }
 
-    override suspend fun deleteForUuid(uuid: String): PersistenceAccessResult<Unit> {
+    override suspend fun deleteForUuid(uuid: String, persistencesPerType: Map<String, DataPersistence<*, *>>): PersistenceAccessResult<Unit> {
         transaction.del(config.jobKey(uuid))
         transaction.del(config.inputKey(uuid))
         transaction.del(config.resultKey(uuid))

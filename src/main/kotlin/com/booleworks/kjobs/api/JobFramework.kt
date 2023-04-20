@@ -199,7 +199,7 @@ class JobFrameworkBuilder internal constructor(
                 )
             }
             executionBase.schedule(maintenanceConfig.oldJobDeletionInterval) {
-                Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter)
+                Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType)
             }
             if (cancellationConfig.enabled) {
                 executionBase.schedule(cancellationConfig.checkInterval) { Maintenance.checkForCancellations(jobPersistence) }
@@ -277,10 +277,12 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
      * @param inputValidation an optional validation of the input which is performed in the `submit` resource. Must return a list of error messages which
      * is empty in case the validation did not find any errors. If the list is not empty, the request is rejected with [HttpStatusCode.NotFound] and
      * a message constructed from the list. Default is an empty list.
+     * @param enableDeletion whether a `DELETE` resource should be added which allows the API user to delete a job (usually once the result has been fetched)
      */
     class ApiConfig<INPUT> internal constructor(
         var basePath: String? = null,
         var inputValidation: (INPUT) -> List<String> = { emptyList() },
+        var enableDeletion: Boolean = false
     )
 
     /**
@@ -320,6 +322,7 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
                 resultResponder,
                 apiConfig.basePath,
                 apiConfig.inputValidation,
+                apiConfig.enableDeletion,
                 jobConfig.tagProvider,
                 jobConfig.customInfoProvider,
                 jobConfig.priorityProvider,

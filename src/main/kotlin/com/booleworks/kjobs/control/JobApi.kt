@@ -21,6 +21,7 @@ import io.ktor.server.application.call
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
@@ -69,6 +70,14 @@ import kotlin.time.Duration
  * - performs the same steps as `submit` but does not return the UUID
  * - waits until the job is computed (computation might be performed by another instance)
  * - returns the result of the computation using [JobApiDef.resultResponder]
+ *
+ * ### `DELETE delete/{uuid}` (if enabled via [ApiBuilder.ApiConfig.enableDeletion])
+ * - deletes the job with the given uuid
+ * - the job must have the `jobType` of this API, otherwise status 400 is returned. So only jobs belonging
+ *     to this API can be deleted.
+ * - the job must not be in one of the stati `CREATED`, `RUNNING`, or `CANCEL_REQUESTED`. Such jobs must be
+ *     canceled first (and/or it has to be waited until the cancellation has succeeded and the status is
+ *     `CANCELLED`)
  *
  * If the persistence access in any of the routes fails, status 500 with a respective message is returned.
  */
@@ -119,6 +128,27 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
                         call.respondText(it)
                     } ?: run {
                         call.respondText("Expected the JobResult for ID $uuid to have an error.", status = InternalServerError)
+                    }
+                }
+            }
+        }
+
+        if (enableDeletion) {
+            delete("delete/{uuid}") {
+                parseUuid()?.let { uuid ->
+                    fetchJob(uuid, persistence)?.let { job ->
+                        if (job.type != jobType) {
+                            call.respond(
+                                BadRequest,
+                                "The job with ID $uuid belongs to another job type. Please call the delete resource with the correct path."
+                            )
+                        } else if (job.status in setOf(JobStatus.CREATED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)) {
+                            call.respond(BadRequest, "Cannot delete job with ID $uuid, because it is in a wrong status: ${job.status}")
+                        } else {
+                            persistence.transaction { deleteForUuid(uuid.toString(), mapOf(jobType to persistence)) }
+                                .onLeft { call.respond(InternalServerError, "Deletion of Job with ID $uuid failed with: $it") }
+                                .onRight { call.respond("Deleted") }
+                        }
                     }
                 }
             }
@@ -204,6 +234,7 @@ internal class JobApiDef<INPUT, RESULT>(
     val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
     val basePath: String?,
     val inputValidation: (INPUT) -> List<String>,
+    val enableDeletion: Boolean,
     val tagProvider: (INPUT) -> List<String>,
     val customInfoProvider: (INPUT) -> String,
     val priorityProvider: (INPUT) -> Int,

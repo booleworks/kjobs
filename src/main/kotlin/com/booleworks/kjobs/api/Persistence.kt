@@ -81,8 +81,13 @@ interface JobTransactionalPersistence {
      *
      * If anything was not found, the result will still be successful.
      * If any delete operation failed with an error (other than not found), this error will be returned.
+     *
+     * Implementation note: The [persistencesPerType] may only be required in certain situations where
+     * jobs of different job types are stored in different locations. The
+     * [standard redis implementation][com.booleworks.kjobs.api.impl.RedisJobTransactionalPersistence] for
+     * instance does not use it.
      */
-    suspend fun deleteForUuid(uuid: String): PersistenceAccessResult<Unit>
+    suspend fun deleteForUuid(uuid: String, persistencesPerType: Map<String, DataPersistence<*, *>>): PersistenceAccessResult<Unit>
 
     /**
      * Creates or updates the given heartbeat (based on the fact that [Heartbeat.instanceName] is the
