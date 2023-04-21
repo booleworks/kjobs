@@ -160,6 +160,7 @@ class SpecificExecutor<INPUT, RESULT>(
                     ?: JobResult.error(uuid, "The job did not finish within the configured timeout of $timeout")
             }.getOrElse {
                 yield() // for the case that the coroutine was cancelled
+                log.error("The job with ID $uuid failed with an exception and will be set to 'FAILURE': ${it.message}", it)
                 JobResult.error(uuid, "Unexpected exception during computation: ${it.message}")
             }
             writeResultToDb(uuid, result)
