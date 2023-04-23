@@ -32,6 +32,9 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
+@DslMarker
+annotation class KJobsDsl
+
 /**
  * Main entry point to setup the job framework.
  * @param myInstanceName a unique identifier of this instance, e.g. in a Kubernetes environment.
@@ -44,6 +47,7 @@ import kotlin.time.Duration.Companion.seconds
  * possibility to [add APIs][JobFrameworkBuilder.addApi] to a ktor application
  */
 @Suppress("FunctionName")
+@KJobsDsl
 fun JobFramework(
     myInstanceName: String,
     jobPersistence: JobPersistence,
@@ -54,6 +58,7 @@ fun JobFramework(
 /**
  * Builder for the KJobs Job Framework. Can be instantiated and configured using [JobFramework].
  */
+@KJobsDsl
 class JobFrameworkBuilder internal constructor(
     private val myInstanceName: String,
     private val jobPersistence: JobPersistence,
@@ -91,9 +96,9 @@ class JobFrameworkBuilder internal constructor(
         configuration: ApiBuilder<INPUT, RESULT>.() -> Unit = {}
     ) = ApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder, computation).apply {
         configuration()
-        executorsPerType[jobType] = specificExecutor()
-        persistencesPerType[jobType] = dataPersistence
-        apis += this
+        this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
+        this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
+        this@JobFrameworkBuilder.apis += this
     }
 
     /**
@@ -111,8 +116,8 @@ class JobFrameworkBuilder internal constructor(
         configuration: JobBuilder<INPUT, RESULT>.() -> Unit
     ) = JobBuilder(myInstanceName, dataPersistence, computation).apply {
         configuration()
-        executorsPerType[jobType] = specificExecutor()
-        persistencesPerType[jobType] = dataPersistence
+        this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
+        this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
     }
 
     /**
@@ -138,6 +143,7 @@ class JobFrameworkBuilder internal constructor(
      * first by [Job.priority] and then by [Job.createdAt] (both ascending).
      * @param tagMatcher a tag matcher to this instance to select only jobs with specific [tags][Job.tags]. Default is [TagMatcher.Any].
      */
+    @KJobsDsl
     class ExecutorConfig internal constructor(
         var executionCapacityProvider: ExecutionCapacityProvider = DefaultExecutionCapacityProvider,
         var jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
@@ -160,6 +166,7 @@ class JobFrameworkBuilder internal constructor(
      * usually be a very short amount of time.*
      * @param maxJobRestarts the maximum number of restarts of a job. A job is restarted if its timeout is reached. Default is [DEFAULT_MAX_JOB_RESTARTS].
      */
+    @KJobsDsl
     class MaintenanceConfig internal constructor(
         var jobCheckInterval: Duration = 5.seconds,
         var heartbeatInterval: Duration = 10.seconds,
@@ -179,6 +186,7 @@ class JobFrameworkBuilder internal constructor(
      * @param checkInterval the interval with which the instance should check for cancelled jobs. Default is 1 second. This value can be set much
      * higher depending on your needs (i.e. how urgent it is to abort a cancelled job which is still running).
      */
+    @KJobsDsl
     class CancellationConfig internal constructor(
         var enabled: Boolean = false,
         var checkInterval: Duration = 1.seconds,
@@ -242,6 +250,7 @@ class JobFrameworkBuilder internal constructor(
 /**
  * Builder for an API.
  */
+@KJobsDsl
 class ApiBuilder<INPUT, RESULT> internal constructor(
     private val myInstanceName: String,
     private val jobType: String,
@@ -279,6 +288,7 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
      * a message constructed from the list. Default is an empty list.
      * @param enableDeletion whether a `DELETE` resource should be added which allows the API user to delete a job (usually once the result has been fetched)
      */
+    @KJobsDsl
     class ApiConfig<INPUT> internal constructor(
         var basePath: String? = null,
         var inputValidation: (INPUT) -> List<String> = { emptyList() },
@@ -298,13 +308,16 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
      *
      * By default, the synchronous API is disabled.
      * @param enabled whether the synchronous resource is enabled for this API
+     * @param path the path on which the synchronous resource should be placed, default is `synchronous`
      * @param checkInterval the interval in which the job status should be checked after it was submitted
      * @param maxWaitingTime the maximum time to wait for the job to complete. If this time is exceeded, status 400 is returned including the information
      * about the UUID of the generated job.
      * @param customPriorityProvider a custom priority provider for jobs from the synchronous resource
      */
+    @KJobsDsl
     class SynchronousResourceConfig<INPUT>(
         var enabled: Boolean = false,
+        var path: String = "synchronous",
         var checkInterval: Duration = 200.milliseconds,
         var maxWaitingTime: Duration = 1.hours,
         var customPriorityProvider: (INPUT) -> Int = { 0 }
@@ -327,7 +340,9 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
                 jobConfig.customInfoProvider,
                 jobConfig.priorityProvider,
                 enableCancellation,
-                SyncMockConfiguration(syncConfig.enabled, syncConfig.checkInterval, syncConfig.maxWaitingTime, syncConfig.customPriorityProvider),
+                SyncMockConfiguration(
+                    syncConfig.enabled, syncConfig.path, syncConfig.checkInterval, syncConfig.maxWaitingTime, syncConfig.customPriorityProvider
+                ),
             )
         )
     }
@@ -336,6 +351,7 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
 /**
  * Builder for job without a route.
  */
+@KJobsDsl
 class JobBuilder<INPUT, RESULT> internal constructor(
     private val myInstanceName: String,
     private val persistence: DataPersistence<INPUT, RESULT>,
@@ -356,6 +372,7 @@ class JobBuilder<INPUT, RESULT> internal constructor(
      * @param priorityProvider a function providing an integer priority for a job input. A smaller number means a higher priority. Default is 0.
      * @param timeoutComputation a function providing a timeout for the given job. The default is 24 hours. In most cases this default should be set much lower.
      */
+    @KJobsDsl
     class JobConfig<INPUT> internal constructor(
         var tagProvider: (INPUT) -> List<String> = { emptyList() },
         var customInfoProvider: (INPUT) -> String = { "" },

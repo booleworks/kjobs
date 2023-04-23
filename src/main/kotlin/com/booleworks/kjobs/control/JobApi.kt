@@ -164,7 +164,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
         }
 
         if (syncMockConfig.enabled) {
-            post("synchronous") {
+            post(syncMockConfig.path) {
                 val input = inputReceiver()
                 inputValidation(input).takeIf { it.isNotEmpty() }?.let {
                     call.respond(BadRequest, it.joinToString(", "))
@@ -244,6 +244,7 @@ internal class JobApiDef<INPUT, RESULT>(
 
 internal class SyncMockConfiguration<INPUT>(
     val enabled: Boolean,
+    val path: String,
     val checkInterval: Duration,
     val maxWaitingTime: Duration,
     val priorityProvider: (INPUT) -> Int

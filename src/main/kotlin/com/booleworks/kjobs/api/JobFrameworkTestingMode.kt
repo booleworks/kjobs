@@ -34,6 +34,7 @@ import kotlin.time.Duration
  * possibility to [add APIs][JobFrameworkBuilder.addApi] to a ktor application
  */
 @Suppress("FunctionName")
+@KJobsDsl
 fun JobFrameworkTestingMode(
     myInstanceName: String,
     jobPersistence: JobPersistence,
@@ -47,6 +48,7 @@ fun JobFrameworkTestingMode(
  *
  * It allows to run the executor or other [Maintenance] jobs, and to submit jobs or fetch results.
  */
+@KJobsDsl
 class JobFrameworkTestingApi internal constructor(
     private val jobPersistence: JobPersistence,
     private val myInstanceName: String,
