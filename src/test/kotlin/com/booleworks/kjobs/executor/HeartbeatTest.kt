@@ -37,7 +37,7 @@ class HeartbeatTest {
                     this@testWithRedis,
                     mapOf(defaultJobType to this@testWithRedis),
                     5.milliseconds,
-                    3
+                    mapOf(defaultJobType to 3)
                 )
             }
             delay(100.milliseconds)
@@ -67,7 +67,7 @@ class HeartbeatTest {
                     this@testWithRedis,
                     mapOf(defaultJobType to this@testWithRedis),
                     5.milliseconds,
-                    3
+                    mapOf(defaultJobType to 3)
                 )
             }
             delay(20.milliseconds)
@@ -108,7 +108,7 @@ class HeartbeatTest {
                     this@testWithRedis,
                     mapOf(defaultJobType to this@testWithRedis),
                     5.milliseconds,
-                    3
+                    mapOf(defaultJobType to 3)
                 )
             }
             delay(20.milliseconds)
@@ -128,7 +128,7 @@ class HeartbeatTest {
                 assertThat(startedAt).isNotNull()
                 assertThat(timeout).isNotNull()
             }
-            assertThat(fetchResult(job.uuid).right().error).isEqualTo("The job was aborted because it exceeded the maximum number of 3 restarts")
+            assertThat(fetchFailure(job.uuid).right()).isEqualTo("The job was aborted because it exceeded the maximum number of 3 restarts")
             coroutineContext.cancelChildren()
         }
     }
@@ -156,7 +156,7 @@ class HeartbeatTest {
                     this@testWithRedis,
                     mapOf(defaultJobType to this@testWithRedis),
                     5.milliseconds,
-                    3
+                    mapOf(defaultJobType to 3)
                 )
             }
             delay(20.milliseconds)

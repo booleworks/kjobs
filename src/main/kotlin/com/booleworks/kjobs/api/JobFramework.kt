@@ -5,6 +5,7 @@ package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.api.JobBuilder.JobConfig
 import com.booleworks.kjobs.common.Either
+import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.control.JobApiDef
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
@@ -71,6 +72,7 @@ class JobFrameworkBuilder internal constructor(
     private val apis: MutableList<ApiBuilder<*, *>> = mutableListOf()
     private val executorsPerType: MutableMap<String, SpecificExecutor<*, *>> = mutableMapOf()
     private val persistencesPerType: MutableMap<String, DataPersistence<*, *>> = mutableMapOf()
+    private val restartsPerType: MutableMap<String, Int> = mutableMapOf()
 
     /**
      * Generates a new API for a specific [job type][jobType]. The [configuration] is optional, but it is
@@ -92,12 +94,13 @@ class JobFrameworkBuilder internal constructor(
         dataPersistence: DataPersistence<INPUT, RESULT>,
         inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
         resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
-        computation: suspend (Job, INPUT) -> RESULT,
+        computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
         configuration: ApiBuilder<INPUT, RESULT>.() -> Unit = {}
     ) = ApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder, computation).apply {
         configuration()
         this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
         this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
+        this@JobFrameworkBuilder.restartsPerType[jobType] = this.jobConfig.maxRestarts
         this@JobFrameworkBuilder.apis += this
     }
 
@@ -112,12 +115,13 @@ class JobFrameworkBuilder internal constructor(
     fun <INPUT, RESULT> addJob(
         jobType: String,
         dataPersistence: DataPersistence<INPUT, RESULT>,
-        computation: suspend (Job, INPUT) -> RESULT,
+        computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
         configuration: JobBuilder<INPUT, RESULT>.() -> Unit
     ) = JobBuilder(myInstanceName, dataPersistence, computation).apply {
         configuration()
         this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
         this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
+        this@JobFrameworkBuilder.restartsPerType[jobType] = this.jobConfig.maxRestarts
     }
 
     /**
@@ -173,7 +177,6 @@ class JobFrameworkBuilder internal constructor(
         var oldJobDeletionInterval: Duration = 1.days,
         var deleteOldJobsAfter: Duration = 365.days,
         var restartRunningJobsOnStartup: Boolean = true,
-        var maxJobRestarts: Int = DEFAULT_MAX_JOB_RESTARTS,
     )
 
     /**
@@ -194,7 +197,7 @@ class JobFrameworkBuilder internal constructor(
 
     fun build() {
         if (maintenanceConfig.restartRunningJobsOnStartup) runBlocking {
-            Maintenance.resetMyRunningJobs(jobPersistence, myInstanceName, persistencesPerType, maintenanceConfig.maxJobRestarts)
+            Maintenance.resetMyRunningJobs(jobPersistence, myInstanceName, persistencesPerType, restartsPerType)
         }
         apis.forEach { it.build(cancellationConfig.enabled) }
         if (maintenanceEnabled) {
@@ -202,9 +205,7 @@ class JobFrameworkBuilder internal constructor(
             executionBase.schedule(maintenanceConfig.jobCheckInterval) { executor.execute() }
             executionBase.schedule(maintenanceConfig.heartbeatInterval) { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
             executionBase.schedule(maintenanceConfig.heartbeatInterval) {
-                Maintenance.restartJobsFromDeadInstances(
-                    jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, maintenanceConfig.maxJobRestarts
-                )
+                Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, restartsPerType)
             }
             executionBase.schedule(maintenanceConfig.oldJobDeletionInterval) {
                 Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType)
@@ -227,7 +228,7 @@ class JobFrameworkBuilder internal constructor(
             executorConfig.tagMatcher,
             maintenanceConfig.heartbeatInterval,
             maintenanceConfig.deleteOldJobsAfter,
-            maintenanceConfig.maxJobRestarts
+            restartsPerType,
         )
     }
 
@@ -258,10 +259,10 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
     private val persistence: DataPersistence<INPUT, RESULT>,
     private val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
     private val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
-    private val computation: suspend (Job, INPUT) -> RESULT,
+    private val computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
 ) {
     private val apiConfig: ApiConfig<INPUT> = ApiConfig()
-    private val jobConfig: JobConfig<INPUT> = JobConfig()
+    internal val jobConfig: JobConfig<INPUT> = JobConfig()
     private val syncConfig: SynchronousResourceConfig<INPUT> = SynchronousResourceConfig()
 
     /**
@@ -323,7 +324,8 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
         var customPriorityProvider: (INPUT) -> Int = { 0 }
     )
 
-    internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> = SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation)
+    internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> =
+        SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation, jobConfig.maxRestarts)
 
     internal fun build(enableCancellation: Boolean) = with(route) {
         setupJobApi(
@@ -355,9 +357,9 @@ class ApiBuilder<INPUT, RESULT> internal constructor(
 class JobBuilder<INPUT, RESULT> internal constructor(
     private val myInstanceName: String,
     private val persistence: DataPersistence<INPUT, RESULT>,
-    private val computation: suspend (Job, INPUT) -> RESULT,
+    private val computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
 ) {
-    private val jobConfig: JobConfig<INPUT> = JobConfig()
+    internal val jobConfig: JobConfig<INPUT> = JobConfig()
 
     /**
      * Provides further configuration options about the handling of jobs.
@@ -371,6 +373,7 @@ class JobBuilder<INPUT, RESULT> internal constructor(
      * Default is an empty string.
      * @param priorityProvider a function providing an integer priority for a job input. A smaller number means a higher priority. Default is 0.
      * @param timeoutComputation a function providing a timeout for the given job. The default is 24 hours. In most cases this default should be set much lower.
+     * @param maxRestarts the maximum number of restarts for this job in case of (potentially temporary) errors. Default is [DEFAULT_MAX_JOB_RESTARTS].
      */
     @KJobsDsl
     class JobConfig<INPUT> internal constructor(
@@ -378,9 +381,11 @@ class JobBuilder<INPUT, RESULT> internal constructor(
         var customInfoProvider: (INPUT) -> String = { "" },
         var priorityProvider: (INPUT) -> Int = { 0 },
         var timeoutComputation: (Job, INPUT) -> Duration = { _, _ -> 24.hours },
+        var maxRestarts: Int = DEFAULT_MAX_JOB_RESTARTS,
     )
 
-    internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> = SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation)
+    internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> =
+        SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation, jobConfig.maxRestarts)
 }
 
 internal const val DEFAULT_MAX_JOB_RESTARTS = 3

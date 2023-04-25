@@ -5,7 +5,6 @@ package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
-import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import java.time.LocalDateTime
@@ -119,7 +118,12 @@ interface DataPersistence<INPUT, RESULT> : JobPersistence {
     /**
      * Fetches the job result with the given uuid.
      */
-    suspend fun fetchResult(uuid: String): PersistenceAccessResult<JobResult<RESULT>>
+    suspend fun fetchResult(uuid: String): PersistenceAccessResult<RESULT>
+
+    /**
+     * Fetches the failure with the given uuid.
+     */
+    suspend fun fetchFailure(uuid: String): PersistenceAccessResult<String>
 }
 
 /**
@@ -139,5 +143,10 @@ interface DataTransactionalPersistence<INPUT, RESULT> : JobTransactionalPersiste
     /**
      * Persists the given job result. If the result is already present, it should be updated accordingly.
      */
-    suspend fun persistOrUpdateResult(job: Job, result: JobResult<RESULT>): PersistenceAccessResult<Unit>
+    suspend fun persistOrUpdateResult(job: Job, result: RESULT): PersistenceAccessResult<Unit>
+
+    /**
+     * Persists the given failure. If the failure is already present, it should be updated accordingly.
+     */
+    suspend fun persistOrUpdateFailure(job: Job, failure: String): PersistenceAccessResult<Unit>
 }

@@ -10,7 +10,6 @@ import com.booleworks.kjobs.api.JobTransactionalPersistence
 import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
-import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.PersistenceAccessResult
@@ -35,9 +34,9 @@ private val logger = LoggerFactory.getLogger(RedisDataPersistence::class.java)
 open class RedisDataPersistence<INPUT, RESULT>(
     private val pool: JedisPool,
     private val inputSerializer: (INPUT) -> ByteArray,
-    private val resultSerializer: (JobResult<RESULT>) -> ByteArray,
+    private val resultSerializer: (RESULT) -> ByteArray,
     private val inputDeserializer: (ByteArray) -> INPUT,
-    private val resultDeserializer: (ByteArray) -> JobResult<RESULT>,
+    private val resultDeserializer: (ByteArray) -> RESULT,
     private val config: RedisConfig = DefaultRedisConfig(),
 ) : RedisJobPersistence(pool, config), DataPersistence<INPUT, RESULT> {
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = dataTransaction(block)
@@ -61,9 +60,14 @@ open class RedisDataPersistence<INPUT, RESULT>(
         return PersistenceAccessResult.result(inputDeserializer(inputBytes))
     }
 
-    override suspend fun fetchResult(uuid: String): PersistenceAccessResult<JobResult<RESULT>> {
+    override suspend fun fetchResult(uuid: String): PersistenceAccessResult<RESULT> {
         val resultBytes = pool.resource.use { it.get(config.resultKey(uuid).toByteArray()) } ?: run { return PersistenceAccessResult.notFound() }
         return PersistenceAccessResult.result(resultDeserializer(resultBytes))
+    }
+
+    override suspend fun fetchFailure(uuid: String): PersistenceAccessResult<String> {
+        return pool.resource.use { it.get(config.failureKey(uuid)) }?.let { PersistenceAccessResult.result(it) }
+            ?: run { return PersistenceAccessResult.notFound() }
     }
 
     private fun Transaction.handleTransactionException(ex: Throwable): PersistenceAccessResult<Unit> {
@@ -84,7 +88,7 @@ open class RedisDataPersistence<INPUT, RESULT>(
 open class RedisDataTransactionalPersistence<INPUT, RESULT>(
     private val transaction: Transaction,
     private val inputSerializer: (INPUT) -> ByteArray,
-    private val resultSerializer: (JobResult<RESULT>) -> ByteArray,
+    private val resultSerializer: (RESULT) -> ByteArray,
     private val config: RedisConfig
 ) : RedisJobTransactionalPersistence(transaction, config), DataTransactionalPersistence<INPUT, RESULT> {
 
@@ -93,8 +97,13 @@ open class RedisDataTransactionalPersistence<INPUT, RESULT>(
         return PersistenceAccessResult.success
     }
 
-    override suspend fun persistOrUpdateResult(job: Job, result: JobResult<RESULT>): PersistenceAccessResult<Unit> {
+    override suspend fun persistOrUpdateResult(job: Job, result: RESULT): PersistenceAccessResult<Unit> {
         transaction.set(config.resultKey(job.uuid).toByteArray(), resultSerializer(result))
+        return PersistenceAccessResult.success
+    }
+
+    override suspend fun persistOrUpdateFailure(job: Job, failure: String): PersistenceAccessResult<Unit> {
+        transaction.set(config.failureKey(job.uuid), failure)
         return PersistenceAccessResult.success
     }
 }

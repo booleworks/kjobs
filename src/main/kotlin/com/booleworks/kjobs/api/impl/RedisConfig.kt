@@ -13,6 +13,7 @@ interface RedisConfig {
     fun jobKey(uuid: String): String = "job:$uuid"
     fun inputKey(uuid: String): String = "input:$uuid"
     fun resultKey(uuid: String): String = "result:$uuid"
+    fun failureKey(uuid: String): String = "failure:$uuid"
     fun heartbeatKey(instanceName: String): String = "heartbeat:$instanceName"
 
     fun extractUuid(jobKey: String): String = jobKey.split(":")[1]

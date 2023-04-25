@@ -4,16 +4,16 @@
 package com.booleworks.kjobs.control
 
 import com.booleworks.kjobs.api.DataPersistence
+import com.booleworks.kjobs.api.DataTransactionalPersistence
 import com.booleworks.kjobs.api.JobPersistence
 import com.booleworks.kjobs.data.ExecutionCapacity
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobPrioritizer
-import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher
 import com.booleworks.kjobs.data.ifError
-import com.booleworks.kjobs.data.isSuccess
 import com.booleworks.kjobs.data.orQuitWith
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancelAndJoin
@@ -29,9 +29,16 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.toJavaDuration
 
+private val log: Logger = LoggerFactory.getLogger("JobExecutor")
+
 private typealias CoroutineJob = kotlinx.coroutines.Job
 
-private val log: Logger = LoggerFactory.getLogger("JobExecutor")
+sealed interface ComputationResult<out RESULT> {
+    class Success<out RESULT>(val result: RESULT) : ComputationResult<RESULT>
+    class Error<out RESULT>(val message: String, val tryRepeat: Boolean = false) : ComputationResult<RESULT>
+
+    fun resultStatus(): JobStatus = if (this is Success) JobStatus.SUCCESS else JobStatus.FAILURE
+}
 
 /**
  * The central instance which is responsible to compute jobs.
@@ -50,7 +57,7 @@ class MainJobExecutor(
     suspend fun execute() = coroutineScope {
         val myCapacity = getExecutionCapacity() ?: return@coroutineScope
         if (!myCapacity.mayTakeJobs) {
-            log.debug("No capacity for further jobs.")
+            log.trace("No capacity for further jobs.")
             return@coroutineScope
         }
         val job = getAndReserveJob(myCapacity) ?: return@coroutineScope
@@ -63,6 +70,7 @@ class MainJobExecutor(
             log.warn("Failed to retrieve all running jobs: $it")
             return null
         }
+        log.trace("Found {} currently running jobs of instance {}", allMyRunningJobs.size, myInstanceName)
         return executionCapacityProvider(allMyRunningJobs)
     }
 
@@ -132,8 +140,9 @@ class MainJobExecutor(
 class SpecificExecutor<INPUT, RESULT>(
     private val myInstanceName: String,
     private val persistence: DataPersistence<INPUT, RESULT>,
-    private val computation: suspend (Job, INPUT) -> RESULT,
-    private val timeoutComputation: (Job, INPUT) -> Duration
+    private val computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
+    private val timeoutComputation: (Job, INPUT) -> Duration,
+    private val maxRestarts: Int
 ) {
     internal fun CoroutineScope.launchComputationJob(job: Job) = launch {
         val uuid = job.uuid
@@ -154,46 +163,68 @@ class SpecificExecutor<INPUT, RESULT>(
             job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
             persistence.transaction { updateJob(job) }
 
-            val result: JobResult<RESULT> = runCatching {
+            log.trace("Starting computation of job with ID $uuid")
+            val result: ComputationResult<RESULT> = runCatching {
                 withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
-                    ?.let { JobResult.success(uuid, it) }
-                    ?: JobResult.error(uuid, "The job did not finish within the configured timeout of $timeout")
+                    ?: ComputationResult.Error("The job did not finish within the configured timeout of $timeout", tryRepeat = false)
             }.getOrElse {
                 yield() // for the case that the coroutine was cancelled
                 log.error("The job with ID $uuid failed with an exception and will be set to 'FAILURE': ${it.message}", it)
-                JobResult.error(uuid, "Unexpected exception during computation: ${it.message}")
+                ComputationResult.Error("Unexpected exception during computation: ${it.message}", tryRepeat = false)
             }
+            log.trace("Finished computation of job with ID $uuid")
             writeResultToDb(uuid, result)
         }
     }
 
-    private suspend fun writeResultToDb(id: String, result: JobResult<RESULT>) {
+    private suspend fun writeResultToDb(id: String, computationResult: ComputationResult<RESULT>) {
+        log.trace("Fetching job with ID $id to update its result")
         val job = persistence.fetchJob(id).orQuitWith {
             log.warn("Job with ID $id was deleted from the database during the computation!")
             return
         }
         if (job.executingInstance != myInstanceName) {
             log.warn("Job with ID $id was stolen from $myInstanceName by ${job.executingInstance} after the computation!")
-            if (result.isSuccess && job.status != JobStatus.SUCCESS) {
+            if (job.status != JobStatus.SUCCESS && computationResult.resultStatus() == JobStatus.SUCCESS) {
                 job.executingInstance = myInstanceName
             } else {
                 return
             }
         }
+        log.trace("Updating job and result for ID $id")
+        when (computationResult) {
+            is ComputationResult.Error -> {
+                if (computationResult.tryRepeat && job.numRestarts < maxRestarts)
+                    Maintenance.restartJob(job, maxRestarts, "it failed with ${computationResult.message} and is marked as retry", persistence)
+                else {
+                    updateResultOrFailure(job, computationResult, id, "failure") { persistOrUpdateFailure(job, computationResult.message) }
+                }
+            }
+
+            is ComputationResult.Success ->
+                updateResultOrFailure(job, computationResult, id, "failure") { persistOrUpdateResult(job, computationResult.result) }
+        }
+    }
+
+    private suspend fun <C : ComputationResult<RESULT>> updateResultOrFailure(
+        job: Job, computation: C, id: String, type: String, updateAction: suspend DataTransactionalPersistence<*, RESULT>.() -> PersistenceAccessResult<Unit>
+    ) {
         job.finishedAt = LocalDateTime.now()
-        job.status = if (result.isSuccess) JobStatus.SUCCESS else JobStatus.FAILURE
+        job.status = computation.resultStatus()
         persistence.dataTransaction {
-            persistOrUpdateResult(job, result).orQuitWith {
+            updateAction().orQuitWith {
                 // Here it's difficult to tell what we should do with the job, since we don't know why persisting the job failed.
                 // Should we do nothing, reset it to CREATED, or set it to FAILURE?
                 // Currently, we decide to do nothing and just wait for the cleanup tasks to reset the job.
                 // Also, we explicitly log an error, since this situation is generally bad.
-                log.error("Failed to persist result for ID $id: $it")
+                log.error("Failed to persist $type for ID $id: $it")
                 return@dataTransaction
             }
             updateJob(job).ifError {
-                log.error("Failed to update the job for ID $id after finishing the computation. The job will remain in an inconsistent state!")
+                log.error("Failed to update the job for ID $id after finishing the computation. The job will remain in an inconsistent state! $it")
             }
+        }.ifError {
+            log.error("Failed to update the job for ID $id after finishing the computation. The job might remain in an inconsistent state! $it")
         }
     }
 }

@@ -11,7 +11,6 @@ import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.right
 import com.booleworks.kjobs.common.testWithRedis
 import com.booleworks.kjobs.data.Job
-import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -40,7 +39,7 @@ class ExecutorTest {
         assertThat(jobAfterComputation.finishedAt).isBetween(jobAfterComputation.startedAt, now())
         assertThat(jobAfterComputation.timeout).isAfter(now())
         assertThat(jobAfterComputation.numRestarts).isZero()
-        assertThat(fetchResult(job.uuid).right()).isEqualTo(JobResult.success(job.uuid, TestResult(42)))
+        assertThat(fetchResult(job.uuid).right()).isEqualTo(TestResult(42))
     }
 
     @Test
@@ -62,9 +61,7 @@ class ExecutorTest {
         assertThat(jobAfterComputation.finishedAt).isBetween(jobAfterComputation.startedAt, now())
         assertThat(jobAfterComputation.timeout).isAfter(now())
         assertThat(jobAfterComputation.numRestarts).isZero()
-        assertThat(fetchResult(job.uuid).right()).isEqualTo(
-            JobResult.error<Any>(job.uuid, "Unexpected exception during computation: Test Exception Message")
-        )
+        assertThat(fetchFailure(job.uuid).right()).isEqualTo("Unexpected exception during computation: Test Exception Message")
     }
 
     @Test
@@ -86,9 +83,7 @@ class ExecutorTest {
         assertThat(jobAfterComputation.finishedAt).isBetween(jobAfterComputation.startedAt, now())
         assertThat(jobAfterComputation.timeout).isBefore(now())
         assertThat(jobAfterComputation.numRestarts).isZero()
-        assertThat(fetchResult(job.uuid).right()).isEqualTo(
-            JobResult.error<Any>(job.uuid, "The job did not finish within the configured timeout of 1ms")
-        )
+        assertThat(fetchFailure(job.uuid).right()).isEqualTo("The job did not finish within the configured timeout of 1ms")
     }
 
     private fun newJob() = Job(UUID.randomUUID().toString(), defaultJobType, emptyList(), null, 0, defaultInstanceName, now(), JobStatus.CREATED)

@@ -59,7 +59,7 @@ class JobFrameworkTestingApi internal constructor(
     private val tagMatcher: TagMatcher,
     private val heartbeatInterval: Duration,
     private val deleteOldJobsAfter: Duration,
-    private val maxRestarts: Int,
+    private val maxRestartsPerType: MutableMap<String, Int>,
 ) {
     /**
      * Runs the executor *once* with the given optional parameters. If the parameters are not given,
@@ -103,7 +103,7 @@ class JobFrameworkTestingApi internal constructor(
      * @see Maintenance.restartJobsFromDeadInstances
      */
     fun restartJobsFromDeadInstances() =
-        runBlocking { Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, heartbeatInterval, maxRestarts) }
+        runBlocking { Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, heartbeatInterval, maxRestartsPerType) }
 
     /**
      * Deletes old jobs.
@@ -116,7 +116,7 @@ class JobFrameworkTestingApi internal constructor(
      * @see Maintenance.resetMyRunningJobs
      */
     fun resetMyRunningJobs(instance: String = myInstanceName) =
-        runBlocking { Maintenance.resetMyRunningJobs(jobPersistence, instance, persistencesPerType, maxRestarts) }
+        runBlocking { Maintenance.resetMyRunningJobs(jobPersistence, instance, persistencesPerType, maxRestartsPerType) }
 
     /**
      * Schedules the job with the given [uuid] for cancellation.

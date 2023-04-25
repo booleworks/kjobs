@@ -3,8 +3,10 @@
 
 package com.booleworks.kjobs.common
 
+import com.booleworks.kjobs.api.DEFAULT_MAX_JOB_RESTARTS
 import com.booleworks.kjobs.api.DataPersistence
 import com.booleworks.kjobs.api.impl.RedisDataPersistence
+import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.SpecificExecutor
 import com.booleworks.kjobs.data.DefaultExecutionCapacityProvider
@@ -38,12 +40,12 @@ fun newRedisPersistence(redis: RedisServer) = RedisDataPersistence<TestInput, Te
     { jacksonObjectMapperWithTime().readValue(it) },
     { jacksonObjectMapperWithTime().readValue(it) })
 
-val defaultComputation: suspend (Job, TestInput) -> TestResult = { _, input ->
+val defaultComputation: suspend (Job, TestInput) -> ComputationResult<TestResult> = { _, input ->
     delay(input.expectedDelay.milliseconds)
     if (input.throwException) {
         throw TestException("Test Exception Message")
     } else {
-        TestResult(input.value)
+        ComputationResult.Success(TestResult(input.value))
     }
 }
 
@@ -55,6 +57,7 @@ internal fun defaultExecutor(
     myInstanceName: String = defaultInstanceName,
     executionCapacityProvider: ExecutionCapacityProvider = DefaultExecutionCapacityProvider,
     timeout: (Job, TestInput) -> Duration = { _, _ -> 100.seconds },
+    maxRestarts: Int = DEFAULT_MAX_JOB_RESTARTS,
     jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
     tagMatcher: TagMatcher = TagMatcher.Any,
     specificExecutors: Map<String, SpecificExecutor<*, *>>? = null
@@ -64,7 +67,7 @@ internal fun defaultExecutor(
     executionCapacityProvider,
     jobPrioritizer,
     tagMatcher,
-    specificExecutors ?: mapOf(defaultJobType to SpecificExecutor<TestInput, TestResult>(myInstanceName, persistence, defaultComputation, timeout)),
+    specificExecutors ?: mapOf(defaultJobType to SpecificExecutor(myInstanceName, persistence, defaultComputation, timeout, maxRestarts)),
 )
 
 class TestException(message: String) : Exception(message)

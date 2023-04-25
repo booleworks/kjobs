@@ -8,7 +8,6 @@ import com.booleworks.kjobs.api.DataPersistence
 import com.booleworks.kjobs.api.JobFrameworkBuilder
 import com.booleworks.kjobs.common.getOrElse
 import com.booleworks.kjobs.data.Job
-import com.booleworks.kjobs.data.JobResult
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.PersistenceAccessResult
@@ -27,9 +26,12 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.util.pipeline.PipelineContext
 import kotlinx.coroutines.delay
+import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import java.util.*
 import kotlin.time.Duration
+
+private val apiLog = LoggerFactory.getLogger("ApiLog")
 
 /**
  * Setup all routings according to a given [JobApiDef].
@@ -98,7 +100,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
         }
 
         get("status/{uuid}") {
-            parseUuid()?.let { status(it, persistence) }
+            parseUuid()?.let { resultStatus(it, persistence) }
         }
 
         get("result/{uuid}") {
@@ -107,12 +109,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
                 if (job.status != JobStatus.SUCCESS) {
                     call.respondText("Cannot return the result for job with ID $uuid and status ${job.status}.", status = BadRequest)
                 } else {
-                    val result = result(job, persistence) ?: return@get
-                    result.result?.let {
-                        resultResponder(it)
-                    } ?: run {
-                        call.respondText("Expected the JobResult for ID $uuid to have a result.", status = InternalServerError)
-                    }
+                    result(job, persistence)?.let { resultResponder(it) }
                 }
             }
         }
@@ -123,12 +120,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
                 if (job.status != JobStatus.FAILURE) {
                     call.respondText("Cannot return a failure for job with ID $uuid and status ${job.status}.", status = BadRequest)
                 } else {
-                    val result = result(job, persistence) ?: return@get
-                    result.error?.let {
-                        call.respondText(it)
-                    } ?: run {
-                        call.respondText("Expected the JobResult for ID $uuid to have an error.", status = InternalServerError)
-                    }
+                    failure(job, persistence)?.let { call.respondText(it) }
                 }
             }
         }
@@ -176,28 +168,33 @@ internal fun <INPUT, RESULT> Route.setupJobApi(def: JobApiDef<INPUT, RESULT>) = 
                             call.respondText("Failed to persist job: ${it.message}", status = InternalServerError)
                             return@post
                         }
-                var status = JobStatus.CREATED
+                apiLog.trace("Submitted job for synchronous computation, got ID $uuid")
+                var status: JobStatus
                 val timeout = LocalDateTime.now().plusSeconds(syncMockConfig.maxWaitingTime.inWholeSeconds)
-                while (status in setOf(JobStatus.CREATED, JobStatus.RUNNING) && LocalDateTime.now() < timeout) {
+                do {
                     delay(syncMockConfig.checkInterval)
                     status = persistence.fetchJob(uuid).orQuitWith {
                         call.respondText("Synchronous computation failed during job access: ${it.message}", status = InternalServerError)
                         return@post
                     }.status
-                }
-                if (status != JobStatus.SUCCESS) {
+                    apiLog.trace("Synchronous job with ID {} is in status {}", uuid, status)
+                } while (status in setOf(JobStatus.CREATED, JobStatus.RUNNING) && LocalDateTime.now() < timeout)
+                if (status == JobStatus.SUCCESS) {
+                    persistence.fetchResult(uuid)
+                        .orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@post }
+                        .let { resultResponder(it) }
+                } else if (status == JobStatus.FAILURE) {
+                    persistence.fetchFailure(uuid)
+                        .orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@post }
+                        .let { call.respond(InternalServerError, "Computation failed with message: $it") }
+                } else {
                     if (LocalDateTime.now() > timeout) {
                         call.respondText(
                             "The job did not finish within the timeout of ${syncMockConfig.maxWaitingTime}. " +
-                                    "You may be able to retrieve the result later using the job id $uuid.", status = BadRequest
+                                    "You may be able to retrieve the result later via the asynchronous API using the job id $uuid.", status = BadRequest
                         )
                     } else {
-                        call.respondText("Job finished in unexpected status $status", status = InternalServerError)
-                    }
-                } else {
-                    val result = persistence.fetchResult(uuid).orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@post }
-                    result.result?.let { resultResponder(it) } ?: run {
-                        call.respondText("Expected the JobResult for ID $uuid to have a result.", status = InternalServerError)
+                        call.respondText("Job finished in an unexpected status $status", status = InternalServerError)
                     }
                 }
             }
@@ -263,6 +260,7 @@ internal suspend inline fun <INPUT> submit(
     val tags = tagProvider(input)
     val customInfo = customInfoProvider(input)
     val job = Job(uuid, jobType, tags, customInfo, priorityProvider(input), myInstanceName, LocalDateTime.now(), JobStatus.CREATED)
+    apiLog.trace("Persisting job with ID $uuid")
     return persistence.dataTransaction { persistJob(job); persistInput(job, input) }.map { uuid }
 }
 
@@ -276,13 +274,19 @@ private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?,
     }
 }
 
-private suspend fun PipelineContext<Unit, ApplicationCall>.status(uuid: UUID, persistence: DataPersistence<*, *>) {
+private suspend fun PipelineContext<Unit, ApplicationCall>.resultStatus(uuid: UUID, persistence: DataPersistence<*, *>) {
     fetchJob(uuid, persistence)?.let { call.respondText(it.status.toString()) }
 }
 
-private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(job: Job, persistence: DataPersistence<*, RESULT>): JobResult<RESULT>? =
+private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(job: Job, persistence: DataPersistence<*, RESULT>): RESULT? =
     persistence.fetchResult(job.uuid).orQuitWith {
         call.respondText("Failed to retrieve job result for ID ${job.uuid}: $it", status = InternalServerError)
+        return null
+    }
+
+private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.failure(job: Job, persistence: DataPersistence<*, RESULT>): String? =
+    persistence.fetchFailure(job.uuid).orQuitWith {
+        call.respondText("Failed to retrieve job failure for ID ${job.uuid}: $it", status = InternalServerError)
         return null
     }
 
