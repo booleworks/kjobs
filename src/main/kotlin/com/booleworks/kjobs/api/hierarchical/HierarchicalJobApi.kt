@@ -33,7 +33,7 @@ class DependentJobException(error: PersistenceAccessError) : Exception(error.mes
  * The API of a hierarchical job. This is an interface provided by KJobs with which the caller can interact within
  * its "super-computation" (provided for example in [JobFrameworkBuilder.addApiForHierarchicalJob]).
  *
- * It allows to [submit dependent jobs][submitDependentJob] and to [wait for their completion][waitForDependents].
+ * It allows to [submit dependent jobs][submitDependentJob] and to [wait for their completion][collectDependentResults].
  *
  * The methods [listRemainingDependentJobs] and [cancelAllRemainingJobs] will only be required for more complex use cases.
  */
@@ -43,7 +43,7 @@ interface HierarchicalJobApi<DEP_INPUT, DEP_RESULT> {
      * Such a job will be written to the database as any other job and its computation will be handled as such,
      * i.e. it will be computed once an instance has the capacity to compute it.
      *
-     * In order to collect the result(s), use [waitForDependents].
+     * In order to collect the result(s), use [collectDependentResults].
      * @param input the input for the dependent computation
      */
     suspend fun submitDependentJob(input: DEP_INPUT): Job?
@@ -65,14 +65,14 @@ interface HierarchicalJobApi<DEP_INPUT, DEP_RESULT> {
      * In case of an unexpected exception, e.g. access to the persistence fails, a [DependentJobException] is thrown.
      */
     // TODO checkInterval could also be parameterized by the iteration, e.g. to allow to decrease the interval over time
-    suspend fun waitForDependents(
+    suspend fun collectDependentResults(
         checkInterval: Duration = 100.milliseconds,
         cancelRemainingJobsOnFlowCompletion: Boolean = true
     ): Flow<Pair<String, ComputationResult<DEP_RESULT>>>
 
     /**
      * Returns a list of all remaining dependent job. "Remaining" means that the job is still in status [JobStatus.CREATED]
-     * or [JobStatus.RUNNING] or it has not yet been collected by [waitForDependents].
+     * or [JobStatus.RUNNING] or it has not yet been collected by [collectDependentResults].
      *
      * In case of an error `null` will be returned. If there are not remaining jobs an empty list is returned.
      */
@@ -100,7 +100,7 @@ internal class HierarchicalJobApiImpl<DEP_INPUT, DEP_RESULT>(private val jobConf
             return null
         }.also { remainingDependents.add(it.uuid) }
 
-    override suspend fun waitForDependents(checkInterval: Duration, cancelRemainingJobsOnFlowCompletion: Boolean) = channelFlow {
+    override suspend fun collectDependentResults(checkInterval: Duration, cancelRemainingJobsOnFlowCompletion: Boolean) = channelFlow {
         coroutineScope {
             launch {
                 logger.debug("Launched check of finished dependent jobs for flow emission")

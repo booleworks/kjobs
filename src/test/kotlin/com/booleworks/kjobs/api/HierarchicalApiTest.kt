@@ -116,11 +116,11 @@ class HierarchicalApiTest {
         api2: HierarchicalJobApi<SubTestInput2, SubTestResult2>,
     ): ComputationResult<TestResult> = runBlocking {
         val resultFlow = merge(
-            api1.waitForDependents().map { it.second }
+            api1.collectDependentResults().map { it.second }
                 .filterIsInstance<ComputationResult.Success<SubTestResult1>>()
                 .filter { it.result.a > 1000 }
                 .map { it.toTestResult() },
-            api2.waitForDependents().map { it.second.toTestResult() }
+            api2.collectDependentResults().map { it.second.toTestResult() }
         ).catch { ComputationResult.Error(it.message ?: "") }
         for (i in 0.rangeTo(input.value).step(100)) {
             api1.submitDependentJob(SubTestInput1(i, input.value))

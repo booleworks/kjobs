@@ -39,7 +39,7 @@ import kotlin.time.Duration.Companion.seconds
 annotation class KJobsDsl
 
 /**
- * Main entry point to setup the job framework.
+ * Main entry point to set up the job framework.
  * @param myInstanceName a unique identifier of this instance, e.g. in a Kubernetes environment.
  * Can be an arbitrary, non-empty, string if there is only a single instance.
  * @param jobPersistence an object allowing to store and retrieve jobs (and heartbeats) from some
@@ -107,6 +107,21 @@ class JobFrameworkBuilder internal constructor(
         this@JobFrameworkBuilder.apis += this
     }
 
+    /**
+     * Generates a new API for a hierarchical job.
+     *
+     * A hierarchical job is a job which can submit further "dependent" jobs. Essentially, these dependent
+     * jobs are handled the same way as "normal" jobs added with [addApi].
+     *
+     * A hierarchical job must have one or more dependent jobs which are set up in the [configuration] via
+     * [HierarchicalApiBuilder.addDependentJob] (for many cases it will be enough to have one type of dependent
+     * job, but there can be more). The [computation] of the super-job slightly differs from the computation in
+     * [a simple API][addApi] in that it takes (additionally to the [Job] and [INPUT]) a map from dependent job
+     * type to [HierarchicalJobApi].
+     *
+     * The [HierarchicalJobApi] is used to actually [submit dependent jobs][HierarchicalJobApi.submitDependentJob]
+     * and [collect their results][HierarchicalJobApi.collectDependentResults].
+     */
     fun <INPUT, RESULT> addApiForHierarchicalJob(
         jobType: String,
         route: Route,
@@ -237,7 +252,7 @@ class JobFrameworkBuilder internal constructor(
         }
     }
 
-    fun buildTestingMode(): JobFrameworkTestingApi {
+    internal fun buildTestingMode(): JobFrameworkTestingApi {
         build()
         return JobFrameworkTestingApi(
             jobPersistence,
@@ -379,20 +394,11 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
                 apiConfig.enableDeletion,
                 enableCancellation,
                 SynchronousResourceConfig(
-                    syncConfig.enabled,
-                    syncConfig.path,
-                    syncConfig.checkInterval,
-                    syncConfig.maxWaitingTime,
-                    syncConfig.customPriorityProvider
+                    syncConfig.enabled, syncConfig.path, syncConfig.checkInterval, syncConfig.maxWaitingTime, syncConfig.customPriorityProvider
                 )
             ),
             JobConfig(
-                jobConfig.jobType,
-                persistence,
-                myInstanceName,
-                jobConfig.tagProvider,
-                jobConfig.customInfoProvider,
-                jobConfig.priorityProvider,
+                jobConfig.jobType, persistence, myInstanceName, jobConfig.tagProvider, jobConfig.customInfoProvider, jobConfig.priorityProvider,
             )
         )
     }
@@ -419,6 +425,9 @@ class JobBuilder<INPUT, RESULT> internal constructor(
         SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation, jobConfig.maxRestarts)
 }
 
+/**
+ * Builder for a hierarchical API.
+ */
 @KJobsDsl
 class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
     myInstanceName: String,
@@ -432,13 +441,20 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
 
     internal val dependents: MutableMap<String, Triple<JobConfig<*, *>, SpecificExecutor<*, *>, DataPersistence<*, *>>> = mutableMapOf()
 
+    /**
+     * Adds a new dependent job with the given parameters.
+     * @param jobType a unique name identifying this type of job
+     * @param persistence the persistence/database to use for storing the inputs and results for this dependent job
+     * @param computation the actual computation
+     * @param configuration provides more detailed configuration options as described in [ApiBuilder.JobConfigBuilder]
+     */
     fun <DEP_INPUT, DEP_RESULT> addDependentJob(
         jobType: String,
         persistence: DataPersistence<DEP_INPUT, DEP_RESULT>,
         computation: suspend (Job, DEP_INPUT) -> ComputationResult<DEP_RESULT>,
-        jobConfig: JobConfigBuilder<DEP_INPUT>.() -> Unit
+        configuration: JobConfigBuilder<DEP_INPUT>.() -> Unit
     ) {
-        JobConfigBuilder<DEP_INPUT>(jobType).apply(jobConfig).let { config ->
+        JobConfigBuilder<DEP_INPUT>(jobType).apply(configuration).let { config ->
             dependents[jobType] = Triple(
                 JobConfig(jobType, persistence, myInstanceName, config.tagProvider, config.customInfoProvider, config.priorityProvider),
                 SpecificExecutor(myInstanceName, persistence, computation, config.timeoutComputation, config.maxRestarts),
