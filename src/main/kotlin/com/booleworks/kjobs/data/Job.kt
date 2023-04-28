@@ -25,7 +25,7 @@ import java.time.LocalDateTime
  * @param timeout the current or last timeout of this job (if it was already started)
  * @param numRestarts the number of times this job was restarted
  */
-class Job(
+data class Job(
     val uuid: String,
     val type: String,
     val tags: List<String>,

@@ -33,7 +33,7 @@ data class TestInput(val value: Int = 0, val expectedDelay: Int = 1, val throwEx
 
 data class TestResult(val inputValue: Int = 0)
 
-fun newRedisPersistence(redis: RedisServer) = RedisDataPersistence<TestInput, TestResult>(
+inline fun <reified INPUT, reified RESULT> newRedisPersistence(redis: RedisServer = defaultRedis) = RedisDataPersistence<INPUT, RESULT>(
     JedisPool(redis.host, redis.bindPort),
     { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
     { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
@@ -76,7 +76,7 @@ fun Any.ser() = jacksonObjectMapperWithTime().writeValueAsBytes(this)
 
 fun testWithRedis(block: suspend RedisDataPersistence<TestInput, TestResult>.() -> Unit) = runBlocking {
     val redis = RedisServer.newRedisServer().start()
-    with(newRedisPersistence(redis)) { block() }
+    with(newRedisPersistence<TestInput, TestResult>(redis)) { block() }
     redis.stop()
 }
 

@@ -34,8 +34,8 @@ private val log: Logger = LoggerFactory.getLogger("JobExecutor")
 private typealias CoroutineJob = kotlinx.coroutines.Job
 
 sealed interface ComputationResult<out RESULT> {
-    class Success<out RESULT>(val result: RESULT) : ComputationResult<RESULT>
-    class Error<out RESULT>(val message: String, val tryRepeat: Boolean = false) : ComputationResult<RESULT>
+    data class Success<out RESULT>(val result: RESULT) : ComputationResult<RESULT>
+    data class Error(val message: String, val tryRepeat: Boolean = false) : ComputationResult<Nothing>
 
     fun resultStatus(): JobStatus = if (this is Success) JobStatus.SUCCESS else JobStatus.FAILURE
 }

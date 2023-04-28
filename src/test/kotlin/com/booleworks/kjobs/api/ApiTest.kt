@@ -38,7 +38,7 @@ class ApiTest {
 
     @Test
     fun test() = testJobFramework {
-        val persistence = newRedisPersistence(defaultRedis)
+        val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             route("test") {
                 JobFramework(defaultInstanceName, persistence, Either.Right(application)) {

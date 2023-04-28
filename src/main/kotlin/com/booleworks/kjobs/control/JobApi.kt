@@ -186,6 +186,7 @@ internal suspend fun <INPUT, RESULT> cancelJob(job: Job, persistence: DataPersis
     // TODO: what about the risk of the job status being overridden?
     //  The execution job could take the job at the same time and might not see the respective cancellation update.
     JobStatus.CREATED -> {
+        apiLog.info("Cancelling job with ID ${job.uuid} from status CREATED")
         job.status = JobStatus.CANCELLED
         job.finishedAt = LocalDateTime.now()
         persistence.transaction { updateJob(job) }
@@ -193,15 +194,23 @@ internal suspend fun <INPUT, RESULT> cancelJob(job: Job, persistence: DataPersis
     }
 
     JobStatus.RUNNING -> {
+        apiLog.info("Cancelling job with ID ${job.uuid} from status RUNNING")
         job.status = JobStatus.CANCEL_REQUESTED
         persistence.transaction { updateJob(job) }
         "Job with id ${job.uuid} is currently running and will be cancelled as soon as possible. " +
                 "If it finishes in the meantime, the cancel request will be ignored."
     }
 
-    JobStatus.CANCEL_REQUESTED -> "Cancellation for job with id ${job.uuid} has already been requested"
-    JobStatus.SUCCESS, JobStatus.FAILURE, JobStatus.CANCELLED ->
+    JobStatus.CANCEL_REQUESTED -> {
+        apiLog.warn("Detected a duplicate cancellation request for job with ID ${job.uuid}")
+        "Cancellation for job with id ${job.uuid} has already been requested"
+    }
+
+    JobStatus.SUCCESS, JobStatus.FAILURE, JobStatus.CANCELLED -> {
+        if (job.status == JobStatus.CANCELLED) apiLog.warn("Detected a duplicate cancellation request for job with ID ${job.uuid}")
+        else apiLog.warn("Got a cancellation request for already finished job in status ${job.status} with ID ${job.uuid}")
         "Job with id ${job.uuid} has already finished with status ${job.status}"
+    }
 }
 
 internal class ApiConfig<INPUT, RESULT>(

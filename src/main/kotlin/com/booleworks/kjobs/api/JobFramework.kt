@@ -114,9 +114,10 @@ class JobFrameworkBuilder internal constructor(
         inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
         resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
         computation: suspend (Job, INPUT, Map<String, HierarchicalJobApi<*, *>>) -> ComputationResult<RESULT>,
-        configuration: ApiBuilder<INPUT, RESULT>.() -> Unit = {}
+        configuration: HierarchicalApiBuilder<INPUT, RESULT>.() -> Unit = {}
     ) = HierarchicalApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder, computation).apply {
         configuration()
+        this.computation = { job, input -> superComputation(job, input, dependents.mapValues { HierarchicalJobApiImpl(it.value.first, job.uuid) }) }
         this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
         this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
         this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
@@ -189,7 +190,6 @@ class JobFrameworkBuilder internal constructor(
      * still be in [JobStatus.RUNNING] state and nobody (including the instance itself) would recognize that the job is actually not computed anymore. So it is
      * highly recommended to set this property to `true`. *Note that this will block the instance on startup while the jobs are being reset, but this should
      * usually be a very short amount of time.*
-     * @param maxJobRestarts the maximum number of restarts of a job. A job is restarted if its timeout is reached. Default is [DEFAULT_MAX_JOB_RESTARTS].
      */
     @KJobsDsl
     class MaintenanceConfig internal constructor(
@@ -275,7 +275,7 @@ class JobFrameworkBuilder internal constructor(
 @KJobsDsl
 open class ApiBuilder<INPUT, RESULT> internal constructor(
     protected val myInstanceName: String,
-    protected val jobType: String,
+    jobType: String,
     private val route: Route,
     private val persistence: DataPersistence<INPUT, RESULT>,
     private val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
@@ -369,7 +369,7 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
     internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> =
         SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation, jobConfig.maxRestarts)
 
-    internal open fun build(enableCancellation: Boolean) = with(route) {
+    internal fun build(enableCancellation: Boolean) = with(route) {
         setupJobApi(
             ApiConfig(
                 inputReceiver,
@@ -386,7 +386,7 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
                     syncConfig.customPriorityProvider
                 )
             ),
-            com.booleworks.kjobs.control.JobConfig(
+            JobConfig(
                 jobConfig.jobType,
                 persistence,
                 myInstanceName,
@@ -427,11 +427,10 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
     persistence: DataPersistence<INPUT, RESULT>,
     inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
     resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
-    private val superComputation: suspend (Job, INPUT, Map<String, HierarchicalJobApi<*, *>>) -> ComputationResult<RESULT>,
+    internal val superComputation: suspend (Job, INPUT, Map<String, HierarchicalJobApi<*, *>>) -> ComputationResult<RESULT>,
 ) : ApiBuilder<INPUT, RESULT>(myInstanceName, jobType, route, persistence, inputReceiver, resultResponder) {
 
-    internal val dependents: MutableMap<String, Triple<com.booleworks.kjobs.control.JobConfig<*, *>, SpecificExecutor<*, *>, DataPersistence<*, *>>> =
-        mutableMapOf()
+    internal val dependents: MutableMap<String, Triple<JobConfig<*, *>, SpecificExecutor<*, *>, DataPersistence<*, *>>> = mutableMapOf()
 
     fun <DEP_INPUT, DEP_RESULT> addDependentJob(
         jobType: String,
@@ -446,11 +445,6 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
                 persistence
             )
         }
-    }
-
-    override fun build(enableCancellation: Boolean): Route {
-        this.computation = { job, input -> superComputation(job, input, dependents.mapValues { HierarchicalJobApiImpl(it.value.first, jobType) }) }
-        return super.build(enableCancellation)
     }
 }
 

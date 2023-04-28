@@ -81,7 +81,8 @@ open class RedisJobPersistence(
         return PersistenceAccessResult.result(
             pool.resource.use { jedis ->
                 uuids.map { uuid ->
-                    jedis.hget(uuid, "status")?.let { status -> JobStatus.valueOf(status) } ?: return@fetchStati PersistenceAccessResult.uuidNotFound(uuid)
+                    jedis.hget(config.jobKey(uuid), "status")?.let { status -> JobStatus.valueOf(status) }
+                        ?: return@fetchStati PersistenceAccessResult.uuidNotFound(uuid)
                 }
             })
     }
