@@ -5,6 +5,8 @@ package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApi
 import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApiImpl
+import com.booleworks.kjobs.api.persistence.DataPersistence
+import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.control.ApiConfig
 import com.booleworks.kjobs.control.ComputationResult
@@ -115,12 +117,28 @@ class JobFrameworkBuilder internal constructor(
      *
      * A hierarchical job must have one or more dependent jobs which are set up in the [configuration] via
      * [HierarchicalApiBuilder.addDependentJob] (for many cases it will be enough to have one type of dependent
-     * job, but there can be more). The [computation] of the super-job slightly differs from the computation in
+     * job, but there can be more). The [parentComputation] slightly differs from the computation in
      * [a simple API][addApi] in that it takes (additionally to the [Job] and [INPUT]) a map from dependent job
      * type to [HierarchicalJobApi].
      *
      * The [HierarchicalJobApi] is used to actually [submit dependent jobs][HierarchicalJobApi.submitDependentJob]
      * and [collect their results][HierarchicalJobApi.collectDependentResults].
+     *
+     * Note that you might need to adjust the [ExecutionCapacityProvider] of your instance via [executorConfig],
+     * since the [parent computation][parentComputation] may spend a lot of time just waiting for its dependent jobs
+     * to finish. Especially sticking with the [DefaultExecutionCapacityProvider] in a single-instance environment
+     * will essentially lead to a deadlock, since it allows only a single running job. So since the parent
+     * computation is already running, the instance will not be able to start any of its dependent jobs.
+     * @param jobType a unique name identifying this type of job
+     * @param route the route on which the API should be setup
+     * @param dataPersistence the persistence/database to use for storing the inputs and results
+     * for this specific job type
+     * @param inputReceiver a function which receives the [INPUT] in the ktor webservice,
+     * e.g. via `call.receive()`
+     * @param resultResponder a function which returns the [RESULT] in the ktor webservice,
+     * e.g. via `call.respond(result)`
+     * @param parentComputation the parent computation
+     * @param configuration provides more detailed configuration options as described below
      */
     fun <INPUT, RESULT> addApiForHierarchicalJob(
         jobType: String,
@@ -128,9 +146,9 @@ class JobFrameworkBuilder internal constructor(
         dataPersistence: DataPersistence<INPUT, RESULT>,
         inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
         resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
-        computation: suspend (Job, INPUT, Map<String, HierarchicalJobApi<*, *>>) -> ComputationResult<RESULT>,
+        parentComputation: suspend (Job, INPUT, Map<String, HierarchicalJobApi<*, *>>) -> ComputationResult<RESULT>,
         configuration: HierarchicalApiBuilder<INPUT, RESULT>.() -> Unit = {}
-    ) = HierarchicalApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder, computation).apply {
+    ) = HierarchicalApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder, parentComputation).apply {
         configuration()
         this.computation = { job, input -> superComputation(job, input, dependents.mapValues { HierarchicalJobApiImpl(it.value.first, job.uuid) }) }
         this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()

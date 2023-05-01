@@ -4,7 +4,7 @@
 package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApi
-import com.booleworks.kjobs.api.impl.RedisDataPersistence
+import com.booleworks.kjobs.api.persistence.redis.RedisDataPersistence
 import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult

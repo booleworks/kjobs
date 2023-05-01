@@ -4,8 +4,8 @@
 package com.booleworks.kjobs.common
 
 import com.booleworks.kjobs.api.DEFAULT_MAX_JOB_RESTARTS
-import com.booleworks.kjobs.api.DataPersistence
-import com.booleworks.kjobs.api.impl.RedisDataPersistence
+import com.booleworks.kjobs.api.persistence.DataPersistence
+import com.booleworks.kjobs.api.persistence.redis.RedisDataPersistence
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.SpecificExecutor

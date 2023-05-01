@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.kjobs.api.impl
+package com.booleworks.kjobs.api.persistence.redis
 
 /**
  * Configuration for the [RedisDataPersistence].

@@ -4,8 +4,8 @@
 package com.booleworks.kjobs.control
 
 import com.booleworks.kjobs.api.ApiBuilder
-import com.booleworks.kjobs.api.DataPersistence
 import com.booleworks.kjobs.api.JobFrameworkBuilder
+import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
@@ -182,7 +182,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
     }
 }
 
-internal suspend fun <INPUT, RESULT> cancelJob(job: Job, persistence: DataPersistence<INPUT, RESULT>): String = when (job.status) {
+internal suspend inline fun <INPUT, RESULT> cancelJob(job: Job, persistence: DataPersistence<INPUT, RESULT>): String = when (job.status) {
     // TODO: what about the risk of the job status being overridden?
     //  The execution job could take the job at the same time and might not see the respective cancellation update.
     JobStatus.CREATED -> {
@@ -267,7 +267,7 @@ private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.valida
     }.uuid
 }
 
-private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: DataPersistence<*, *>): Job? {
+private suspend inline fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: DataPersistence<*, *>): Job? {
     return persistence.fetchJob(uuid.toString()).orQuitWith {
         when (it) {
             is PersistenceAccessError.InternalError -> call.respondText("Failed to access job with ID $uuid: $it", status = InternalServerError)
@@ -278,7 +278,7 @@ private suspend fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?,
     }
 }
 
-private suspend fun PipelineContext<Unit, ApplicationCall>.resultStatus(uuid: UUID, persistence: DataPersistence<*, *>) {
+private suspend inline fun PipelineContext<Unit, ApplicationCall>.resultStatus(uuid: UUID, persistence: DataPersistence<*, *>) {
     fetchJob(uuid, persistence)?.let { call.respondText(it.status.toString()) }
 }
 
@@ -294,7 +294,7 @@ private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.failu
         return null
     }
 
-private suspend fun PipelineContext<Unit, ApplicationCall>.parseUuid(): UUID? = call.parameters["uuid"]?.let {
+private suspend inline fun PipelineContext<Unit, ApplicationCall>.parseUuid(): UUID? = call.parameters["uuid"]?.let {
     runCatching { UUID.fromString(it) }.getOrNull()
 } ?: run {
     call.respondText("The given uuid ${call.parameters["uuid"]} has a wrong format.", status = BadRequest)

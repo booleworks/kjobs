@@ -4,6 +4,8 @@
 package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.api.JobFrameworkBuilder.MaintenanceConfig
+import com.booleworks.kjobs.api.persistence.DataPersistence
+import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.control.JobConfig
 import com.booleworks.kjobs.control.MainJobExecutor
@@ -64,8 +66,10 @@ class JobFrameworkTestingApi internal constructor(
     private val maxRestartsPerType: MutableMap<String, Int>,
 ) {
     /**
-     * Runs the executor *once* with the given optional parameters. If the parameters are not given,
-     * the values provided in [JobFrameworkTestingMode] are used.
+     * Runs the executor *once* with the given optional parameters. This function blocks until the
+     * computation has finished.
+     *
+     * If the parameters are not given, the values provided in [JobFrameworkTestingMode] are used.
      */
     fun runExecutor(
         executionCapacityProvider: ExecutionCapacityProvider = this.executionCapacityProvider,
@@ -86,8 +90,7 @@ class JobFrameworkTestingApi internal constructor(
     ): PersistenceAccessResult<Job> = runBlocking {
         @Suppress("UNCHECKED_CAST")
         submit(
-            input,
-            JobConfig(jobType, persistencesPerType[jobType] as DataPersistence<INPUT, *>, instance, tagProvider, customInfoProvider, priorityProvider)
+            input, JobConfig(jobType, persistencesPerType[jobType] as DataPersistence<INPUT, *>, instance, tagProvider, customInfoProvider, priorityProvider)
         )
     }
 

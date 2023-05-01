@@ -3,8 +3,8 @@
 
 package com.booleworks.kjobs.control
 
-import com.booleworks.kjobs.api.DataPersistence
-import com.booleworks.kjobs.api.JobPersistence
+import com.booleworks.kjobs.api.persistence.DataPersistence
+import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.common.getOrElse
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
@@ -116,13 +116,13 @@ object Maintenance {
         restartJobs(myRunningJobs, persistencesPerType, maxRestartsPerType, "its instance has been restarted")
     }
 
-    private suspend fun restartJobs(
+    private suspend inline fun restartJobs(
         jobs: List<Job>, specificPersistences: Map<String, DataPersistence<*, *>>, maxRestartsPerType: Map<String, Int>, hint: String
     ) = jobs.forEach { job ->
         restartJob(job, maxRestartsPerType[job.type]!!, hint, specificPersistences[job.type]!!)
     }
 
-    internal suspend fun restartJob(job: Job, maxRestarts: Int, hint: String, persistence: DataPersistence<*, *>) {
+    internal suspend inline fun restartJob(job: Job, maxRestarts: Int, hint: String, persistence: DataPersistence<*, *>) {
         persistence.dataTransaction {
             if (job.numRestarts >= maxRestarts) {
                 logger.debug("Setting job with ID ${job.uuid} to failure because $hint and the maximum number of restarts has been reached")

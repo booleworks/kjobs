@@ -3,9 +3,9 @@
 
 package com.booleworks.kjobs.control
 
-import com.booleworks.kjobs.api.DataPersistence
-import com.booleworks.kjobs.api.DataTransactionalPersistence
-import com.booleworks.kjobs.api.JobPersistence
+import com.booleworks.kjobs.api.persistence.DataPersistence
+import com.booleworks.kjobs.api.persistence.DataTransactionalPersistence
+import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.data.ExecutionCapacity
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
@@ -65,7 +65,7 @@ class MainJobExecutor(
         launchCancellationCheck(coroutineJob, job.uuid)
     }
 
-    private suspend fun getExecutionCapacity(): ExecutionCapacity? {
+    private suspend inline fun getExecutionCapacity(): ExecutionCapacity? {
         val allMyRunningJobs = jobPersistence.allJobsOfInstance(JobStatus.RUNNING, myInstanceName).orQuitWith {
             log.warn("Failed to retrieve all running jobs: $it")
             return null
@@ -74,7 +74,7 @@ class MainJobExecutor(
         return executionCapacityProvider(allMyRunningJobs)
     }
 
-    private suspend fun getAndReserveJob(executionCapacity: ExecutionCapacity): Job? {
+    private suspend inline fun getAndReserveJob(executionCapacity: ExecutionCapacity): Job? {
         val job = selectJobWithHighestPriority(executionCapacity)
         if (job != null) {
             log.debug("Job executor selected job: ${job.uuid}")
@@ -95,7 +95,7 @@ class MainJobExecutor(
         }
     }
 
-    private suspend fun selectJobWithHighestPriority(executionCapacity: ExecutionCapacity): Job? {
+    private suspend inline fun selectJobWithHighestPriority(executionCapacity: ExecutionCapacity): Job? {
         val result = jobPersistence.allJobsWithStatus(JobStatus.CREATED).orQuitWith {
             log.warn("Job access failed with error: $it")
             return null
@@ -177,7 +177,7 @@ class SpecificExecutor<INPUT, RESULT>(
         }
     }
 
-    private suspend fun writeResultToDb(id: String, computationResult: ComputationResult<RESULT>) {
+    private suspend inline fun writeResultToDb(id: String, computationResult: ComputationResult<RESULT>) {
         log.trace("Fetching job with ID $id to update its result")
         val job = persistence.fetchJob(id).orQuitWith {
             log.warn("Job with ID $id was deleted from the database during the computation!")
@@ -206,8 +206,9 @@ class SpecificExecutor<INPUT, RESULT>(
         }
     }
 
-    private suspend fun <C : ComputationResult<RESULT>> updateResultOrFailure(
-        job: Job, computation: C, id: String, type: String, updateAction: suspend DataTransactionalPersistence<*, RESULT>.() -> PersistenceAccessResult<Unit>
+    private suspend inline fun <C : ComputationResult<RESULT>> updateResultOrFailure(
+        job: Job, computation: C, id: String, type: String,
+        crossinline updateAction: suspend DataTransactionalPersistence<*, RESULT>.() -> PersistenceAccessResult<Unit>
     ) {
         job.finishedAt = LocalDateTime.now()
         job.status = computation.resultStatus()

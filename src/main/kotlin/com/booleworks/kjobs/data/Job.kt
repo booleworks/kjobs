@@ -42,37 +42,6 @@ data class Job(
 )
 
 /**
- * The result of a job with ID [uuid]. It is guaranteed that either [result] (x)or [error] is non-`null`.
- */
-class JobResult<out T> private constructor(val uuid: String, val result: T?, val error: String?) {
-
-    companion object {
-        fun <T> success(uuid: String, result: T) = JobResult(uuid, result, null)
-        fun <T> error(uuid: String, error: String) = JobResult<T>(uuid, null, error)
-    }
-
-    override fun hashCode(): Int {
-        var result1 = uuid.hashCode()
-        result1 = 31 * result1 + (result?.hashCode() ?: 0)
-        result1 = 31 * result1 + (error?.hashCode() ?: 0)
-        return result1
-    }
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-        other as JobResult<*>
-        if (uuid != other.uuid) return false
-        if (result != other.result) return false
-        return error == other.error
-    }
-
-    override fun toString() = "JobResult(uuid='$uuid', result=$result, error=$error)"
-}
-
-internal val <T> JobResult<T>.isSuccess: Boolean get() = result != null
-
-/**
  * Enumeration of all job stati:
  * - `CREATED`: The job was created and has not been started (it might also have been started before and run in a timeout).
  * - `RUNNING`: The job is currently being computed.

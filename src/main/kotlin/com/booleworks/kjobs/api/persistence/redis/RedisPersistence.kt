@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.kjobs.api.impl
+package com.booleworks.kjobs.api.persistence.redis
 
-import com.booleworks.kjobs.api.DataPersistence
-import com.booleworks.kjobs.api.DataTransactionalPersistence
-import com.booleworks.kjobs.api.JobPersistence
-import com.booleworks.kjobs.api.JobTransactionalPersistence
+import com.booleworks.kjobs.api.persistence.DataPersistence
+import com.booleworks.kjobs.api.persistence.DataTransactionalPersistence
+import com.booleworks.kjobs.api.persistence.JobPersistence
+import com.booleworks.kjobs.api.persistence.JobTransactionalPersistence
 import com.booleworks.kjobs.common.unwrapOrReturnFirstError
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
