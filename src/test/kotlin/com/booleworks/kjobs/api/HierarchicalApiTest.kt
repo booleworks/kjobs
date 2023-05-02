@@ -20,6 +20,8 @@ import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import io.kotest.matchers.equals.shouldBeEqual
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -41,7 +43,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.runBlocking
-import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
@@ -61,24 +62,24 @@ class HierarchicalApiTest {
             delay(input.b.milliseconds); ComputationResult.Success(SubTestResult2(input.b - input.a))
         }
         val submit = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(5000).ser()) }
-        assertThat(submit.status).isEqualTo(HttpStatusCode.OK)
-        val uuid = submit.bodyAsText().also { assertThat(UUID.fromString(it)).isNotNull() }
+        submit.status shouldBeEqual HttpStatusCode.OK
+        val uuid = submit.bodyAsText().also { UUID.fromString(it).shouldNotBeNull() }
         delay(300.milliseconds)
-        assertThat(client.get("test/status/$uuid").bodyAsText()).isEqualTo("RUNNING")
+        client.get("test/status/$uuid").bodyAsText() shouldBeEqual "RUNNING"
         delay(3.seconds)
         println(client.get("test/failure/$uuid").bodyAsText())
-        assertThat(client.get("test/status/$uuid").bodyAsText()).isEqualTo("SUCCESS")
-        assertThat(jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid").bodyAsText())).isEqualTo(TestResult(1100))
+        client.get("test/status/$uuid").bodyAsText() shouldBeEqual "SUCCESS"
+        jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid").bodyAsText()) shouldBeEqual TestResult(1100)
 
         val submit2 = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(500).ser()) }
-        assertThat(submit2.status).isEqualTo(HttpStatusCode.OK)
-        val uuid2 = submit2.bodyAsText().also { assertThat(UUID.fromString(it)).isNotNull() }
+        submit2.status shouldBeEqual HttpStatusCode.OK
+        val uuid2 = submit2.bodyAsText().also { UUID.fromString(it).shouldNotBeNull() }
         delay(300.milliseconds)
-        assertThat(client.get("test/status/$uuid2").bodyAsText()).isEqualTo("RUNNING")
+        client.get("test/status/$uuid2").bodyAsText() shouldBeEqual "RUNNING"
         delay(3.seconds)
         println(client.get("test/failure/$uuid2").bodyAsText())
-        assertThat(client.get("test/status/$uuid2").bodyAsText()).isEqualTo("SUCCESS")
-        assertThat(jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid2").bodyAsText())).isEqualTo(TestResult(-500))
+        client.get("test/status/$uuid2").bodyAsText() shouldBeEqual "SUCCESS"
+        jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid2").bodyAsText()) shouldBeEqual TestResult(-500)
     }
 
     private fun ApplicationTestBuilder.addTestRoute(

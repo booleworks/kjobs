@@ -18,122 +18,134 @@ import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.orQuitWith
+import io.kotest.assertions.fail
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.date.shouldBeAfter
+import io.kotest.matchers.date.shouldBeBefore
+import io.kotest.matchers.date.shouldBeBetween
+
+import io.kotest.matchers.equals.shouldBeEqual
+import io.kotest.matchers.ints.shouldBeZero
+import io.kotest.matchers.nulls.shouldBeNull
 import kotlinx.coroutines.runBlocking
-import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.fail
-import org.junit.jupiter.api.Test
 import java.time.LocalDateTime.now
 import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
 
-class ExecutorTest {
-    
-    @Test
-    fun `test with testing mode`(): Unit = runBlocking {
-        val jobPersistence = HashMapJobPersistence()
-        val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
-        val testingMode = JobFrameworkTestingMode("ME", jobPersistence, Either.Left(this@runBlocking), false) {
-            addJob("TestJob", dataPersistence, { _, input: TestInput -> ComputationResult.Success(TestResult(input.value)) }) {}
+class ExecutorTest : FunSpec({
+
+    test("test with testing mode") {
+        runBlocking {
+            val jobPersistence = HashMapJobPersistence()
+            val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+            val testingMode = JobFrameworkTestingMode("ME", jobPersistence, Either.Left(this@runBlocking), false) {
+                addJob("TestJob", dataPersistence, { _, input: TestInput -> ComputationResult.Success(TestResult(input.value)) }) {}
+            }
+            val job = testingMode.submitJob("TestJob", TestInput(42)).orQuitWith { fail("Expected persistence access to succeed") }
+            job.type shouldBeEqual "TestJob"
+            job.tags.isEmpty()
+            job.customInfo.shouldBeNull()
+            job.priority.shouldBeZero()
+            job.createdBy shouldBeEqual "ME"
+            job.createdAt.shouldBeBetween(now().minusSeconds(10), now())
+            job.status shouldBeEqual JobStatus.CREATED
+            job.startedAt.shouldBeNull()
+            job.executingInstance.shouldBeNull()
+            job.finishedAt.shouldBeNull()
+            job.timeout.shouldBeNull()
+            job.numRestarts.shouldBeZero()
+            testingMode.runExecutor()
+            val jobAfterComputation = jobPersistence.fetchJob(job.uuid).orQuitWith { fail("Expected persistence access to succeed") }
+            jobAfterComputation.uuid shouldBeEqual job.uuid
+            jobAfterComputation.type shouldBeEqual "TestJob"
+            jobAfterComputation.tags.isEmpty()
+            jobAfterComputation.customInfo.shouldBeNull()
+            jobAfterComputation.priority.shouldBeZero()
+            jobAfterComputation.createdBy shouldBeEqual "ME"
+            jobAfterComputation.createdAt shouldBeEqual job.createdAt
+            jobAfterComputation.status shouldBeEqual JobStatus.SUCCESS
+            jobAfterComputation.startedAt!!.shouldBeBetween(now().minusSeconds(10), now())
+            jobAfterComputation.startedAt!! shouldBeAfter jobAfterComputation.createdAt
+            jobAfterComputation.executingInstance!! shouldBeEqual "ME"
+            jobAfterComputation.finishedAt!!.shouldBeBetween(now().minusSeconds(10), now())
+            jobAfterComputation.finishedAt!! shouldBeAfter jobAfterComputation.startedAt!!
+            jobAfterComputation.timeout!! shouldBeAfter jobAfterComputation.finishedAt!!
+            jobAfterComputation.numRestarts.shouldBeZero()
+            dataPersistence.fetchResult(job.uuid).orQuitWith { fail("Expected persistence access to succeed") } shouldBeEqual TestResult(42)
         }
-        val job = testingMode.submitJob("TestJob", TestInput(42)).orQuitWith { fail("Expected persistence access to succeed") }
-        assertThat(job.type).isEqualTo("TestJob")
-        assertThat(job.tags).isEmpty()
-        assertThat(job.customInfo).isNull()
-        assertThat(job.priority).isZero()
-        assertThat(job.createdBy).isEqualTo("ME")
-        assertThat(job.createdAt).isBetween(now().minusSeconds(10), now())
-        assertThat(job.status).isEqualTo(JobStatus.CREATED)
-        assertThat(job.startedAt).isNull()
-        assertThat(job.executingInstance).isNull()
-        assertThat(job.finishedAt).isNull()
-        assertThat(job.timeout).isNull()
-        assertThat(job.numRestarts).isZero()
-        testingMode.runExecutor()
-        val jobAfterComputation = jobPersistence.fetchJob(job.uuid).orQuitWith { fail("Expected persistence access to succeed") }
-        assertThat(jobAfterComputation.uuid).isEqualTo(job.uuid)
-        assertThat(jobAfterComputation.type).isEqualTo("TestJob")
-        assertThat(jobAfterComputation.tags).isEmpty()
-        assertThat(jobAfterComputation.customInfo).isNull()
-        assertThat(jobAfterComputation.priority).isZero()
-        assertThat(jobAfterComputation.createdBy).isEqualTo("ME")
-        assertThat(jobAfterComputation.createdAt).isEqualTo(job.createdAt)
-        assertThat(jobAfterComputation.status).isEqualTo(JobStatus.SUCCESS)
-        assertThat(jobAfterComputation.startedAt).isBetween(now().minusSeconds(10), now()).isAfter(jobAfterComputation.createdAt)
-        assertThat(jobAfterComputation.executingInstance).isEqualTo("ME")
-        assertThat(jobAfterComputation.finishedAt).isBetween(now().minusSeconds(10), now()).isAfter(jobAfterComputation.startedAt)
-        assertThat(jobAfterComputation.timeout).isAfter(jobAfterComputation.finishedAt)
-        assertThat(jobAfterComputation.numRestarts).isZero()
-        assertThat(dataPersistence.fetchResult(job.uuid).orQuitWith { fail("Expected persistence access to succeed") }).isEqualTo(TestResult(42))
     }
 
-    @Test
-    fun `test simple computation with redis`() = testWithRedis {
-        val job = newJob()
-        val input = TestInput(42)
-        dataTransaction { persistJob(job); persistInput(job, input) }
-        defaultExecutor(this).execute()
-        val jobAfterComputation = fetchJob(job.uuid).right()
-        assertThat(jobAfterComputation.uuid).isEqualTo(job.uuid)
-        assertThat(jobAfterComputation.type).isEqualTo("TestJob")
-        assertThat(jobAfterComputation.tags).isEmpty()
-        assertThat(jobAfterComputation.customInfo).isNull()
-        assertThat(jobAfterComputation.priority).isZero()
-        assertThat(jobAfterComputation.createdBy).isEqualTo(defaultInstanceName)
-        assertThat(jobAfterComputation.createdAt).isEqualTo(job.createdAt)
-        assertThat(jobAfterComputation.status).isEqualTo(JobStatus.SUCCESS)
-        assertThat(jobAfterComputation.startedAt).isBetween(job.createdAt, now())
-        assertThat(jobAfterComputation.executingInstance).isEqualTo(defaultInstanceName)
-        assertThat(jobAfterComputation.finishedAt).isBetween(jobAfterComputation.startedAt, now())
-        assertThat(jobAfterComputation.timeout).isAfter(now())
-        assertThat(jobAfterComputation.numRestarts).isZero()
-        assertThat(fetchResult(job.uuid).right()).isEqualTo(TestResult(42))
+    test("test simple computation with redis") {
+        testWithRedis {
+            val job = newJob()
+            val input = TestInput(42)
+            dataTransaction { persistJob(job); persistInput(job, input) }
+            defaultExecutor(this).execute()
+            val jobAfterComputation = fetchJob(job.uuid).right()
+            jobAfterComputation.uuid shouldBeEqual job.uuid
+            jobAfterComputation.type shouldBeEqual "TestJob"
+            jobAfterComputation.tags.isEmpty()
+            jobAfterComputation.customInfo.shouldBeNull()
+            jobAfterComputation.priority.shouldBeZero()
+            jobAfterComputation.createdBy shouldBeEqual defaultInstanceName
+            jobAfterComputation.createdAt shouldBeEqual job.createdAt
+            jobAfterComputation.status shouldBeEqual JobStatus.SUCCESS
+            jobAfterComputation.startedAt!!.shouldBeBetween(job.createdAt, now())
+            jobAfterComputation.executingInstance!! shouldBeEqual defaultInstanceName
+            jobAfterComputation.finishedAt!!.shouldBeBetween(jobAfterComputation.startedAt!!, now())
+            jobAfterComputation.timeout!! shouldBeAfter now()
+            jobAfterComputation.numRestarts.shouldBeZero()
+            fetchResult(job.uuid).right() shouldBeEqual TestResult(42)
+        }
     }
 
-    @Test
-    fun `test computation with exception with redis`() = testWithRedis {
-        val job = newJob()
-        val input = TestInput(42, throwException = true)
-        dataTransaction { persistJob(job); persistInput(job, input) }
-        defaultExecutor(this).execute()
-        val jobAfterComputation = fetchJob(job.uuid).right()
-        assertThat(jobAfterComputation.uuid).isEqualTo(job.uuid)
-        assertThat(jobAfterComputation.type).isEqualTo("TestJob")
-        assertThat(jobAfterComputation.tags).isEmpty()
-        assertThat(jobAfterComputation.customInfo).isNull()
-        assertThat(jobAfterComputation.priority).isZero()
-        assertThat(jobAfterComputation.createdBy).isEqualTo(defaultInstanceName)
-        assertThat(jobAfterComputation.createdAt).isEqualTo(job.createdAt)
-        assertThat(jobAfterComputation.status).isEqualTo(JobStatus.FAILURE)
-        assertThat(jobAfterComputation.startedAt).isBetween(job.createdAt, now())
-        assertThat(jobAfterComputation.executingInstance).isEqualTo(defaultInstanceName)
-        assertThat(jobAfterComputation.finishedAt).isBetween(jobAfterComputation.startedAt, now())
-        assertThat(jobAfterComputation.timeout).isAfter(now())
-        assertThat(jobAfterComputation.numRestarts).isZero()
-        assertThat(fetchFailure(job.uuid).right()).isEqualTo("Unexpected exception during computation: Test Exception Message")
+    test("test computation with exception with redis") {
+        testWithRedis {
+            val job = newJob()
+            val input = TestInput(42, throwException = true)
+            dataTransaction { persistJob(job); persistInput(job, input) }
+            defaultExecutor(this).execute()
+            val jobAfterComputation = fetchJob(job.uuid).right()
+            jobAfterComputation.uuid shouldBeEqual job.uuid
+            jobAfterComputation.type shouldBeEqual "TestJob"
+            jobAfterComputation.tags.isEmpty()
+            jobAfterComputation.customInfo.shouldBeNull()
+            jobAfterComputation.priority.shouldBeZero()
+            jobAfterComputation.createdBy shouldBeEqual defaultInstanceName
+            jobAfterComputation.createdAt shouldBeEqual job.createdAt
+            jobAfterComputation.status shouldBeEqual JobStatus.FAILURE
+            jobAfterComputation.startedAt!!.shouldBeBetween(job.createdAt, now())
+            jobAfterComputation.executingInstance!! shouldBeEqual defaultInstanceName
+            jobAfterComputation.finishedAt!!.shouldBeBetween(jobAfterComputation.startedAt!!, now())
+            jobAfterComputation.timeout!! shouldBeAfter now()
+            jobAfterComputation.numRestarts.shouldBeZero()
+            fetchFailure(job.uuid).right() shouldBeEqual "Unexpected exception during computation: Test Exception Message"
+        }
     }
 
-    @Test
-    fun `test computation with timeout with redis`() = testWithRedis {
-        val job = newJob()
-        val input = TestInput(42, expectedDelay = 10, throwException = true)
-        dataTransaction { persistJob(job); persistInput(job, input) }
-        defaultExecutor(this, timeout = { _, _ -> 1.milliseconds }).execute()
-        val jobAfterComputation = fetchJob(job.uuid).right()
-        assertThat(jobAfterComputation.uuid).isEqualTo(job.uuid)
-        assertThat(jobAfterComputation.type).isEqualTo("TestJob")
-        assertThat(jobAfterComputation.tags).isEmpty()
-        assertThat(jobAfterComputation.customInfo).isNull()
-        assertThat(jobAfterComputation.priority).isZero()
-        assertThat(jobAfterComputation.createdBy).isEqualTo(defaultInstanceName)
-        assertThat(jobAfterComputation.createdAt).isEqualTo(job.createdAt)
-        assertThat(jobAfterComputation.status).isEqualTo(JobStatus.FAILURE)
-        assertThat(jobAfterComputation.startedAt).isBetween(job.createdAt, now())
-        assertThat(jobAfterComputation.executingInstance).isEqualTo(defaultInstanceName)
-        assertThat(jobAfterComputation.finishedAt).isBetween(jobAfterComputation.startedAt, now())
-        assertThat(jobAfterComputation.timeout).isBefore(now())
-        assertThat(jobAfterComputation.numRestarts).isZero()
-        assertThat(fetchFailure(job.uuid).right()).isEqualTo("The job did not finish within the configured timeout of 1ms")
+    test("test computation with timeout with redis") {
+        testWithRedis {
+            val job = newJob()
+            val input = TestInput(42, expectedDelay = 10, throwException = true)
+            dataTransaction { persistJob(job); persistInput(job, input) }
+            defaultExecutor(this, timeout = { _, _ -> 1.milliseconds }).execute()
+            val jobAfterComputation = fetchJob(job.uuid).right()
+            jobAfterComputation.uuid shouldBeEqual job.uuid
+            jobAfterComputation.type shouldBeEqual "TestJob"
+            jobAfterComputation.tags.isEmpty()
+            jobAfterComputation.customInfo.shouldBeNull()
+            jobAfterComputation.priority.shouldBeZero()
+            jobAfterComputation.createdBy shouldBeEqual defaultInstanceName
+            jobAfterComputation.createdAt shouldBeEqual job.createdAt
+            jobAfterComputation.status shouldBeEqual JobStatus.FAILURE
+            jobAfterComputation.startedAt!!.shouldBeBetween(job.createdAt, now())
+            jobAfterComputation.executingInstance!! shouldBeEqual defaultInstanceName
+            jobAfterComputation.finishedAt!!.shouldBeBetween(jobAfterComputation.startedAt!!, now())
+            jobAfterComputation.timeout!! shouldBeBefore now()
+            jobAfterComputation.numRestarts.shouldBeZero()
+            fetchFailure(job.uuid).right() shouldBeEqual "The job did not finish within the configured timeout of 1ms"
+        }
     }
+})
 
-    private fun newJob() = Job(UUID.randomUUID().toString(), defaultJobType, emptyList(), null, 0, defaultInstanceName, now(), JobStatus.CREATED)
-}
+private fun newJob() = Job(UUID.randomUUID().toString(), defaultJobType, emptyList(), null, 0, defaultInstanceName, now(), JobStatus.CREATED)
