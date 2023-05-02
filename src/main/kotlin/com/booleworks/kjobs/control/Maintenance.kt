@@ -107,7 +107,7 @@ object Maintenance {
         persistence: JobPersistence,
         myInstanceName: String,
         persistencesPerType: Map<String, DataPersistence<*, *>>,
-        maxRestartsPerType: MutableMap<String, Int>,
+        maxRestartsPerType: Map<String, Int>,
     ) {
         val myRunningJobs = persistence.allJobsOfInstance(JobStatus.RUNNING, myInstanceName).orQuitWith {
             logger.error("Failed to fetch jobs: $it")

@@ -223,12 +223,12 @@ internal class ApiConfig<INPUT, RESULT>(
     val syncMockConfig: SynchronousResourceConfig<INPUT>
 )
 
-internal data class JobConfig<INPUT, RESULT>(
+data class JobConfig<INPUT, RESULT>(
     val jobType: String,
     val persistence: DataPersistence<INPUT, RESULT>,
     val myInstanceName: String,
     val tagProvider: (INPUT) -> List<String>,
-    val customInfoProvider: (INPUT) -> String,
+    val customInfoProvider: (INPUT) -> String?,
     val priorityProvider: (INPUT) -> Int,
 )
 

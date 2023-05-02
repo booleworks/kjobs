@@ -20,7 +20,6 @@ import com.booleworks.kjobs.data.TagMatcher
 import io.ktor.server.application.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
-import kotlin.time.Duration
 
 /**
  * Set up the job framework in testing mode. This returns a [JobFrameworkTestingMode] object which allows
@@ -56,14 +55,12 @@ fun JobFrameworkTestingMode(
 class JobFrameworkTestingApi internal constructor(
     private val jobPersistence: JobPersistence,
     private val myInstanceName: String,
+    private val jobConfigs: Map<String, JobConfig<*, *>>,
     private val persistencesPerType: Map<String, DataPersistence<*, *>>,
     private val executorsPerType: Map<String, SpecificExecutor<*, *>>,
-    private val executionCapacityProvider: ExecutionCapacityProvider,
-    private val jobPrioritizer: JobPrioritizer,
-    private val tagMatcher: TagMatcher,
-    private val heartbeatInterval: Duration,
-    private val deleteOldJobsAfter: Duration,
-    private val maxRestartsPerType: MutableMap<String, Int>,
+    private val executorConfig: JobFrameworkBuilder.ExecutorConfig,
+    private val maintenanceConfig: MaintenanceConfig,
+    private val maxRestartsPerType: Map<String, Int>,
 ) {
     /**
      * Runs the executor *once* with the given optional parameters. This function blocks until the
@@ -72,23 +69,23 @@ class JobFrameworkTestingApi internal constructor(
      * If the parameters are not given, the values provided in [JobFrameworkTestingMode] are used.
      */
     fun runExecutor(
-        executionCapacityProvider: ExecutionCapacityProvider = this.executionCapacityProvider,
-        jobPrioritizer: JobPrioritizer = this.jobPrioritizer,
-        tagMatcher: TagMatcher = this.tagMatcher
+        executionCapacityProvider: ExecutionCapacityProvider = executorConfig.executionCapacityProvider,
+        jobPrioritizer: JobPrioritizer = executorConfig.jobPrioritizer,
+        tagMatcher: TagMatcher = executorConfig.tagMatcher
     ) = runBlocking { MainJobExecutor(jobPersistence, myInstanceName, executionCapacityProvider, jobPrioritizer, tagMatcher, executorsPerType).execute() }
 
     /**
      * Submits a new job.
      */
+    @Suppress("UNCHECKED_CAST")
     fun <INPUT> submitJob(
         jobType: String,
         input: INPUT,
         instance: String = myInstanceName,
-        tagProvider: (INPUT) -> List<String> = { emptyList() },
-        customInfoProvider: (INPUT) -> String = { "" },
-        priorityProvider: (INPUT) -> Int = { 0 }
+        tagProvider: (INPUT) -> List<String> = (jobConfigs[jobType]!! as JobConfig<INPUT, *>).tagProvider,
+        customInfoProvider: (INPUT) -> String? = (jobConfigs[jobType]!! as JobConfig<INPUT, *>).customInfoProvider,
+        priorityProvider: (INPUT) -> Int = (jobConfigs[jobType]!! as JobConfig<INPUT, *>).priorityProvider
     ): PersistenceAccessResult<Job> = runBlocking {
-        @Suppress("UNCHECKED_CAST")
         submit(
             input, JobConfig(jobType, persistencesPerType[jobType] as DataPersistence<INPUT, *>, instance, tagProvider, customInfoProvider, priorityProvider)
         )
@@ -111,13 +108,13 @@ class JobFrameworkTestingApi internal constructor(
      * @see Maintenance.restartJobsFromDeadInstances
      */
     fun restartJobsFromDeadInstances() =
-        runBlocking { Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, heartbeatInterval, maxRestartsPerType) }
+        runBlocking { Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, maxRestartsPerType) }
 
     /**
      * Deletes old jobs.
      * @see Maintenance.deleteOldJobs
      */
-    fun deleteOldJobs() = runBlocking { Maintenance.deleteOldJobs(jobPersistence, deleteOldJobsAfter, persistencesPerType) }
+    fun deleteOldJobs() = runBlocking { Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType) }
 
     /**
      * Resets running jobs of the given [instance], the default is the instance provided in [JobFrameworkTestingMode].

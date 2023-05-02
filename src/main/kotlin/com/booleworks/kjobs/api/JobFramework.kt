@@ -7,6 +7,8 @@ import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApi
 import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApiImpl
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
+import com.booleworks.kjobs.api.persistence.hashmap.HashMapDataPersistence
+import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
 import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.control.ApiConfig
 import com.booleworks.kjobs.control.ComputationResult
@@ -73,7 +75,8 @@ class JobFrameworkBuilder internal constructor(
     private val executorConfig: ExecutorConfig = ExecutorConfig()
     private val maintenanceConfig: MaintenanceConfig = MaintenanceConfig()
     private val cancellationConfig: CancellationConfig = CancellationConfig()
-    private val apis: MutableList<ApiBuilder<*, *>> = mutableListOf()
+    private val apis: MutableMap<String, ApiBuilder<*, *>> = mutableMapOf()
+    private val jobs: MutableMap<String, JobBuilder<*, *>> = mutableMapOf()
     private val executorsPerType: MutableMap<String, SpecificExecutor<*, *>> = mutableMapOf()
     private val persistencesPerType: MutableMap<String, DataPersistence<*, *>> = mutableMapOf()
     private val restartsPerType: MutableMap<String, Int> = mutableMapOf()
@@ -106,7 +109,7 @@ class JobFrameworkBuilder internal constructor(
         this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
         this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
         this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
-        this@JobFrameworkBuilder.apis += this
+        this@JobFrameworkBuilder.apis[jobType] = this
     }
 
     /**
@@ -156,7 +159,7 @@ class JobFrameworkBuilder internal constructor(
         this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
         this@JobFrameworkBuilder.executorsPerType += dependents.mapValues { it.value.second }
         this@JobFrameworkBuilder.persistencesPerType += dependents.mapValues { it.value.third }
-        this@JobFrameworkBuilder.apis += this
+        this@JobFrameworkBuilder.apis[jobType] = this
     }
 
     /**
@@ -172,11 +175,12 @@ class JobFrameworkBuilder internal constructor(
         dataPersistence: DataPersistence<INPUT, RESULT>,
         computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
         configuration: JobBuilder<INPUT, RESULT>.() -> Unit
-    ) = JobBuilder(jobType, myInstanceName, dataPersistence, computation).apply {
+    ) = JobBuilder(myInstanceName, dataPersistence, computation).apply {
         configuration()
         this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
         this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
         this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
+        this@JobFrameworkBuilder.jobs[jobType] = this
     }
 
     /**
@@ -253,7 +257,7 @@ class JobFrameworkBuilder internal constructor(
         if (maintenanceConfig.restartRunningJobsOnStartup) runBlocking {
             Maintenance.resetMyRunningJobs(jobPersistence, myInstanceName, persistencesPerType, restartsPerType)
         }
-        apis.forEach { it.build(cancellationConfig.enabled) }
+        apis.values.forEach { it.build(cancellationConfig.enabled) }
         if (maintenanceEnabled) {
             val executor = generateJobExecutor()
             executionBase.schedule(maintenanceConfig.jobCheckInterval) { executor.execute() }
@@ -270,29 +274,21 @@ class JobFrameworkBuilder internal constructor(
         }
     }
 
+    @Suppress("UNCHECKED_CAST")
     internal fun buildTestingMode(): JobFrameworkTestingApi {
         build()
+        val jobConfigs = apis.mapValues {
+            (it.value as ApiBuilder<Any, Any>).jobConfig.toJobConfig(it.key, myInstanceName, persistencesPerType[it.key]!! as DataPersistence<Any, Any>)
+        } + jobs.mapValues {
+            (it.value as JobBuilder<Any, Any>).jobConfig.toJobConfig(it.key, myInstanceName, persistencesPerType[it.key]!! as DataPersistence<Any, Any>)
+        }
         return JobFrameworkTestingApi(
-            jobPersistence,
-            myInstanceName,
-            persistencesPerType,
-            executorsPerType,
-            executorConfig.executionCapacityProvider,
-            executorConfig.jobPrioritizer,
-            executorConfig.tagMatcher,
-            maintenanceConfig.heartbeatInterval,
-            maintenanceConfig.deleteOldJobsAfter,
-            restartsPerType,
+            jobPersistence, myInstanceName, jobConfigs, persistencesPerType, executorsPerType, executorConfig, maintenanceConfig, restartsPerType,
         )
     }
 
     private fun generateJobExecutor(): MainJobExecutor = MainJobExecutor(
-        jobPersistence,
-        myInstanceName,
-        executorConfig.executionCapacityProvider,
-        executorConfig.jobPrioritizer,
-        executorConfig.tagMatcher,
-        executorsPerType
+        jobPersistence, myInstanceName, executorConfig.executionCapacityProvider, executorConfig.jobPrioritizer, executorConfig.tagMatcher, executorsPerType
     )
 
     private val Either<CoroutineScope, Application>.schedule: (duration: Duration, task: suspend () -> Unit) -> kotlinx.coroutines.Job
@@ -308,7 +304,7 @@ class JobFrameworkBuilder internal constructor(
 @KJobsDsl
 open class ApiBuilder<INPUT, RESULT> internal constructor(
     protected val myInstanceName: String,
-    jobType: String,
+    private val jobType: String,
     private val route: Route,
     private val persistence: DataPersistence<INPUT, RESULT>,
     private val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
@@ -317,7 +313,7 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
     @Suppress("LateinitUsage") // this is an internal API and we (hopefully) know what we're doing
     internal lateinit var computation: suspend (Job, INPUT) -> ComputationResult<RESULT>
     private val apiConfig: ApiConfigBuilder<INPUT> = ApiConfigBuilder()
-    internal val jobConfig: JobConfigBuilder<INPUT> = JobConfigBuilder(jobType)
+    internal val jobConfig: JobConfigBuilder<INPUT> = JobConfigBuilder()
     private val syncConfig: SynchronousResourceConfigBuilder<INPUT> = SynchronousResourceConfigBuilder()
 
     /**
@@ -335,89 +331,13 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
      */
     fun synchronousResourceConfig(configuration: SynchronousResourceConfigBuilder<INPUT>.() -> Unit) = configuration(syncConfig)
 
-    /**
-     * Further configuration options for the API.
-     * @param basePath an additional base path of the application (in addition to what is effectively predefined by the [Route] passed into
-     * [JobFrameworkBuilder.addApi]). Default is the empty string.
-     * @param inputValidation an optional validation of the input which is performed in the `submit` resource. Must return a list of error messages which
-     * is empty in case the validation did not find any errors. If the list is not empty, the request is rejected with [HttpStatusCode.NotFound] and
-     * a message constructed from the list. Default is an empty list.
-     * @param enableDeletion whether a `DELETE` resource should be added which allows the API user to delete a job (usually once the result has been fetched)
-     */
-    @KJobsDsl
-    class ApiConfigBuilder<INPUT> internal constructor(
-        var basePath: String? = null,
-        var inputValidation: (INPUT) -> List<String> = { emptyList() },
-        var enableDeletion: Boolean = false
-    )
-
-    /**
-     * Further configuration options about the handling of jobs.
-     * @param jobType a unique name identifying this type of job
-     * @param tagProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.tags]. Default is an empty list.
-     * @param customInfoProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.customInfo].
-     * Default is an empty string.
-     * @param priorityProvider a function providing an integer priority for a job input. A smaller number means a higher priority. Default is 0.
-     * @param timeoutComputation a function providing a timeout for the given job. The default is 24 hours. In most cases this default should be set much lower.
-     * @param maxRestarts the maximum number of restarts for this job in case of (potentially temporary) errors. Default is [DEFAULT_MAX_JOB_RESTARTS].
-     */
-    @KJobsDsl
-    class JobConfigBuilder<INPUT> internal constructor(
-        val jobType: String,
-        var tagProvider: (INPUT) -> List<String> = { emptyList() },
-        var customInfoProvider: (INPUT) -> String = { "" },
-        var priorityProvider: (INPUT) -> Int = { 0 },
-        var timeoutComputation: (Job, INPUT) -> Duration = { _, _ -> 24.hours },
-        var maxRestarts: Int = DEFAULT_MAX_JOB_RESTARTS,
-    )
-
-    /**
-     * Configuration options for the synchronous resource.
-     *
-     * The synchronous resource is a wrapper around the asynchronous resources (`submit`, `status`, `result`, etc). It does not perform the computation itself,
-     * but (like the asynchronous API) stores the job in the database and then waits for the job to be computed.
-     *
-     * To accelerate the selection of such jobs you might want to configure a [custom priority provider][customPriorityProvider].
-     *
-     * Note that even with a small [checkInterval] and if there are no other jobs running, it might take up to the duration specified in
-     * [JobFrameworkBuilder.MaintenanceConfig.jobCheckInterval] until the computation of the job actually starts.
-     *
-     * By default, the synchronous API is disabled.
-     * @param enabled whether the synchronous resource is enabled for this API
-     * @param path the path on which the synchronous resource should be placed, default is `synchronous`
-     * @param checkInterval the interval in which the job status should be checked after it was submitted
-     * @param maxWaitingTime the maximum time to wait for the job to complete. If this time is exceeded, status 400 is returned including the information
-     * about the UUID of the generated job.
-     * @param customPriorityProvider a custom priority provider for jobs from the synchronous resource
-     */
-    @KJobsDsl
-    class SynchronousResourceConfigBuilder<INPUT>(
-        var enabled: Boolean = false,
-        var path: String = "synchronous",
-        var checkInterval: Duration = 200.milliseconds,
-        var maxWaitingTime: Duration = 1.hours,
-        var customPriorityProvider: (INPUT) -> Int = { 0 }
-    )
-
     internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> =
         SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation, jobConfig.maxRestarts)
 
     internal fun build(enableCancellation: Boolean) = with(route) {
         setupJobApi(
-            ApiConfig(
-                inputReceiver,
-                resultResponder,
-                apiConfig.basePath,
-                apiConfig.inputValidation,
-                apiConfig.enableDeletion,
-                enableCancellation,
-                SynchronousResourceConfig(
-                    syncConfig.enabled, syncConfig.path, syncConfig.checkInterval, syncConfig.maxWaitingTime, syncConfig.customPriorityProvider
-                )
-            ),
-            JobConfig(
-                jobConfig.jobType, persistence, myInstanceName, jobConfig.tagProvider, jobConfig.customInfoProvider, jobConfig.priorityProvider,
-            )
+            apiConfig.toApiConfig(inputReceiver, resultResponder, enableCancellation, syncConfig.toSynchronousResourceConfig()),
+            jobConfig.toJobConfig(jobType, myInstanceName, persistence)
         )
     }
 }
@@ -427,17 +347,16 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
  */
 @KJobsDsl
 class JobBuilder<INPUT, RESULT> internal constructor(
-    jobType: String,
     private val myInstanceName: String,
     private val persistence: DataPersistence<INPUT, RESULT>,
     private val computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
 ) {
-    internal val jobConfig: ApiBuilder.JobConfigBuilder<INPUT> = ApiBuilder.JobConfigBuilder(jobType)
+    internal val jobConfig: JobConfigBuilder<INPUT> = JobConfigBuilder()
 
     /**
      * Provides further configuration options about the handling of jobs.
      */
-    fun jobConfig(configuration: ApiBuilder.JobConfigBuilder<INPUT>.() -> Unit) = configuration(jobConfig)
+    fun jobConfig(configuration: JobConfigBuilder<INPUT>.() -> Unit) = configuration(jobConfig)
 
     internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> =
         SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation, jobConfig.maxRestarts)
@@ -472,7 +391,7 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
         computation: suspend (Job, DEP_INPUT) -> ComputationResult<DEP_RESULT>,
         configuration: JobConfigBuilder<DEP_INPUT>.() -> Unit
     ) {
-        JobConfigBuilder<DEP_INPUT>(jobType).apply(configuration).let { config ->
+        JobConfigBuilder<DEP_INPUT>().apply(configuration).let { config ->
             dependents[jobType] = Triple(
                 JobConfig(jobType, persistence, myInstanceName, config.tagProvider, config.customInfoProvider, config.priorityProvider),
                 SpecificExecutor(myInstanceName, persistence, computation, config.timeoutComputation, config.maxRestarts),
@@ -480,6 +399,81 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
             )
         }
     }
+}
+
+/**
+ * Further configuration options for the API.
+ * @param basePath an additional base path of the application (in addition to what is effectively predefined by the [Route] passed into
+ * [JobFrameworkBuilder.addApi]). Default is the empty string.
+ * @param inputValidation an optional validation of the input which is performed in the `submit` resource. Must return a list of error messages which
+ * is empty in case the validation did not find any errors. If the list is not empty, the request is rejected with [HttpStatusCode.NotFound] and
+ * a message constructed from the list. Default is an empty list.
+ * @param enableDeletion whether a `DELETE` resource should be added which allows the API user to delete a job (usually once the result has been fetched)
+ */
+@KJobsDsl
+class ApiConfigBuilder<INPUT> internal constructor(
+    var basePath: String? = null,
+    var inputValidation: (INPUT) -> List<String> = { emptyList() },
+    var enableDeletion: Boolean = false
+) {
+    internal fun <RESULT> toApiConfig(
+        inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
+        resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
+        enableCancellation: Boolean,
+        syncMockConfig: SynchronousResourceConfig<INPUT>
+    ) = ApiConfig(inputReceiver, resultResponder, basePath, inputValidation, enableDeletion, enableCancellation, syncMockConfig)
+}
+
+/**
+ * Further configuration options about the handling of jobs.
+ * @param tagProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.tags]. Default is an empty list.
+ * @param customInfoProvider a function providing a list of tags (strings) for a job input. These tags are stored in [Job.customInfo].
+ * Default is a function returning `null`.
+ * @param priorityProvider a function providing an integer priority for a job input. A smaller number means a higher priority. Default is 0.
+ * @param timeoutComputation a function providing a timeout for the given job. The default is 24 hours. In most cases this default should be set much lower.
+ * @param maxRestarts the maximum number of restarts for this job in case of (potentially temporary) errors. Default is [DEFAULT_MAX_JOB_RESTARTS].
+ */
+@KJobsDsl
+class JobConfigBuilder<INPUT> internal constructor(
+    var tagProvider: (INPUT) -> List<String> = { emptyList() },
+    var customInfoProvider: (INPUT) -> String? = { null },
+    var priorityProvider: (INPUT) -> Int = { 0 },
+    var timeoutComputation: (Job, INPUT) -> Duration = { _, _ -> 24.hours },
+    var maxRestarts: Int = DEFAULT_MAX_JOB_RESTARTS,
+) {
+    internal fun <RESULT> toJobConfig(
+        jobType: String, myInstanceName: String, persistence: DataPersistence<INPUT, RESULT> = HashMapDataPersistence(HashMapJobPersistence())
+    ) = JobConfig(jobType, persistence, myInstanceName, tagProvider, customInfoProvider, priorityProvider)
+}
+
+/**
+ * Configuration options for the synchronous resource.
+ *
+ * The synchronous resource is a wrapper around the asynchronous resources (`submit`, `status`, `result`, etc). It does not perform the computation itself,
+ * but (like the asynchronous API) stores the job in the database and then waits for the job to be computed.
+ *
+ * To accelerate the selection of such jobs you might want to configure a [custom priority provider][customPriorityProvider].
+ *
+ * Note that even with a small [checkInterval] and if there are no other jobs running, it might take up to the duration specified in
+ * [JobFrameworkBuilder.MaintenanceConfig.jobCheckInterval] until the computation of the job actually starts.
+ *
+ * By default, the synchronous API is disabled.
+ * @param enabled whether the synchronous resource is enabled for this API
+ * @param path the path on which the synchronous resource should be placed, default is `synchronous`
+ * @param checkInterval the interval in which the job status should be checked after it was submitted
+ * @param maxWaitingTime the maximum time to wait for the job to complete. If this time is exceeded, status 400 is returned including the information
+ * about the UUID of the generated job.
+ * @param customPriorityProvider a custom priority provider for jobs from the synchronous resource
+ */
+@KJobsDsl
+class SynchronousResourceConfigBuilder<INPUT>(
+    var enabled: Boolean = false,
+    var path: String = "synchronous",
+    var checkInterval: Duration = 200.milliseconds,
+    var maxWaitingTime: Duration = 1.hours,
+    var customPriorityProvider: (INPUT) -> Int = { 0 }
+) {
+    internal fun toSynchronousResourceConfig() = SynchronousResourceConfig(enabled, path, checkInterval, maxWaitingTime, customPriorityProvider)
 }
 
 internal const val DEFAULT_MAX_JOB_RESTARTS = 3
