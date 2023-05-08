@@ -92,21 +92,25 @@ interface TagMatcher {
     }
 
     /**
-     * A tag matcher matching jobs which have at least one of the [desiredTags].
+     * A tag matcher matching jobs which have *at least* one of the [desiredTags].
+     *
+     * Note that jobs with an empty list of tags will *never* be matched this type of tag matcher.
      */
-    class OneOf(private val desiredTags: List<String>) : TagMatcher {
+    class OneOf(private vararg val desiredTags: String) : TagMatcher {
         override fun matches(job: Job) = desiredTags.intersect(job.tags.toSet()).isNotEmpty()
     }
 
     /**
-     * A tag matcher matching jobs which have all of the [desiredTags].
+     * A tag matcher matching jobs which have all of the [desiredTags] (and they may have more).
+     *
+     * If [desiredTags] are empty, this type of tag matcher behaves exactly like [TagMatcher.Any].
      */
-    class AllOf(private val desiredTags: List<String>) : TagMatcher {
-        override fun matches(job: Job) = job.tags.toSet().containsAll(desiredTags)
+    class AllOf(private vararg val desiredTags: String) : TagMatcher {
+        override fun matches(job: Job) = job.tags.toSet().containsAll(desiredTags.toList())
     }
 
     /**
-     * A tag matcher matching all jobs which have exactly the [desiredTags].
+     * A tag matcher matching all jobs which have exactly the [desiredTags] (the order of the tags does not matter).
      */
     class Exactly(private vararg val desiredTags: String) : TagMatcher {
         override fun matches(job: Job) = job.tags.toSet() == desiredTags.toSet()

@@ -3,8 +3,8 @@
 
 package com.booleworks.kjobs.control
 
-import com.booleworks.kjobs.api.ApiBuilder
 import com.booleworks.kjobs.api.JobFrameworkBuilder
+import com.booleworks.kjobs.api.SynchronousResourceConfigBuilder
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
@@ -68,7 +68,7 @@ private val apiLog = LoggerFactory.getLogger("ApiLog")
  *     `FAILURE`) before it is aborted, the respecting finishing status will be set instead of `CANCELLED`
  *     and the result (or error) will be stored.
  *
- * ### `POST synchronous` (if enabled via [ApiBuilder.SynchronousResourceConfigBuilder.enabled])
+ * ### `POST synchronous` (if enabled via [SynchronousResourceConfigBuilder.enabled])
  * - performs the same steps as `submit` but does not return the UUID
  * - waits until the job is computed (computation might be performed by another instance)
  * - returns the result of the computation using [ApiConfig.resultResponder]
