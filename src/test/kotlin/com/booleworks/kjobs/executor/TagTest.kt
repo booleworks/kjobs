@@ -42,25 +42,26 @@ class TagTest : FunSpec({
     test("test tag matching any") {
         runBlocking {
             coroutineScope {
-                val (testingApi, j1Persistence, j2Persistence) = setupApi()
-                testingApi.submitJob("J1", TestInput(0)).expectSuccess()
-                testingApi.submitJob("J1", TestInput(42)).expectSuccess()
-                testingApi.submitJob("J2", TestInput(0)).expectSuccess()
-                testingApi.submitJob("J2", TestInput(42)).expectSuccess()
-                j1Persistence.results.shouldBeEmpty()
-                j2Persistence.results.shouldBeEmpty()
-                testingApi.runExecutor(tagMatcher = TagMatcher.Any)
-                j1Persistence.results shouldHaveSize 1
-                j2Persistence.results.shouldBeEmpty()
-                testingApi.runExecutor(tagMatcher = TagMatcher.Any)
-                j1Persistence.results shouldHaveSize 2
-                j2Persistence.results.shouldBeEmpty()
-                testingApi.runExecutor(tagMatcher = TagMatcher.Any)
-                j1Persistence.results shouldHaveSize 2
-                j2Persistence.results shouldHaveSize 1
-                testingApi.runExecutor(tagMatcher = TagMatcher.Any)
-                j1Persistence.results shouldHaveSize 2
-                j2Persistence.results shouldHaveSize 2
+                testWithPredefinedAndOverriddenTagMatcher(TagMatcher.AllOf()) { testingApi, j1Persistence, j2Persistence, runExecutor ->
+                    testingApi.submitJob("J1", TestInput(0)).expectSuccess()
+                    testingApi.submitJob("J1", TestInput(42)).expectSuccess()
+                    testingApi.submitJob("J2", TestInput(0)).expectSuccess()
+                    testingApi.submitJob("J2", TestInput(42)).expectSuccess()
+                    j1Persistence.results.shouldBeEmpty()
+                    j2Persistence.results.shouldBeEmpty()
+                    runExecutor()
+                    j1Persistence.results shouldHaveSize 1
+                    j2Persistence.results.shouldBeEmpty()
+                    runExecutor()
+                    j1Persistence.results shouldHaveSize 2
+                    j2Persistence.results.shouldBeEmpty()
+                    runExecutor()
+                    j1Persistence.results shouldHaveSize 2
+                    j2Persistence.results shouldHaveSize 1
+                    runExecutor()
+                    j1Persistence.results shouldHaveSize 2
+                    j2Persistence.results shouldHaveSize 2
+                }
             }
         }
     }
@@ -182,35 +183,47 @@ class TagTest : FunSpec({
     test("test tag matching allOf with empty tags") {
         runBlocking {
             coroutineScope {
-                val (testingApi, j1Persistence, j2Persistence) = setupApi()
-                testingApi.submitJob("J1", TestInput(0)).expectSuccess() // j1, default_tag, small_tag
-                testingApi.submitJob("J1", TestInput(42)).expectSuccess() // j2, default_tag, large_tag
-                testingApi.submitJob("J2", TestInput(0)).expectSuccess() // j3, -
-                testingApi.submitJob("J2", TestInput(42)).expectSuccess() // j4, large_tag
-                j1Persistence.results.shouldBeEmpty()
-                j2Persistence.results.shouldBeEmpty()
-                testingApi.runExecutor(tagMatcher = TagMatcher.AllOf())
-                j1Persistence.results shouldHaveSize 1
-                j2Persistence.results.shouldBeEmpty()
-                testingApi.runExecutor(tagMatcher = TagMatcher.AllOf())
-                j1Persistence.results shouldHaveSize 2
-                j2Persistence.results.shouldBeEmpty()
-                testingApi.runExecutor(tagMatcher = TagMatcher.AllOf())
-                j1Persistence.results shouldHaveSize 2
-                j2Persistence.results shouldHaveSize 1
-                testingApi.runExecutor(tagMatcher = TagMatcher.AllOf())
-                j1Persistence.results shouldHaveSize 2
-                j2Persistence.results shouldHaveSize 2
+                testWithPredefinedAndOverriddenTagMatcher(TagMatcher.AllOf()) { testingApi, j1Persistence, j2Persistence, runExecutor ->
+                    testingApi.submitJob("J1", TestInput(0)).expectSuccess() // j1, default_tag, small_tag
+                    testingApi.submitJob("J1", TestInput(42)).expectSuccess() // j2, default_tag, large_tag
+                    testingApi.submitJob("J2", TestInput(0)).expectSuccess() // j3, -
+                    testingApi.submitJob("J2", TestInput(42)).expectSuccess() // j4, large_tag
+                    j1Persistence.results.shouldBeEmpty()
+                    j2Persistence.results.shouldBeEmpty()
+                    runExecutor()
+                    j1Persistence.results shouldHaveSize 1
+                    j2Persistence.results.shouldBeEmpty()
+                    testingApi.runExecutor(tagMatcher = TagMatcher.AllOf())
+                    j1Persistence.results shouldHaveSize 2
+                    j2Persistence.results.shouldBeEmpty()
+                    testingApi.runExecutor(tagMatcher = TagMatcher.AllOf())
+                    j1Persistence.results shouldHaveSize 2
+                    j2Persistence.results shouldHaveSize 1
+                    testingApi.runExecutor(tagMatcher = TagMatcher.AllOf())
+                    j1Persistence.results shouldHaveSize 2
+                    j2Persistence.results shouldHaveSize 2
+                }
             }
         }
     }
 })
 
-private fun CoroutineScope.setupApi(): Triple<JobFrameworkTestingApi, HashMapDataPersistence<TestInput, TestResult>, HashMapDataPersistence<TestInput, TestResult>> {
+private fun CoroutineScope.testWithPredefinedAndOverriddenTagMatcher(
+    tagMatcher: TagMatcher,
+    block: (testingApi: JobFrameworkTestingApi, j1Persistence: HashMapDataPersistence<TestInput, TestResult>, j2Persistence: HashMapDataPersistence<TestInput, TestResult>, runExecutor: () -> Unit) -> Unit
+) {
+    val (testingApi, j1Persistence, j2Persistence) = setupApi(tagMatcher)
+    block(testingApi, j1Persistence, j2Persistence) { testingApi.runExecutor() }
+    val (testingApi1, j1Persistence1, j2Persistence1) = setupApi()
+    block(testingApi1, j1Persistence1, j2Persistence1) { testingApi1.runExecutor(tagMatcher = tagMatcher) }
+}
+
+private fun CoroutineScope.setupApi(tagMatcher: TagMatcher? = null): Triple<JobFrameworkTestingApi, HashMapDataPersistence<TestInput, TestResult>, HashMapDataPersistence<TestInput, TestResult>> {
     val jobPersistence = HashMapJobPersistence()
     val j1Persistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
     val j2Persistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
     val testingApi = JobFrameworkTestingMode(defaultInstanceName, jobPersistence, Either.Left(this), false) {
+        tagMatcher?.let { executorConfig { this.tagMatcher = tagMatcher } }
         addJob("J1", j1Persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {
             jobConfig {
                 tagProvider = { input -> if (input.value > 10) listOf("default_tag", "large_tag") else listOf("default_tag", "small_tag") }
