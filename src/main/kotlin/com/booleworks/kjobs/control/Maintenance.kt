@@ -19,7 +19,7 @@ import kotlin.time.toJavaDuration
 
 /**
  * This factor multiplied by the `heartbeatInterval` denotes the acceptable time in which a heartbeat
- * may be delayed. The intension is that we allow no more than one missed heartbeat (which would be
+ * may be delayed. The intention is that we allow no more than one missed heartbeat (which would be
  * factor 2) and wait some more time for the job to write the heartbeat in the database.
  */
 private const val HEARTBEAT_TIMEOUT_FACTOR = 2.1

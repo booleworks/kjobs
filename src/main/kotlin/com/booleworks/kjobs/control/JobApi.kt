@@ -51,11 +51,11 @@ private val apiLog = LoggerFactory.getLogger("ApiLog")
  *
  * ### `GET result/{uuid}`
  * - returns the result using [ApiConfig.resultResponder]
- * - if no such job exists or it is not in status `SUCCESS`, status 404 is returned
+ * - if no such job exists, or it is not in status `SUCCESS`, status 404 is returned
  *
  * ### `GET failure/{uuid}`
  * - returns the failure of the job with the given uuid
- * - if no such job exists or it is not in status `FAILURE`, status 404 is returned
+ * - if no such job exists, or it is not in status `FAILURE`, status 404 is returned
  *
  * ### `POST cancel/{uuid}` (if enabled via [JobFrameworkBuilder.CancellationConfig.enabled])
  * - cancels the job with the given uuid
@@ -77,7 +77,7 @@ private val apiLog = LoggerFactory.getLogger("ApiLog")
  * - deletes the job with the given uuid
  * - the job must have the `jobType` of this API, otherwise status 400 is returned. So only jobs belonging
  *     to this API can be deleted.
- * - the job must not be in one of the stati `CREATED`, `RUNNING`, or `CANCEL_REQUESTED`. Such jobs must be
+ * - the job must not be in one of the states `CREATED`, `RUNNING`, or `CANCEL_REQUESTED`. Such jobs must be
  *     canceled first (and/or it has to be waited until the cancellation has succeeded and the status is
  *     `CANCELLED`)
  *

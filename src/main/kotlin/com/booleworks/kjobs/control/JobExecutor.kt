@@ -150,7 +150,7 @@ class SpecificExecutor<INPUT, RESULT>(
             log.error("Could not fetch job input for ID ${uuid}: $it")
             return@launch
         }
-        // Parsing input may take some time, afterwards, we check if anyone might have "stolen" the job (because of overlapping transactions)
+        // Parsing input may take some time. Afterward, we check if anyone might have "stolen" the job (because of overlapping transactions)
         val executingInstance = persistence.fetchJob(uuid).orQuitWith {
             log.error("Failed to fetch job: $it")
             return@launch

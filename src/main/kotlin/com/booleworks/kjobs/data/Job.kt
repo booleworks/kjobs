@@ -42,7 +42,7 @@ data class Job(
 )
 
 /**
- * Enumeration of all job stati:
+ * Enumeration of all job states:
  * - `CREATED`: The job was created and has not been started (it might also have been started before and run in a timeout).
  * - `RUNNING`: The job is currently being computed.
  * - `SUCCESS`: The job was computed successfully and the result has been stored.
