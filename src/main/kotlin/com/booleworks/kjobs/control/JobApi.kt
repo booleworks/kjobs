@@ -90,12 +90,12 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
         }
 
         get("status/{uuid}") {
-            parseUuid()?.let { resultStatus(it, jobConfig.persistence) }
+            parseUuid()?.let { resultStatus(it, jobConfig.jobType, jobConfig.persistence) }
         }
 
         get("result/{uuid}") {
             parseUuid()?.let { uuid ->
-                val job = fetchJob(uuid, jobConfig.persistence) ?: return@get
+                val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@get
                 if (job.status != JobStatus.SUCCESS) {
                     call.respondText("Cannot return the result for job with ID $uuid and status ${job.status}.", status = BadRequest)
                 } else {
@@ -106,7 +106,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
 
         get("failure/{uuid}") {
             parseUuid()?.let { uuid ->
-                val job = fetchJob(uuid, jobConfig.persistence) ?: return@get
+                val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@get
                 if (job.status != JobStatus.FAILURE) {
                     call.respondText("Cannot return a failure for job with ID $uuid and status ${job.status}.", status = BadRequest)
                 } else {
@@ -118,7 +118,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
         if (enableDeletion) {
             delete("delete/{uuid}") {
                 parseUuid()?.let { uuid ->
-                    fetchJob(uuid, jobConfig.persistence)?.let { job ->
+                    fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence)?.let { job ->
                         if (job.type != jobConfig.jobType) {
                             call.respond(
                                 BadRequest,
@@ -139,7 +139,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
         if (enableCancellation) {
             post("cancel/{uuid}") {
                 parseUuid()?.let { uuid ->
-                    val job = fetchJob(uuid, jobConfig.persistence) ?: return@post
+                    val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@post
                     call.respond(cancelJob(job, jobConfig.persistence))
                 }
             }
@@ -267,8 +267,12 @@ private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.valida
     }.uuid
 }
 
-private suspend inline fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid: UUID?, persistence: DataPersistence<*, *>): Job? {
-    return persistence.fetchJob(uuid.toString()).orQuitWith {
+private suspend inline fun PipelineContext<Unit, ApplicationCall>.fetchJobAndCheckType(
+    uuid: UUID?,
+    requestedJobType: String,
+    persistence: DataPersistence<*, *>
+): Job? {
+    val job = persistence.fetchJob(uuid.toString()).orQuitWith {
         when (it) {
             is PersistenceAccessError.InternalError -> call.respondText("Failed to access job with ID $uuid: $it", status = InternalServerError)
             is PersistenceAccessError.NotFound, is PersistenceAccessError.UuidNotFound ->
@@ -276,10 +280,15 @@ private suspend inline fun PipelineContext<Unit, ApplicationCall>.fetchJob(uuid:
         }
         return null
     }
+    if (job.type != requestedJobType) {
+        call.respond(BadRequest, "Illegal job type. A job with the given uuid was found, but it was created from a different resource.")
+        return null
+    }
+    return job
 }
 
-private suspend inline fun PipelineContext<Unit, ApplicationCall>.resultStatus(uuid: UUID, persistence: DataPersistence<*, *>) {
-    fetchJob(uuid, persistence)?.let { call.respondText(it.status.toString()) }
+private suspend inline fun PipelineContext<Unit, ApplicationCall>.resultStatus(uuid: UUID, requestedJobType: String, persistence: DataPersistence<*, *>) {
+    fetchJobAndCheckType(uuid, requestedJobType, persistence)?.let { call.respondText(it.status.toString()) }
 }
 
 private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(job: Job, persistence: DataPersistence<*, RESULT>): RESULT? =
