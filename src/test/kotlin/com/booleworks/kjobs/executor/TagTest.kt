@@ -171,13 +171,39 @@ class TagTest : FunSpec({
             runExecutor()
             j1Persistence.results shouldHaveSize 1
             j2Persistence.results.shouldBeEmpty()
-            testingApi.runExecutor(tagMatcher = TagMatcher.AllOf())
+            runExecutor()
             j1Persistence.results shouldHaveSize 2
             j2Persistence.results.shouldBeEmpty()
-            testingApi.runExecutor(tagMatcher = TagMatcher.AllOf())
+            runExecutor()
             j1Persistence.results shouldHaveSize 2
             j2Persistence.results shouldHaveSize 1
-            testingApi.runExecutor(tagMatcher = TagMatcher.AllOf())
+            runExecutor()
+            j1Persistence.results shouldHaveSize 2
+            j2Persistence.results shouldHaveSize 2
+        }
+    }
+
+    testBlocking("test custom tag matcher") {
+        testWithPredefinedAndOverriddenTagMatcher({ it.tags.size == 2 }) { testingApi, j1Persistence, j2Persistence, runExecutor ->
+            testingApi.submitJob("J1", TestInput(0)).expectSuccess() // j1, default_tag, small_tag
+            testingApi.submitJob("J1", TestInput(42)).expectSuccess() // j2, default_tag, large_tag
+            testingApi.submitJob("J2", TestInput(0)).expectSuccess() // j3, -
+            testingApi.submitJob("J2", TestInput(42)).expectSuccess() // j4, large_tag
+            j1Persistence.results.shouldBeEmpty()
+            j2Persistence.results.shouldBeEmpty()
+            runExecutor()
+            j1Persistence.results shouldHaveSize 1
+            j2Persistence.results.shouldBeEmpty()
+            runExecutor()
+            j1Persistence.results shouldHaveSize 2
+            j2Persistence.results.shouldBeEmpty()
+            runExecutor()
+            j1Persistence.results shouldHaveSize 2
+            j2Persistence.results.shouldBeEmpty()
+            testingApi.runExecutor(tagMatcher = { it.tags.isEmpty() })
+            j1Persistence.results shouldHaveSize 2
+            j2Persistence.results shouldHaveSize 1
+            testingApi.runExecutor(tagMatcher = { true })
             j1Persistence.results shouldHaveSize 2
             j2Persistence.results shouldHaveSize 2
         }
