@@ -10,7 +10,6 @@ import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.defaultJobType
-import com.booleworks.kjobs.common.defaultRedis
 import com.booleworks.kjobs.common.newRedisPersistence
 import com.booleworks.kjobs.common.ser
 import com.booleworks.kjobs.common.testJobFramework
@@ -20,6 +19,7 @@ import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.ktor.client.request.get
@@ -43,19 +43,17 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Test
 import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
-class HierarchicalApiTest {
+internal val subJob1 = "SUB_JOB_1"
+internal val subJob2 = "SUB_JOB_2"
 
-    private val subJob1 = "SUB_JOB_1"
-    private val subJob2 = "SUB_JOB_2"
+class HierarchicalApiTest : FunSpec({
 
-    @Test
-    fun testMultipleJobs() = testJobFramework {
-        val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+    testJobFramework("test multiple jobs") {
+        val persistence = newRedisPersistence<TestInput, TestResult>()
         addTestRoute(persistence, { _, input ->
             delay(input.a.milliseconds); ComputationResult.Success(SubTestResult1(input.a))
         }) { _, input ->
@@ -81,54 +79,54 @@ class HierarchicalApiTest {
         client.get("test/status/$uuid2").bodyAsText() shouldBeEqual "SUCCESS"
         jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid2").bodyAsText()) shouldBeEqual TestResult(-500)
     }
+})
 
-    private fun ApplicationTestBuilder.addTestRoute(
-        persistence: RedisDataPersistence<TestInput, TestResult>,
-        computation1: suspend (Job, SubTestInput1) -> ComputationResult<SubTestResult1>,
-        computation2: suspend (Job, SubTestInput2) -> ComputationResult<SubTestResult2>
-    ) {
-        routing {
-            route("test") {
-                JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
-                    maintenanceConfig { jobCheckInterval = 20.milliseconds }
-                    executorConfig { executionCapacityProvider = ExecutionCapacityProvider { AcceptingAnyJob } }
-                    addApiForHierarchicalJob(
-                        defaultJobType, this@route, persistence,
-                        { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, superComputation()
-                    ) {
-                        addDependentJob(subJob1, newRedisPersistence<SubTestInput1, SubTestResult1>(), computation1) {}
-                        addDependentJob(subJob2, newRedisPersistence<SubTestInput2, SubTestResult2>(), computation2) {}
-                    }
+private fun ApplicationTestBuilder.addTestRoute(
+    persistence: RedisDataPersistence<TestInput, TestResult>,
+    computation1: suspend (Job, SubTestInput1) -> ComputationResult<SubTestResult1>,
+    computation2: suspend (Job, SubTestInput2) -> ComputationResult<SubTestResult2>
+) {
+    routing {
+        route("test") {
+            JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
+                maintenanceConfig { jobCheckInterval = 20.milliseconds }
+                executorConfig { executionCapacityProvider = ExecutionCapacityProvider { AcceptingAnyJob } }
+                addApiForHierarchicalJob(
+                    defaultJobType, this@route, persistence,
+                    { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, superComputation()
+                ) {
+                    addDependentJob(subJob1, newRedisPersistence<SubTestInput1, SubTestResult1>(), computation1) {}
+                    addDependentJob(subJob2, newRedisPersistence<SubTestInput2, SubTestResult2>(), computation2) {}
                 }
             }
         }
     }
+}
 
-    @Suppress("UNCHECKED_CAST")
-    private fun superComputation() = { _: Job, input: TestInput, apis: Map<String, HierarchicalJobApi<*, *>> ->
-        val api1 = apis[subJob1] as HierarchicalJobApi<SubTestInput1, SubTestResult1>
-        val api2 = apis[subJob2] as HierarchicalJobApi<SubTestInput2, SubTestResult2>
-        launchJobs(input, api1, api2)
-    }
+@Suppress("UNCHECKED_CAST")
+internal fun superComputation() = { _: Job, input: TestInput, apis: Map<String, HierarchicalJobApi<*, *>> ->
+    val api1 = apis[subJob1] as HierarchicalJobApi<SubTestInput1, SubTestResult1>
+    val api2 = apis[subJob2] as HierarchicalJobApi<SubTestInput2, SubTestResult2>
+    launchJobs(input, api1, api2)
+}
 
-    private fun launchJobs(
-        input: TestInput,
-        api1: HierarchicalJobApi<SubTestInput1, SubTestResult1>,
-        api2: HierarchicalJobApi<SubTestInput2, SubTestResult2>,
-    ): ComputationResult<TestResult> = runBlocking {
-        val resultFlow = merge(
-            api1.collectDependentResults().map { it.second }
-                .filterIsInstance<ComputationResult.Success<SubTestResult1>>()
-                .filter { it.result.a > 1000 }
-                .map { it.toTestResult() },
-            api2.collectDependentResults().map { it.second.toTestResult() }
-        ).catch { ComputationResult.Error(it.message ?: "") }
-        for (i in 0.rangeTo(input.value).step(100)) {
-            api1.submitDependentJob(SubTestInput1(i, input.value))
-            api2.submitDependentJob(SubTestInput2(i, input.value))
-        }
-        resultFlow.first()
+private fun launchJobs(
+    input: TestInput,
+    api1: HierarchicalJobApi<SubTestInput1, SubTestResult1>,
+    api2: HierarchicalJobApi<SubTestInput2, SubTestResult2>,
+): ComputationResult<TestResult> = runBlocking {
+    val resultFlow = merge(
+        api1.collectDependentResults().map { it.second }
+            .filterIsInstance<ComputationResult.Success<SubTestResult1>>()
+            .filter { it.result.a > 1000 }
+            .map { it.toTestResult() },
+        api2.collectDependentResults().map { it.second.toTestResult() }
+    ).catch { ComputationResult.Error(it.message ?: "") }
+    for (i in 0.rangeTo(input.value).step(100)) {
+        api1.submitDependentJob(SubTestInput1(i, input.value))
+        api2.submitDependentJob(SubTestInput2(i, input.value))
     }
+    resultFlow.first()
 }
 
 data class SubTestInput1(val a: Int, val b: Int)

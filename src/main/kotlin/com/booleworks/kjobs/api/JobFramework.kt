@@ -103,13 +103,16 @@ class JobFrameworkBuilder internal constructor(
         resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
         computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
         configuration: ApiBuilder<INPUT, RESULT>.() -> Unit = {}
-    ) = ApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder).apply {
-        configuration()
-        this.computation = computation
-        this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
-        this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
-        this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
-        this@JobFrameworkBuilder.apis[jobType] = this
+    ): ApiBuilder<INPUT, RESULT> {
+        checkForDuplicateType(jobType)
+        return ApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder).apply {
+            configuration()
+            this.computation = computation
+            this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
+            this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
+            this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
+            this@JobFrameworkBuilder.apis[jobType] = this
+        }
     }
 
     /**
@@ -151,15 +154,19 @@ class JobFrameworkBuilder internal constructor(
         resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
         parentComputation: suspend (Job, INPUT, Map<String, HierarchicalJobApi<*, *>>) -> ComputationResult<RESULT>,
         configuration: HierarchicalApiBuilder<INPUT, RESULT>.() -> Unit = {}
-    ) = HierarchicalApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder, parentComputation).apply {
-        configuration()
-        this.computation = { job, input -> superComputation(job, input, dependents.mapValues { HierarchicalJobApiImpl(it.value.first, job.uuid) }) }
-        this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
-        this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
-        this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
-        this@JobFrameworkBuilder.executorsPerType += dependents.mapValues { it.value.second }
-        this@JobFrameworkBuilder.persistencesPerType += dependents.mapValues { it.value.third }
-        this@JobFrameworkBuilder.apis[jobType] = this
+    ): HierarchicalApiBuilder<INPUT, RESULT> {
+        checkForDuplicateType(jobType)
+        return HierarchicalApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder, parentComputation).apply {
+            configuration()
+            dependents.keys.forEach { this@JobFrameworkBuilder.checkForDuplicateType(it) }
+            this.computation = { job, input -> superComputation(job, input, dependents.mapValues { HierarchicalJobApiImpl(it.value.first, job.uuid) }) }
+            this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
+            this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
+            this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
+            this@JobFrameworkBuilder.executorsPerType += dependents.mapValues { it.value.second }
+            this@JobFrameworkBuilder.persistencesPerType += dependents.mapValues { it.value.third }
+            this@JobFrameworkBuilder.apis[jobType] = this
+        }
     }
 
     /**
@@ -174,13 +181,16 @@ class JobFrameworkBuilder internal constructor(
         jobType: String,
         dataPersistence: DataPersistence<INPUT, RESULT>,
         computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
-        configuration: JobBuilder<INPUT, RESULT>.() -> Unit
-    ) = JobBuilder(myInstanceName, dataPersistence, computation).apply {
-        configuration()
-        this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
-        this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
-        this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
-        this@JobFrameworkBuilder.jobs[jobType] = this
+        configuration: JobBuilder<INPUT, RESULT>.() -> Unit = {}
+    ): JobBuilder<INPUT, RESULT> {
+        checkForDuplicateType(jobType)
+        return JobBuilder(myInstanceName, dataPersistence, computation).apply {
+            configuration()
+            this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
+            this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
+            this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
+            this@JobFrameworkBuilder.jobs[jobType] = this
+        }
     }
 
     /**
@@ -285,6 +295,11 @@ class JobFrameworkBuilder internal constructor(
         return JobFrameworkTestingApi(
             jobPersistence, myInstanceName, jobConfigs, persistencesPerType, executorsPerType, executorConfig, maintenanceConfig, restartsPerType,
         )
+    }
+
+    private fun checkForDuplicateType(jobType: String) {
+        if (jobType in apis || jobType in jobs || jobType in executorsPerType)
+            throw IllegalArgumentException("An API or job with type $jobType is already defined")
     }
 
     private fun generateJobExecutor(): MainJobExecutor = MainJobExecutor(
@@ -392,6 +407,7 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
         configuration: JobConfigBuilder<DEP_INPUT>.() -> Unit
     ) {
         JobConfigBuilder<DEP_INPUT>().apply(configuration).let { config ->
+            if (jobType in dependents) throw IllegalArgumentException("A dependent job with type $jobType is already defined")
             dependents[jobType] = Triple(
                 JobConfig(jobType, persistence, myInstanceName, config.tagProvider, config.customInfoProvider, config.priorityProvider),
                 SpecificExecutor(myInstanceName, persistence, computation, config.timeoutComputation, config.maxRestarts),

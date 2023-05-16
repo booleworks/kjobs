@@ -23,6 +23,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.github.fppt.jedismock.RedisServer
 import io.kotest.assertions.fail
+import io.kotest.core.spec.style.FunSpec
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import redis.clients.jedis.JedisPool
@@ -77,10 +78,12 @@ class TestException(message: String) : Exception(message)
 
 fun Any.ser() = jacksonObjectMapperWithTime().writeValueAsBytes(this)
 
-fun testWithRedis(block: suspend RedisDataPersistence<TestInput, TestResult>.() -> Unit) = runBlocking {
-    val redis = RedisServer.newRedisServer().start()
-    with(newRedisPersistence<TestInput, TestResult>(redis)) { block() }
-    redis.stop()
+fun FunSpec.testWithRedis(name: String, block: suspend RedisDataPersistence<TestInput, TestResult>.() -> Unit) = test(name) {
+    runBlocking {
+        val redis = RedisServer.newRedisServer().start()
+        with(newRedisPersistence<TestInput, TestResult>(redis)) { block() }
+        redis.stop()
+    }
 }
 
 fun <R> Either<*, R>.right() = (this as Either.Right<R>).value

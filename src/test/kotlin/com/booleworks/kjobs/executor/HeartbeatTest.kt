@@ -26,162 +26,154 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class HeartbeatTest : FunSpec({
 
-    test("test heartbeat keeps job alive") {
-        testWithRedis {
-            val job = newJob().apply {
-                status = JobStatus.RUNNING
-                executingInstance = defaultInstanceName
+    testWithRedis("test heartbeat keeps job alive") {
+        val job = newJob().apply {
+            status = JobStatus.RUNNING
+            executingInstance = defaultInstanceName
+        }
+        transaction { persistJob(job) }
+        coroutineScope {
+            scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
+            scheduleForever(5.milliseconds) {
+                Maintenance.restartJobsFromDeadInstances(
+                    this@testWithRedis,
+                    mapOf(defaultJobType to this@testWithRedis),
+                    5.milliseconds,
+                    mapOf(defaultJobType to 3)
+                )
             }
-            transaction { persistJob(job) }
-            coroutineScope {
-                scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
-                scheduleForever(5.milliseconds) {
-                    Maintenance.restartJobsFromDeadInstances(
-                        this@testWithRedis,
-                        mapOf(defaultJobType to this@testWithRedis),
-                        5.milliseconds,
-                        mapOf(defaultJobType to 3)
-                    )
-                }
-                delay(100.milliseconds)
-                with(fetchJob(job.uuid).right()) {
-                    status shouldBeEqual (JobStatus.RUNNING)
-                    numRestarts.shouldBeZero()
-                    executingInstance!! shouldBeEqual defaultInstanceName
-                }
-                coroutineContext.cancelChildren()
+            delay(100.milliseconds)
+            with(fetchJob(job.uuid).right()) {
+                status shouldBeEqual (JobStatus.RUNNING)
+                numRestarts.shouldBeZero()
+                executingInstance!! shouldBeEqual defaultInstanceName
             }
+            coroutineContext.cancelChildren()
         }
     }
 
-    test("test dead instance") {
-        testWithRedis {
-            val job = newJob().apply {
-                status = JobStatus.RUNNING
-                executingInstance = defaultInstanceName
-                startedAt = now()
-                timeout = now().plusSeconds(10)
-                numRestarts = 2
+    testWithRedis("test dead instance") {
+        val job = newJob().apply {
+            status = JobStatus.RUNNING
+            executingInstance = defaultInstanceName
+            startedAt = now()
+            timeout = now().plusSeconds(10)
+            numRestarts = 2
+        }
+        transaction { persistJob(job) }
+        coroutineScope {
+            val heartbeat = scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
+            scheduleForever(5.milliseconds) {
+                Maintenance.restartJobsFromDeadInstances(
+                    this@testWithRedis,
+                    mapOf(defaultJobType to this@testWithRedis),
+                    5.milliseconds,
+                    mapOf(defaultJobType to 3)
+                )
             }
-            transaction { persistJob(job) }
-            coroutineScope {
-                val heartbeat = scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
-                scheduleForever(5.milliseconds) {
-                    Maintenance.restartJobsFromDeadInstances(
-                        this@testWithRedis,
-                        mapOf(defaultJobType to this@testWithRedis),
-                        5.milliseconds,
-                        mapOf(defaultJobType to 3)
-                    )
-                }
-                delay(20.milliseconds)
-                with(fetchJob(job.uuid).right()) {
-                    status shouldBeEqual JobStatus.RUNNING
-                    numRestarts shouldBeEqual 2
-                    executingInstance!! shouldBeEqual defaultInstanceName
-                    startedAt.shouldNotBeNull()
-                    timeout.shouldNotBeNull()
-                }
-                heartbeat.cancelAndJoin()
-                delay(20.milliseconds)
-                with(fetchJob(job.uuid).right()) {
-                    status shouldBeEqual JobStatus.CREATED
-                    numRestarts shouldBeEqual 3
-                    executingInstance.shouldBeNull()
-                    startedAt.shouldBeNull()
-                    timeout.shouldBeNull()
-                }
-                coroutineContext.cancelChildren()
+            delay(20.milliseconds)
+            with(fetchJob(job.uuid).right()) {
+                status shouldBeEqual JobStatus.RUNNING
+                numRestarts shouldBeEqual 2
+                executingInstance!! shouldBeEqual defaultInstanceName
+                startedAt.shouldNotBeNull()
+                timeout.shouldNotBeNull()
             }
+            heartbeat.cancelAndJoin()
+            delay(20.milliseconds)
+            with(fetchJob(job.uuid).right()) {
+                status shouldBeEqual JobStatus.CREATED
+                numRestarts shouldBeEqual 3
+                executingInstance.shouldBeNull()
+                startedAt.shouldBeNull()
+                timeout.shouldBeNull()
+            }
+            coroutineContext.cancelChildren()
         }
     }
 
-    test("test dead instance and max restarts reached") {
-        testWithRedis {
-            val job = newJob().apply {
-                status = JobStatus.RUNNING
-                executingInstance = defaultInstanceName
-                startedAt = now()
-                timeout = now().plusSeconds(10)
-                numRestarts = 3
+    testWithRedis("test dead instance and max restarts reached") {
+        val job = newJob().apply {
+            status = JobStatus.RUNNING
+            executingInstance = defaultInstanceName
+            startedAt = now()
+            timeout = now().plusSeconds(10)
+            numRestarts = 3
+        }
+        transaction { persistJob(job) }
+        coroutineScope {
+            val heartbeat = scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
+            scheduleForever(5.milliseconds) {
+                Maintenance.restartJobsFromDeadInstances(
+                    this@testWithRedis,
+                    mapOf(defaultJobType to this@testWithRedis),
+                    5.milliseconds,
+                    mapOf(defaultJobType to 3)
+                )
             }
-            transaction { persistJob(job) }
-            coroutineScope {
-                val heartbeat = scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
-                scheduleForever(5.milliseconds) {
-                    Maintenance.restartJobsFromDeadInstances(
-                        this@testWithRedis,
-                        mapOf(defaultJobType to this@testWithRedis),
-                        5.milliseconds,
-                        mapOf(defaultJobType to 3)
-                    )
-                }
-                delay(20.milliseconds)
-                with(fetchJob(job.uuid).right()) {
-                    status shouldBeEqual JobStatus.RUNNING
-                    numRestarts shouldBeEqual 3
-                    executingInstance!! shouldBeEqual defaultInstanceName
-                    startedAt.shouldNotBeNull()
-                    timeout.shouldNotBeNull()
-                }
-                heartbeat.cancelAndJoin()
-                delay(20.milliseconds)
-                with(fetchJob(job.uuid).right()) {
-                    status shouldBeEqual JobStatus.FAILURE
-                    numRestarts shouldBeEqual 3
-                    executingInstance!! shouldBeEqual defaultInstanceName
-                    startedAt.shouldNotBeNull()
-                    timeout.shouldNotBeNull()
-                }
-                fetchFailure(job.uuid).right() shouldBeEqual "The job was aborted because it exceeded the maximum number of 3 restarts"
-                coroutineContext.cancelChildren()
+            delay(20.milliseconds)
+            with(fetchJob(job.uuid).right()) {
+                status shouldBeEqual JobStatus.RUNNING
+                numRestarts shouldBeEqual 3
+                executingInstance!! shouldBeEqual defaultInstanceName
+                startedAt.shouldNotBeNull()
+                timeout.shouldNotBeNull()
             }
+            heartbeat.cancelAndJoin()
+            delay(20.milliseconds)
+            with(fetchJob(job.uuid).right()) {
+                status shouldBeEqual JobStatus.FAILURE
+                numRestarts shouldBeEqual 3
+                executingInstance!! shouldBeEqual defaultInstanceName
+                startedAt.shouldNotBeNull()
+                timeout.shouldNotBeNull()
+            }
+            fetchFailure(job.uuid).right() shouldBeEqual "The job was aborted because it exceeded the maximum number of 3 restarts"
+            coroutineContext.cancelChildren()
         }
     }
 
-    test("test with live and dead jobs") {
-        testWithRedis {
-            val deadJob = newJob().apply {
-                status = JobStatus.RUNNING
-                executingInstance = "Dead instance"
-                startedAt = now()
-                timeout = now().plusSeconds(10)
+    testWithRedis("test with live and dead jobs") {
+        val deadJob = newJob().apply {
+            status = JobStatus.RUNNING
+            executingInstance = "Dead instance"
+            startedAt = now()
+            timeout = now().plusSeconds(10)
+        }
+        val liveJob = newJob().apply {
+            status = JobStatus.RUNNING
+            executingInstance = "Live instance"
+            startedAt = now()
+            timeout = now().plusSeconds(10)
+        }
+        transaction { persistJob(deadJob); persistJob(liveJob) }
+        coroutineScope {
+            scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Live instance") }
+            scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Other instance") }
+            scheduleForever(5.milliseconds) {
+                Maintenance.restartJobsFromDeadInstances(
+                    this@testWithRedis,
+                    mapOf(defaultJobType to this@testWithRedis),
+                    5.milliseconds,
+                    mapOf(defaultJobType to 3)
+                )
             }
-            val liveJob = newJob().apply {
-                status = JobStatus.RUNNING
-                executingInstance = "Live instance"
-                startedAt = now()
-                timeout = now().plusSeconds(10)
+            delay(20.milliseconds)
+            with(fetchJob(deadJob.uuid).right()) {
+                status shouldBeEqual JobStatus.CREATED
+                numRestarts shouldBeEqual 1
+                executingInstance.shouldBeNull()
+                startedAt.shouldBeNull()
+                timeout.shouldBeNull()
             }
-            transaction { persistJob(deadJob); persistJob(liveJob) }
-            coroutineScope {
-                scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Live instance") }
-                scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Other instance") }
-                scheduleForever(5.milliseconds) {
-                    Maintenance.restartJobsFromDeadInstances(
-                        this@testWithRedis,
-                        mapOf(defaultJobType to this@testWithRedis),
-                        5.milliseconds,
-                        mapOf(defaultJobType to 3)
-                    )
-                }
-                delay(20.milliseconds)
-                with(fetchJob(deadJob.uuid).right()) {
-                    status shouldBeEqual JobStatus.CREATED
-                    numRestarts shouldBeEqual 1
-                    executingInstance.shouldBeNull()
-                    startedAt.shouldBeNull()
-                    timeout.shouldBeNull()
-                }
-                with(fetchJob(liveJob.uuid).right()) {
-                    status shouldBeEqual JobStatus.RUNNING
-                    numRestarts.shouldBeZero()
-                    executingInstance!! shouldBeEqual "Live instance"
-                    startedAt.shouldNotBeNull()
-                    timeout.shouldNotBeNull()
-                }
-                coroutineContext.cancelChildren()
+            with(fetchJob(liveJob.uuid).right()) {
+                status shouldBeEqual JobStatus.RUNNING
+                numRestarts.shouldBeZero()
+                executingInstance!! shouldBeEqual "Live instance"
+                startedAt.shouldNotBeNull()
+                timeout.shouldNotBeNull()
             }
+            coroutineContext.cancelChildren()
         }
     }
 })

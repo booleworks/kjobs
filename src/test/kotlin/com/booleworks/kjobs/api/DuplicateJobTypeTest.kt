@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: MIT
+// Copyright 2023 BooleWorks GmbH
+
+package com.booleworks.kjobs.api
+
+import com.booleworks.kjobs.common.Either
+import com.booleworks.kjobs.common.TestInput
+import com.booleworks.kjobs.common.TestResult
+import com.booleworks.kjobs.common.defaultComputation
+import com.booleworks.kjobs.common.defaultInstanceName
+import com.booleworks.kjobs.common.defaultJobType
+import com.booleworks.kjobs.common.defaultRedis
+import com.booleworks.kjobs.common.newRedisPersistence
+import com.booleworks.kjobs.common.testJobFramework
+import com.booleworks.kjobs.control.ComputationResult
+import com.booleworks.kjobs.data.ExecutionCapacity
+import com.booleworks.kjobs.data.ExecutionCapacityProvider
+import io.kotest.assertions.throwables.shouldThrowWithMessage
+import io.kotest.core.spec.style.FunSpec
+import io.ktor.server.application.call
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
+import io.ktor.server.routing.route
+import kotlin.time.Duration.Companion.milliseconds
+
+class DuplicateJobTypeTest : FunSpec({
+
+    testJobFramework("test add duplicate APIs") {
+        val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        routing {
+            shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
+                JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
+                    maintenanceConfig { jobCheckInterval = 500.milliseconds }
+                    route("test1") {
+                        addApi("type1", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation)
+                    }
+                    route("test2") {
+                        addApi("type1", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation)
+                    }
+                }
+            }
+        }
+    }
+
+    testJobFramework("test add duplicate jobs") {
+        val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        routing {
+            shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
+                JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
+                    maintenanceConfig { jobCheckInterval = 500.milliseconds }
+                    addJob("type1", persistence, defaultComputation)
+                    addJob("type1", persistence, defaultComputation)
+                }
+            }
+        }
+    }
+
+    testJobFramework("test add duplicate APIs and jobs") {
+        val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        routing {
+            shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
+                JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
+                    maintenanceConfig { jobCheckInterval = 500.milliseconds }
+                    route("test1") {
+                        addApi("type1", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation)
+                    }
+                    addJob("type1", persistence, defaultComputation)
+                }
+            }
+            shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
+                JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
+                    maintenanceConfig { jobCheckInterval = 500.milliseconds }
+                    addJob("type1", persistence, defaultComputation)
+                    route("test1") {
+                        addApi("type1", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation)
+                    }
+                }
+            }
+        }
+    }
+
+    testJobFramework("test hierarchical jobs") {
+        val persistence = newRedisPersistence<TestInput, TestResult>()
+        routing {
+            JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
+                route("test1") {
+                    addApi(
+                        subJob1,
+                        this,
+                        newRedisPersistence<SubTestInput1, SubTestResult1>(),
+                        { call.receive<SubTestInput1>() },
+                        { call.respond<SubTestResult1>(it) },
+                        { _, _ -> ComputationResult.Success(SubTestResult1(1)) })
+                }
+                shouldThrowWithMessage<IllegalArgumentException>("An API or job with type $subJob1 is already defined") {
+                    route("test2") {
+                        maintenanceConfig { jobCheckInterval = 20.milliseconds }
+                        executorConfig { executionCapacityProvider = ExecutionCapacityProvider { ExecutionCapacity.Companion.AcceptingAnyJob } }
+                        addApiForHierarchicalJob(
+                            defaultJobType, this@route, persistence,
+                            { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, superComputation()
+                        ) {
+                            addDependentJob(
+                                subJob1,
+                                newRedisPersistence<SubTestInput1, SubTestResult1>(),
+                                { _, _ -> ComputationResult.Success(SubTestResult1(1)) }) {}
+                            addDependentJob(
+                                subJob2,
+                                newRedisPersistence<SubTestInput2, SubTestResult2>(),
+                                { _, _ -> ComputationResult.Success(SubTestResult2(1)) }) {}
+                            shouldThrowWithMessage<IllegalArgumentException>("A dependent job with type $subJob1 is already defined") {
+                                addDependentJob(
+                                    subJob1,
+                                    newRedisPersistence<SubTestInput1, SubTestResult1>(),
+                                    { _, _ -> ComputationResult.Success(SubTestResult1(1)) }) {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    testJobFramework("test hierarchical jobs 2") {
+        val persistence = newRedisPersistence<TestInput, TestResult>()
+        routing {
+            JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
+                route("test1") {
+                    maintenanceConfig { jobCheckInterval = 20.milliseconds }
+                    executorConfig { executionCapacityProvider = ExecutionCapacityProvider { ExecutionCapacity.Companion.AcceptingAnyJob } }
+                    addApiForHierarchicalJob(
+                        defaultJobType, this@route, persistence,
+                        { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, superComputation()
+                    ) {
+                        addDependentJob(
+                            subJob1,
+                            newRedisPersistence<SubTestInput1, SubTestResult1>(),
+                            { _, _ -> ComputationResult.Success(SubTestResult1(1)) }) {}
+                        addDependentJob(
+                            subJob2,
+                            newRedisPersistence<SubTestInput2, SubTestResult2>(),
+                            { _, _ -> ComputationResult.Success(SubTestResult2(1)) }) {}
+                    }
+                }
+                route("test2") {
+                    shouldThrowWithMessage<IllegalArgumentException>("An API or job with type $subJob1 is already defined") {
+                        addJob(subJob1, newRedisPersistence<SubTestInput1, SubTestResult1>(), { _, _ -> ComputationResult.Success(SubTestResult1(1)) })
+                    }
+                }
+            }
+        }
+    }
+})
