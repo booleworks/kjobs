@@ -13,6 +13,7 @@ import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.control.ApiConfig
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.control.JobConfig
+import com.booleworks.kjobs.control.JobInfoConfig
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
 import com.booleworks.kjobs.control.SpecificExecutor
@@ -29,6 +30,8 @@ import com.booleworks.kjobs.data.TagMatcher
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.call
+import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.util.pipeline.PipelineContext
 import kotlinx.coroutines.CoroutineScope
@@ -330,6 +333,7 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
     private val apiConfig: ApiConfigBuilder<INPUT> = ApiConfigBuilder()
     internal val jobConfig: JobConfigBuilder<INPUT> = JobConfigBuilder()
     private val syncConfig: SynchronousResourceConfigBuilder<INPUT> = SynchronousResourceConfigBuilder()
+    private val infoConfig: JobInfoConfigBuilder = JobInfoConfigBuilder()
 
     /**
      * Provides further configuration options about the API.
@@ -346,12 +350,17 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
      */
     fun synchronousResourceConfig(configuration: SynchronousResourceConfigBuilder<INPUT>.() -> Unit) = configuration(syncConfig)
 
+    /**
+     * Provides configuration options for the job info resource.
+     */
+    fun infoConfig(configuration: JobInfoConfigBuilder.() -> Unit) = configuration(infoConfig)
+
     internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> =
         SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation, jobConfig.maxRestarts)
 
     internal fun build(enableCancellation: Boolean) = with(route) {
         setupJobApi(
-            apiConfig.toApiConfig(inputReceiver, resultResponder, enableCancellation, syncConfig.toSynchronousResourceConfig()),
+            apiConfig.toApiConfig(inputReceiver, resultResponder, enableCancellation, syncConfig.toSynchronousResourceConfig(), infoConfig.toJobInfoConfig()),
             jobConfig.toJobConfig(jobType, myInstanceName, persistence)
         )
     }
@@ -430,14 +439,15 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
 class ApiConfigBuilder<INPUT> internal constructor(
     var basePath: String? = null,
     var inputValidation: (INPUT) -> List<String> = { emptyList() },
-    var enableDeletion: Boolean = false
+    var enableDeletion: Boolean = false,
 ) {
     internal fun <RESULT> toApiConfig(
         inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
         resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
         enableCancellation: Boolean,
-        syncMockConfig: SynchronousResourceConfig<INPUT>
-    ) = ApiConfig(inputReceiver, resultResponder, basePath, inputValidation, enableDeletion, enableCancellation, syncMockConfig)
+        syncMockConfig: SynchronousResourceConfig<INPUT>,
+        jobInfoConfig: JobInfoConfig
+    ) = ApiConfig(inputReceiver, resultResponder, basePath, inputValidation, enableDeletion, enableCancellation, syncMockConfig, jobInfoConfig)
 }
 
 /**
@@ -474,7 +484,7 @@ class JobConfigBuilder<INPUT> internal constructor(
  * [JobFrameworkBuilder.MaintenanceConfig.jobCheckInterval] until the computation of the job actually starts.
  *
  * By default, the synchronous API is disabled.
- * @param enabled whether the synchronous resource is enabled for this API
+ * @param enabled whether the synchronous resource is enabled for this API, by default it is not enabled
  * @param path the path on which the synchronous resource should be placed, default is `synchronous`
  * @param checkInterval the interval in which the job status should be checked after it was submitted
  * @param maxWaitingTime the maximum time to wait for the job to complete. If this time is exceeded, status 400 is returned including the information
@@ -490,6 +500,27 @@ class SynchronousResourceConfigBuilder<INPUT>(
     var customPriorityProvider: (INPUT) -> Int = { 0 }
 ) {
     internal fun toSynchronousResourceConfig() = SynchronousResourceConfig(enabled, path, checkInterval, maxWaitingTime, customPriorityProvider)
+}
+
+/**
+ * Configuration for the job info.
+ *
+ * If [enabled] the KJobs will provide an additional `GET` resource on the given [path] which can return general information
+ * about the job. The content returned by the resource can be configured via the [responder].
+ *
+ * Note that the default implementation of the [responder] requires JSON serialization to be installed in the Ktor server.
+ *
+ * @param enabled whether the job info resource is enabled or not, by default it is not enabled
+ * @param path the path on which the job info should be placed, default is `info`
+ * @param responder describes how the job info should be returned, by default the [Job] is serialized and returned as JSON
+ */
+@KJobsDsl
+class JobInfoConfigBuilder(
+    var enabled: Boolean = false,
+    var path: String = "info",
+    var responder: suspend PipelineContext<Unit, ApplicationCall>.(Job) -> Unit = { call.respond(it) }
+) {
+    internal fun toJobInfoConfig() = JobInfoConfig(enabled, path, responder)
 }
 
 internal const val DEFAULT_MAX_JOB_RESTARTS = 3

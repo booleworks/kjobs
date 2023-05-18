@@ -12,7 +12,7 @@ import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.newRedisPersistence
 import com.booleworks.kjobs.common.ser
-import com.booleworks.kjobs.common.testJobFramework
+import com.booleworks.kjobs.common.testJobFrameworkWithRedis
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.ExecutionCapacity.Companion.AcceptingAnyJob
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
@@ -52,7 +52,7 @@ internal val subJob2 = "SUB_JOB_2"
 
 class HierarchicalApiTest : FunSpec({
 
-    testJobFramework("test multiple jobs") {
+    testJobFrameworkWithRedis("test multiple jobs") {
         val persistence = newRedisPersistence<TestInput, TestResult>()
         addTestRoute(persistence, { _, input ->
             delay(input.a.milliseconds); ComputationResult.Success(SubTestResult1(input.a))

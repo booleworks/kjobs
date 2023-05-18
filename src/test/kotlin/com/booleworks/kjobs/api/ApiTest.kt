@@ -12,7 +12,7 @@ import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.defaultRedis
 import com.booleworks.kjobs.common.newRedisPersistence
 import com.booleworks.kjobs.common.ser
-import com.booleworks.kjobs.common.testJobFramework
+import com.booleworks.kjobs.common.testJobFrameworkWithRedis
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.kotest.core.spec.style.FunSpec
@@ -39,7 +39,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class ApiTest : FunSpec({
 
-    testJobFramework("test API") {
+    testJobFrameworkWithRedis("test API") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             route("test") {
@@ -59,7 +59,7 @@ class ApiTest : FunSpec({
         jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid").bodyAsText()) shouldBeEqual TestResult()
     }
 
-    testJobFramework("test API calls with wrong job type") {
+    testJobFrameworkWithRedis("test API calls with wrong job type") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
@@ -68,11 +68,13 @@ class ApiTest : FunSpec({
                 route("test") {
                     addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
                         apiConfig { enableDeletion = true }
+                        infoConfig { enabled = true }
                     }
                 }
                 route("test2") {
                     addApi("testType2", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
                         apiConfig { enableDeletion = true }
+                        infoConfig { enabled = true }
                     }
                 }
             }
@@ -83,6 +85,8 @@ class ApiTest : FunSpec({
 
         client.get("test2/status/$uuid1").shouldBeWrongJobTypeBadRequest()
         client.get("test/status/$uuid2").shouldBeWrongJobTypeBadRequest()
+        client.get("test2/info/$uuid1").shouldBeWrongJobTypeBadRequest()
+        client.get("test/info/$uuid2").shouldBeWrongJobTypeBadRequest()
         client.get("test2/result/$uuid1").shouldBeWrongJobTypeBadRequest()
         client.get("test/result/$uuid2").shouldBeWrongJobTypeBadRequest()
         client.post("test2/cancel/$uuid1").shouldBeWrongJobTypeBadRequest()
@@ -92,6 +96,8 @@ class ApiTest : FunSpec({
 
         client.get("test/status/$uuid1").bodyAsText() shouldBeEqual "SUCCESS"
         client.get("test2/status/$uuid2").bodyAsText() shouldBeEqual "SUCCESS"
+        client.get("test/info/$uuid1").status shouldBeEqual HttpStatusCode.OK
+        client.get("test2/info/$uuid2").status shouldBeEqual HttpStatusCode.OK
         jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid1").bodyAsText()) shouldBeEqual TestResult()
         jacksonObjectMapper().readValue<TestResult>(client.get("test2/result/$uuid2").bodyAsText()) shouldBeEqual TestResult()
         client.post("test/cancel/$uuid1").status shouldBeEqual HttpStatusCode.OK

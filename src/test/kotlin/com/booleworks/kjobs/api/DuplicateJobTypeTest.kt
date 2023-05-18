@@ -11,7 +11,7 @@ import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.defaultRedis
 import com.booleworks.kjobs.common.newRedisPersistence
-import com.booleworks.kjobs.common.testJobFramework
+import com.booleworks.kjobs.common.testJobFrameworkWithRedis
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.ExecutionCapacity
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
@@ -25,7 +25,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class DuplicateJobTypeTest : FunSpec({
 
-    testJobFramework("test add duplicate APIs") {
+    testJobFrameworkWithRedis("test add duplicate APIs") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
@@ -42,7 +42,7 @@ class DuplicateJobTypeTest : FunSpec({
         }
     }
 
-    testJobFramework("test add duplicate jobs") {
+    testJobFrameworkWithRedis("test add duplicate jobs") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
@@ -55,7 +55,7 @@ class DuplicateJobTypeTest : FunSpec({
         }
     }
 
-    testJobFramework("test add duplicate APIs and jobs") {
+    testJobFrameworkWithRedis("test add duplicate APIs and jobs") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
@@ -79,7 +79,7 @@ class DuplicateJobTypeTest : FunSpec({
         }
     }
 
-    testJobFramework("test hierarchical jobs") {
+    testJobFrameworkWithRedis("test hierarchical jobs") {
         val persistence = newRedisPersistence<TestInput, TestResult>()
         routing {
             JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
@@ -121,7 +121,7 @@ class DuplicateJobTypeTest : FunSpec({
         }
     }
 
-    testJobFramework("test hierarchical jobs 2") {
+    testJobFrameworkWithRedis("test hierarchical jobs 2") {
         val persistence = newRedisPersistence<TestInput, TestResult>()
         routing {
             JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
