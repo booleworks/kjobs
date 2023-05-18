@@ -12,7 +12,6 @@ import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.expectSuccess
-import com.booleworks.kjobs.common.testBlocking
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobPrioritizer
@@ -25,7 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 
 class PriorityTest : FunSpec({
 
-    testBlocking("test priority setting") {
+    test("test priority setting") {
         val testingApi = setupApi()
         val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
@@ -37,7 +36,7 @@ class PriorityTest : FunSpec({
         job4.priority shouldBeEqual 15
     }
 
-    testBlocking("test default priority-based job selection") {
+    test("test default priority-based job selection") {
         val testingApi = setupApi()
         val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
@@ -60,7 +59,7 @@ class PriorityTest : FunSpec({
         job2 shouldHaveStatus SUCCESS
     }
 
-    testBlocking("test job selection with custom job prioritizer") {
+    test("test job selection with custom job prioritizer") {
         val testingApi = setupApi { jobs -> jobs.maxByOrNull { it.priority } }
         val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
@@ -83,7 +82,7 @@ class PriorityTest : FunSpec({
         job3 shouldHaveStatus SUCCESS
     }
 
-    testBlocking("test job selection with overridden priority") {
+    test("test job selection with overridden priority") {
         val testingApi = setupApi { jobs -> jobs.maxByOrNull { it.priority } }
         val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()

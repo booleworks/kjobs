@@ -6,6 +6,32 @@ This readme is work in progress.
 
 The starting point for creating new APIs is `com.booleworks.kjobs.api.JobFramework()`.
 
+## Documentation (Outline)
+
+### General Setup
+- Set up one or more APIs with `com.booleworks.kjobs.api.JobFramework()`
+  - generated resources (`submit`, `status`, `result`, `failure`)
+- Persistence
+
+### Features
+- Configure selection of jobs
+  - Tags
+  - Priorities
+  - Execution Capacity of Nodes
+  - Custom Info
+- Errors, Timeouts, Restarts
+- Additional resources
+  - Sync Mock
+  - Cancel Jobs
+  - Delete Jobs
+- Maintenance
+- Jobs without API
+- Hierarchical Jobs
+- Testing API
+
+### How does it work internally?
+
+### Reference of all Configuration Options
 
 ## Further ideas
 - Route documentation with https://github.com/SMILEY4/ktor-swagger-ui

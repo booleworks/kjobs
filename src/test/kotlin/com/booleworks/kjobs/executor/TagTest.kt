@@ -12,7 +12,6 @@ import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.expectSuccess
-import com.booleworks.kjobs.common.testBlocking
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.TagMatcher
 import io.kotest.core.spec.style.FunSpec
@@ -23,7 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 
 class TagTest : FunSpec({
 
-    testBlocking("test tagging") {
+    test("test tagging") {
         val (testingApi, _, _) = setupApi()
         val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
         job1.tags shouldBeEqual listOf("default_tag", "small_tag")
@@ -35,7 +34,7 @@ class TagTest : FunSpec({
         job4.tags shouldBeEqual listOf("large_tag")
     }
 
-    testBlocking("test tag matching any") {
+    test("test tag matching any") {
         testWithPredefinedAndOverriddenTagMatcher(TagMatcher.AllOf()) { testingApi, j1Persistence, j2Persistence, runExecutor ->
             testingApi.submitJob("J1", TestInput(0)).expectSuccess()
             testingApi.submitJob("J1", TestInput(42)).expectSuccess()
@@ -58,7 +57,7 @@ class TagTest : FunSpec({
         }
     }
 
-    testBlocking("test tag matching exactly") {
+    test("test tag matching exactly") {
         val (testingApi, j1Persistence, j2Persistence) = setupApi()
         testingApi.submitJob("J1", TestInput(0)).expectSuccess() // j1, default_tag, small_tag
         testingApi.submitJob("J1", TestInput(42)).expectSuccess() // j2, default_tag, large_tag
@@ -98,7 +97,7 @@ class TagTest : FunSpec({
         j2Persistence.results shouldHaveSize 2
     }
 
-    testBlocking("test tag matching oneOf") {
+    test("test tag matching oneOf") {
         val (testingApi, j1Persistence, j2Persistence) = setupApi()
         testingApi.submitJob("J1", TestInput(0)).expectSuccess() // j1, default_tag, small_tag
         testingApi.submitJob("J1", TestInput(42)).expectSuccess() // j2, default_tag, large_tag
@@ -126,7 +125,7 @@ class TagTest : FunSpec({
         j2Persistence.results shouldHaveSize 1
     }
 
-    testBlocking("test tag matching allOf") {
+    test("test tag matching allOf") {
         val (testingApi, j1Persistence, j2Persistence) = setupApi()
         testingApi.submitJob("J1", TestInput(0)).expectSuccess() // j1, default_tag, small_tag
         testingApi.submitJob("J1", TestInput(42)).expectSuccess() // j2, default_tag, large_tag
@@ -160,7 +159,7 @@ class TagTest : FunSpec({
         j2Persistence.results shouldHaveSize 2
     }
 
-    testBlocking("test tag matching allOf with empty tags") {
+    test("test tag matching allOf with empty tags") {
         testWithPredefinedAndOverriddenTagMatcher(TagMatcher.AllOf()) { testingApi, j1Persistence, j2Persistence, runExecutor ->
             testingApi.submitJob("J1", TestInput(0)).expectSuccess() // j1, default_tag, small_tag
             testingApi.submitJob("J1", TestInput(42)).expectSuccess() // j2, default_tag, large_tag
@@ -183,7 +182,7 @@ class TagTest : FunSpec({
         }
     }
 
-    testBlocking("test custom tag matcher") {
+    test("test custom tag matcher") {
         testWithPredefinedAndOverriddenTagMatcher({ it.tags.size == 2 }) { testingApi, j1Persistence, j2Persistence, runExecutor ->
             testingApi.submitJob("J1", TestInput(0)).expectSuccess() // j1, default_tag, small_tag
             testingApi.submitJob("J1", TestInput(42)).expectSuccess() // j2, default_tag, large_tag

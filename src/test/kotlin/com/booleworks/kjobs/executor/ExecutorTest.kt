@@ -13,7 +13,6 @@ import com.booleworks.kjobs.common.defaultExecutor
 import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.right
-import com.booleworks.kjobs.common.testBlocking
 import com.booleworks.kjobs.common.testWithRedis
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.Job
@@ -33,7 +32,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class ExecutorTest : FunSpec({
 
-    testBlocking("test with testing mode") {
+    test("test with testing mode") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         val testingMode = JobFrameworkTestingMode("ME", jobPersistence, Either.Left(this), false) {
