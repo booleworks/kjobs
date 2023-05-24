@@ -61,6 +61,7 @@ class JobFrameworkTestingApi internal constructor(
     private val executorsPerType: Map<String, SpecificExecutor<*, *>>,
     private val executorConfig: JobFrameworkBuilder.ExecutorConfig,
     private val maintenanceConfig: MaintenanceConfig,
+    private val cancellationConfig: JobFrameworkBuilder.CancellationConfig,
     private val maxRestartsPerType: Map<String, Int>,
 ) {
     /**
@@ -74,7 +75,7 @@ class JobFrameworkTestingApi internal constructor(
         jobPrioritizer: JobPrioritizer = executorConfig.jobPrioritizer,
         tagMatcher: TagMatcher = executorConfig.tagMatcher
     ) = runBlocking(Dispatchers.Default) {
-        MainJobExecutor(jobPersistence, myInstanceName, executionCapacityProvider, jobPrioritizer, tagMatcher, executorsPerType).execute()
+        MainJobExecutor(jobPersistence, myInstanceName, executionCapacityProvider, jobPrioritizer, tagMatcher, cancellationConfig, executorsPerType).execute()
     }
 
     /**

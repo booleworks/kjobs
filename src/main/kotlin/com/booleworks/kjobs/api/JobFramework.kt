@@ -296,7 +296,8 @@ class JobFrameworkBuilder internal constructor(
             (it.value as JobBuilder<Any, Any>).jobConfig.toJobConfig(it.key, myInstanceName, persistencesPerType[it.key]!! as DataPersistence<Any, Any>)
         }
         return JobFrameworkTestingApi(
-            jobPersistence, myInstanceName, jobConfigs, persistencesPerType, executorsPerType, executorConfig, maintenanceConfig, restartsPerType,
+            jobPersistence, myInstanceName, jobConfigs, persistencesPerType, executorsPerType, executorConfig,
+            maintenanceConfig, cancellationConfig, restartsPerType,
         )
     }
 
@@ -306,7 +307,8 @@ class JobFrameworkBuilder internal constructor(
     }
 
     private fun generateJobExecutor(): MainJobExecutor = MainJobExecutor(
-        jobPersistence, myInstanceName, executorConfig.executionCapacityProvider, executorConfig.jobPrioritizer, executorConfig.tagMatcher, executorsPerType
+        jobPersistence, myInstanceName, executorConfig.executionCapacityProvider,
+        executorConfig.jobPrioritizer, executorConfig.tagMatcher, cancellationConfig, executorsPerType
     )
 
     private val Either<CoroutineScope, Application>.schedule: (duration: Duration, task: suspend () -> Unit) -> kotlinx.coroutines.Job

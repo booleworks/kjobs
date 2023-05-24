@@ -3,6 +3,7 @@
 
 package com.booleworks.kjobs.control
 
+import com.booleworks.kjobs.api.JobFrameworkBuilder.CancellationConfig
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.DataTransactionalPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
@@ -26,6 +27,7 @@ import kotlinx.coroutines.yield
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
+import kotlin.math.min
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.toJavaDuration
@@ -50,6 +52,7 @@ class MainJobExecutor(
     private val executionCapacityProvider: ExecutionCapacityProvider,
     private val jobPrioritizer: JobPrioritizer,
     private val tagMatcher: TagMatcher,
+    private val cancellationConfig: CancellationConfig,
     private val specificExecutors: Map<String, SpecificExecutor<*, *>>
 ) {
     /**
@@ -63,7 +66,9 @@ class MainJobExecutor(
         }
         val job = getAndReserveJob(myCapacity) ?: return@coroutineScope
         val coroutineJob = with(specificExecutors[job.type]!!) { launchComputationJob(job) }
-        launchCancellationCheck(coroutineJob, job.uuid)
+        if (cancellationConfig.enabled) {
+            launchCancellationCheck(coroutineJob, job.uuid)
+        }
     }
 
     private suspend inline fun getExecutionCapacity(): ExecutionCapacity? {
@@ -123,7 +128,7 @@ class MainJobExecutor(
                 }
                 return@launch
             }
-            delay(INTERNAL_CANCELLATION_CHECK_INTERVAL)
+            delay(min(INTERNAL_CANCELLATION_CHECK_INTERVAL.inWholeMilliseconds, cancellationConfig.checkInterval.inWholeMilliseconds))
         }
     }
 

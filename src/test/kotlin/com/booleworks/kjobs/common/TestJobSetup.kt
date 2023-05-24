@@ -4,6 +4,7 @@
 package com.booleworks.kjobs.common
 
 import com.booleworks.kjobs.api.DEFAULT_MAX_JOB_RESTARTS
+import com.booleworks.kjobs.api.JobFrameworkBuilder
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.redis.RedisDataPersistence
 import com.booleworks.kjobs.control.ComputationResult
@@ -66,6 +67,7 @@ internal fun defaultExecutor(
     maxRestarts: Int = DEFAULT_MAX_JOB_RESTARTS,
     jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
     tagMatcher: TagMatcher = TagMatcher.Any,
+    cancellationConfig: JobFrameworkBuilder.CancellationConfig = JobFrameworkBuilder.CancellationConfig(),
     specificExecutors: Map<String, SpecificExecutor<*, *>>? = null
 ) = MainJobExecutor(
     persistence,
@@ -73,6 +75,7 @@ internal fun defaultExecutor(
     executionCapacityProvider,
     jobPrioritizer,
     tagMatcher,
+    cancellationConfig,
     specificExecutors ?: mapOf(defaultJobType to SpecificExecutor(myInstanceName, persistence, defaultComputation, timeout, maxRestarts)),
 )
 
