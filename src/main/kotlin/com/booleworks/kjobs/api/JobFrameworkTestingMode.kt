@@ -128,9 +128,8 @@ class JobFrameworkTestingApi internal constructor(
         runBlocking { Maintenance.resetMyRunningJobs(jobPersistence, instance, persistencesPerType, maxRestartsPerType) }
 
     /**
-     * Schedules the job with the given [uuid] for cancellation.
+     * Cancels the given job.
      */
-    fun cancelJob(uuid: String) {
-        Maintenance.jobsToBeCancelled += uuid
-    }
+    fun cancelJob(job: Job): String =
+        runBlocking { com.booleworks.kjobs.control.cancelJob(job, jobPersistence) }
 }

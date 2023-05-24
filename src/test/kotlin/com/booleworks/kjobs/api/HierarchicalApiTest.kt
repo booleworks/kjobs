@@ -11,14 +11,13 @@ import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.newRedisPersistence
+import com.booleworks.kjobs.common.parseTestResult
 import com.booleworks.kjobs.common.ser
 import com.booleworks.kjobs.common.testJobFrameworkWithRedis
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.ExecutionCapacity.Companion.AcceptingAnyJob
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -67,7 +66,7 @@ class HierarchicalApiTest : FunSpec({
         delay(3.seconds)
         println(client.get("test/failure/$uuid").bodyAsText())
         client.get("test/status/$uuid").bodyAsText() shouldBeEqual "SUCCESS"
-        jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid").bodyAsText()) shouldBeEqual TestResult(1100)
+        client.get("test/result/$uuid").parseTestResult() shouldBeEqual TestResult(1100)
 
         val submit2 = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(500).ser()) }
         submit2.status shouldBeEqual HttpStatusCode.OK
@@ -77,7 +76,7 @@ class HierarchicalApiTest : FunSpec({
         delay(3.seconds)
         println(client.get("test/failure/$uuid2").bodyAsText())
         client.get("test/status/$uuid2").bodyAsText() shouldBeEqual "SUCCESS"
-        jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid2").bodyAsText()) shouldBeEqual TestResult(-500)
+        client.get("test/result/$uuid2").parseTestResult() shouldBeEqual TestResult(-500)
     }
 })
 

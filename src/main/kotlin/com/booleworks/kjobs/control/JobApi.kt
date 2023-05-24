@@ -5,6 +5,7 @@ package com.booleworks.kjobs.control
 
 import com.booleworks.kjobs.api.JobFrameworkBuilder
 import com.booleworks.kjobs.api.persistence.DataPersistence
+import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
@@ -27,6 +28,7 @@ import io.ktor.util.pipeline.PipelineContext
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 import java.util.*
 import kotlin.time.Duration
 
@@ -156,7 +158,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
                     val uuid = validateAndSubmit(apiConfig, jobConfig.copy(priorityProvider = syncMockConfig.priorityProvider), inputReceiver()) ?: return@post
                     apiLog.trace("Submitted job for synchronous computation, got ID $uuid")
                     var status: JobStatus
-                    val timeout = LocalDateTime.now().plusSeconds(syncMockConfig.maxWaitingTime.inWholeSeconds)
+                    val timeout = LocalDateTime.now().plus(syncMockConfig.maxWaitingTime.inWholeMilliseconds, ChronoUnit.MILLIS)
                     do {
                         delay(syncMockConfig.checkInterval)
                         status = jobConfig.persistence.fetchJob(uuid).orQuitWith {
@@ -197,7 +199,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
         }
     }
 
-internal suspend inline fun <INPUT, RESULT> cancelJob(job: Job, persistence: DataPersistence<INPUT, RESULT>): String = when (job.status) {
+internal suspend inline fun cancelJob(job: Job, persistence: JobPersistence): String = when (job.status) {
     // TODO: what about the risk of the job status being overridden?
     //  The execution job could take the job at the same time and might not see the respective cancellation update.
     JobStatus.CREATED -> {

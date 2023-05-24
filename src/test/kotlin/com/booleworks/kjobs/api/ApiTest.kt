@@ -11,10 +11,9 @@ import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.defaultRedis
 import com.booleworks.kjobs.common.newRedisPersistence
+import com.booleworks.kjobs.common.parseTestResult
 import com.booleworks.kjobs.common.ser
 import com.booleworks.kjobs.common.testJobFrameworkWithRedis
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -56,7 +55,7 @@ class ApiTest : FunSpec({
         client.get("test/status/$uuid").bodyAsText() shouldBeEqual "CREATED"
         delay(1.seconds)
         client.get("test/status/$uuid").bodyAsText() shouldBeEqual "SUCCESS"
-        jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid").bodyAsText()) shouldBeEqual TestResult()
+        client.get("test/result/$uuid").parseTestResult() shouldBeEqual TestResult()
     }
 
     testJobFrameworkWithRedis("test API calls with wrong job type") {
@@ -98,8 +97,8 @@ class ApiTest : FunSpec({
         client.get("test2/status/$uuid2").bodyAsText() shouldBeEqual "SUCCESS"
         client.get("test/info/$uuid1").status shouldBeEqual HttpStatusCode.OK
         client.get("test2/info/$uuid2").status shouldBeEqual HttpStatusCode.OK
-        jacksonObjectMapper().readValue<TestResult>(client.get("test/result/$uuid1").bodyAsText()) shouldBeEqual TestResult()
-        jacksonObjectMapper().readValue<TestResult>(client.get("test2/result/$uuid2").bodyAsText()) shouldBeEqual TestResult()
+        client.get("test/result/$uuid1").parseTestResult() shouldBeEqual TestResult()
+        client.get("test2/result/$uuid2").parseTestResult() shouldBeEqual TestResult()
         client.post("test/cancel/$uuid1").status shouldBeEqual HttpStatusCode.OK
         client.post("test2/cancel/$uuid2").status shouldBeEqual HttpStatusCode.OK
         client.delete("test/delete/$uuid1").status shouldBeEqual HttpStatusCode.OK

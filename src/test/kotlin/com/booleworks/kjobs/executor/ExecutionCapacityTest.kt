@@ -12,6 +12,8 @@ import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.expectSuccess
+import com.booleworks.kjobs.common.reset
+import com.booleworks.kjobs.common.setRunning
 import com.booleworks.kjobs.common.shouldHaveBeenStarted
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.DefaultExecutionCapacityProvider
@@ -118,22 +120,6 @@ class ExecutionCapacityTest : FunSpec({
         jobPersistence.fetchJob(job6.uuid).expectSuccess().shouldHaveBeenStarted()
     }
 })
-
-private suspend fun Job.setRunning(jobPersistence: HashMapJobPersistence, instanceName: String = defaultInstanceName) {
-    status = JobStatus.RUNNING
-    executingInstance = instanceName
-    startedAt = LocalDateTime.now()
-    jobPersistence.updateJob(this).expectSuccess()
-}
-
-private suspend fun Job.reset(jobPersistence: HashMapJobPersistence) {
-    status = JobStatus.CREATED
-    executingInstance = null
-    startedAt = null
-    finishedAt = null
-    timeout = null
-    jobPersistence.updateJob(this).expectSuccess()
-}
 
 private fun CoroutineScope.setupApi(executionCapacityProvider: ExecutionCapacityProvider): Pair<HashMapJobPersistence, JobFrameworkTestingApi> {
     val jobPersistence = HashMapJobPersistence()
