@@ -14,6 +14,7 @@ import com.booleworks.kjobs.data.DefaultJobPrioritizer
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobPrioritizer
+import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher
 import com.booleworks.kjobs.data.orQuitWith
@@ -24,6 +25,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import com.github.fppt.jedismock.RedisServer
 import io.kotest.assertions.fail
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeOneOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import redis.clients.jedis.JedisPool
@@ -89,3 +91,5 @@ fun FunSpec.testWithRedis(name: String, block: suspend RedisDataPersistence<Test
 fun <R> Either<*, R>.right() = (this as Either.Right<R>).value
 
 fun <R> PersistenceAccessResult<R>.expectSuccess() = this.orQuitWith { fail("Expected Persistence Access to succeed") }
+
+fun Job.shouldHaveBeenStarted() = this.status shouldBeOneOf listOf(JobStatus.RUNNING, JobStatus.SUCCESS)
