@@ -19,6 +19,7 @@ import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher
 import io.ktor.server.application.Application
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -72,7 +73,9 @@ class JobFrameworkTestingApi internal constructor(
         executionCapacityProvider: ExecutionCapacityProvider = executorConfig.executionCapacityProvider,
         jobPrioritizer: JobPrioritizer = executorConfig.jobPrioritizer,
         tagMatcher: TagMatcher = executorConfig.tagMatcher
-    ) = runBlocking { MainJobExecutor(jobPersistence, myInstanceName, executionCapacityProvider, jobPrioritizer, tagMatcher, executorsPerType).execute() }
+    ) = runBlocking(Dispatchers.Default) {
+        MainJobExecutor(jobPersistence, myInstanceName, executionCapacityProvider, jobPrioritizer, tagMatcher, executorsPerType).execute()
+    }
 
     /**
      * Submits a new job.

@@ -39,9 +39,10 @@ The starting point for creating new APIs is `com.booleworks.kjobs.api.JobFramewo
 
 ## Further ideas
 - Route documentation with https://github.com/SMILEY4/ktor-swagger-ui
-- Make Ktor optional
+- Move Redis implementation to separate module/package
+- Make Ktor optional (and move the support for Ktor to a separate module/package)
 - Allow computations to announce their progress
-  - additional property `Job.progress` in `[0..100]`
+  - additional property `Job.progress` in `[0..100]` (or better: a random string value)
   - additional resource `progress` returning the progress or some value for "unknown"
   - callback for computations allowing to submit the progress
 - Split the application into separate modules (`core`, `redis`, `ktor`, `ktor-swagger`,...)

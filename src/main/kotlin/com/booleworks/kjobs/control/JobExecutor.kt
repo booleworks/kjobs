@@ -16,6 +16,7 @@ import com.booleworks.kjobs.data.TagMatcher
 import com.booleworks.kjobs.data.ifError
 import com.booleworks.kjobs.data.orQuitWith
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -103,7 +104,7 @@ class MainJobExecutor(
         return result.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.let(jobPrioritizer::invoke)
     }
 
-    private fun CoroutineScope.launchCancellationCheck(coroutineJob: CoroutineJob, uuid: String) = launch {
+    private fun CoroutineScope.launchCancellationCheck(coroutineJob: CoroutineJob, uuid: String) = launch(Dispatchers.Default) {
         while (coroutineJob.isActive) {
             if (Maintenance.jobsToBeCancelled.contains(uuid)) {
                 coroutineJob.cancelAndJoin()
@@ -144,7 +145,7 @@ class SpecificExecutor<INPUT, RESULT>(
     private val timeoutComputation: (Job, INPUT) -> Duration,
     private val maxRestarts: Int
 ) {
-    internal fun CoroutineScope.launchComputationJob(job: Job) = launch {
+    internal fun CoroutineScope.launchComputationJob(job: Job) = launch(Dispatchers.Default) {
         val uuid = job.uuid
         val jobInput = persistence.fetchInput(uuid).orQuitWith {
             log.error("Could not fetch job input for ID ${uuid}: $it")
