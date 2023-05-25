@@ -37,7 +37,7 @@ class CancellationTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, Either.Right(application)) {
+                    JobFramework(defaultInstanceName, jobPersistence, application) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 100_000) },
                             { call.respond(it.inputValue) }, defaultComputation
@@ -68,7 +68,7 @@ class CancellationTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, Either.Right(application)) {
+                    JobFramework(defaultInstanceName, jobPersistence, application) {
                         addApi(
                             "J1",
                             this@route,

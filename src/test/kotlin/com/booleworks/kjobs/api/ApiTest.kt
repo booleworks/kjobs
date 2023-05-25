@@ -42,7 +42,7 @@ class ApiTest : FunSpec({
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             route("test") {
-                JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
+                JobFramework(defaultInstanceName, persistence, application) {
                     maintenanceConfig { jobCheckInterval = 500.milliseconds }
                     addApi(defaultJobType, this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation)
                 }
@@ -61,7 +61,7 @@ class ApiTest : FunSpec({
     testJobFrameworkWithRedis("test API calls with wrong job type") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
-            JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
+            JobFramework(defaultInstanceName, persistence, application) {
                 maintenanceConfig { jobCheckInterval = 50.milliseconds }
                 cancellationConfig { enabled = true }
                 route("test") {

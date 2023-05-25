@@ -5,7 +5,6 @@ package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapDataPersistence
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
-import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultComputation
@@ -38,7 +37,7 @@ class SyncMockTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, Either.Right(application)) {
+                    JobFramework(defaultInstanceName, jobPersistence, application) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt()) },
                             { call.respond(it) }, defaultComputation
@@ -65,7 +64,7 @@ class SyncMockTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, Either.Right(application)) {
+                    JobFramework(defaultInstanceName, jobPersistence, application) {
                         addApi(
                             "J1", this@route, dataPersistence, { call.receiveText().toInt().let { TestInput(it, it) } },
                             { call.respond(it) }, defaultComputation
@@ -109,7 +108,7 @@ class SyncMockTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, Either.Right(application)) {
+                    JobFramework(defaultInstanceName, jobPersistence, application) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), throwException = true) },
                             { call.respond(it) }, defaultComputation

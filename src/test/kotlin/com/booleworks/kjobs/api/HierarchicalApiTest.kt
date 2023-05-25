@@ -87,7 +87,7 @@ private fun ApplicationTestBuilder.addTestRoute(
 ) {
     routing {
         route("test") {
-            JobFramework(defaultInstanceName, persistence, Either.Right(application)) {
+            JobFramework(defaultInstanceName, persistence, application) {
                 maintenanceConfig { jobCheckInterval = 20.milliseconds }
                 executorConfig { executionCapacityProvider = ExecutionCapacityProvider { AcceptingAnyJob } }
                 addApiForHierarchicalJob(

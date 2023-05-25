@@ -42,7 +42,7 @@ class JobInfoTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, Either.Right(application)) {
+                    JobFramework(defaultInstanceName, jobPersistence, application) {
                         maintenanceConfig { jobCheckInterval = 500.milliseconds }
                         addApi(
                             defaultJobType,
@@ -77,7 +77,7 @@ class JobInfoTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, Either.Right(application)) {
+                    JobFramework(defaultInstanceName, jobPersistence, application) {
                         maintenanceConfig { jobCheckInterval = 500.milliseconds }
                         addApi(
                             defaultJobType,

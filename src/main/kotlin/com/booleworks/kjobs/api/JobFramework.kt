@@ -7,8 +7,6 @@ import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApi
 import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApiImpl
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
-import com.booleworks.kjobs.api.persistence.hashmap.HashMapDataPersistence
-import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
 import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.control.ApiConfig
 import com.booleworks.kjobs.control.ComputationResult
@@ -46,13 +44,14 @@ import kotlin.time.Duration.Companion.seconds
 annotation class KJobsDsl
 
 /**
- * Main entry point to set up the job framework.
+ * Main entry point to set up the job framework from an application.
  * @param myInstanceName a unique identifier of this instance, e.g. in a Kubernetes environment.
  * Can be an arbitrary, non-empty, string if there is only a single instance.
  * @param jobPersistence an object allowing to store and retrieve jobs (and heartbeats) from some
  * (usually external) data source, e.g. a redis cache or a postgres database
- * @param executionEnvironment either a specific [CoroutineScope] or a ktor [Application] in which
- * maintenance and execution jobs are launched
+ * @param application the [Application] whose [CoroutineScope] is used to launch maintenance and
+ * execution jobs. To get more control you can also pass a specific [CoroutineScope] instead of
+ * the [Application]
  * @param configuration additional configuration options, in particular this includes the
  * possibility to [add APIs][JobFrameworkBuilder.addApi] to a ktor application
  */
@@ -61,9 +60,28 @@ annotation class KJobsDsl
 fun JobFramework(
     myInstanceName: String,
     jobPersistence: JobPersistence,
-    executionEnvironment: Either<CoroutineScope, Application>,
+    application: Application,
     configuration: JobFrameworkBuilder.() -> Unit
-) = JobFrameworkBuilder(myInstanceName, jobPersistence, executionEnvironment).apply(configuration).build()
+) = JobFrameworkBuilder(myInstanceName, jobPersistence, Either.Right(application)).apply(configuration).build()
+
+/**
+ * Main entry point to set up the job framework from a coroutine scope.
+ * @param myInstanceName a unique identifier of this instance, e.g. in a Kubernetes environment.
+ * Can be an arbitrary, non-empty, string if there is only a single instance.
+ * @param jobPersistence an object allowing to store and retrieve jobs (and heartbeats) from some
+ * (usually external) data source, e.g. a redis cache or a postgres database
+ * @param coroutineScope the [CoroutineScope] in which maintenance and execution jobs are launched
+ * @param configuration additional configuration options, in particular this includes the
+ * possibility to [add APIs][JobFrameworkBuilder.addApi] to a ktor application
+ */
+@Suppress("FunctionName")
+@KJobsDsl
+fun JobFramework(
+    myInstanceName: String,
+    jobPersistence: JobPersistence,
+    coroutineScope: CoroutineScope,
+    configuration: JobFrameworkBuilder.() -> Unit
+) = JobFrameworkBuilder(myInstanceName, jobPersistence, Either.Left(coroutineScope)).apply(configuration).build()
 
 /**
  * Builder for the KJobs Job Framework. Can be instantiated and configured using [JobFramework].
@@ -302,8 +320,7 @@ class JobFrameworkBuilder internal constructor(
     }
 
     private fun checkForDuplicateType(jobType: String) {
-        if (jobType in apis || jobType in jobs || jobType in executorsPerType)
-            throw IllegalArgumentException("An API or job with type $jobType is already defined")
+        require(!(jobType in apis || jobType in jobs || jobType in executorsPerType)) { "An API or job with type $jobType is already defined" }
     }
 
     private fun generateJobExecutor(): MainJobExecutor = MainJobExecutor(
@@ -418,7 +435,7 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
         configuration: JobConfigBuilder<DEP_INPUT>.() -> Unit
     ) {
         JobConfigBuilder<DEP_INPUT>().apply(configuration).let { config ->
-            if (jobType in dependents) throw IllegalArgumentException("A dependent job with type $jobType is already defined")
+            require(jobType !in dependents) { "A dependent job with type $jobType is already defined" }
             dependents[jobType] = Triple(
                 JobConfig(jobType, persistence, myInstanceName, config.tagProvider, config.customInfoProvider, config.priorityProvider),
                 SpecificExecutor(myInstanceName, persistence, computation, config.timeoutComputation, config.maxRestarts),
@@ -469,9 +486,8 @@ class JobConfigBuilder<INPUT> internal constructor(
     var timeoutComputation: (Job, INPUT) -> Duration = { _, _ -> 24.hours },
     var maxRestarts: Int = DEFAULT_MAX_JOB_RESTARTS,
 ) {
-    internal fun <RESULT> toJobConfig(
-        jobType: String, myInstanceName: String, persistence: DataPersistence<INPUT, RESULT> = HashMapDataPersistence(HashMapJobPersistence())
-    ) = JobConfig(jobType, persistence, myInstanceName, tagProvider, customInfoProvider, priorityProvider)
+    internal fun <RESULT> toJobConfig(jobType: String, myInstanceName: String, persistence: DataPersistence<INPUT, RESULT>) =
+        JobConfig(jobType, persistence, myInstanceName, tagProvider, customInfoProvider, priorityProvider)
 }
 
 /**

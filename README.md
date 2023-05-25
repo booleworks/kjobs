@@ -2,6 +2,14 @@
 
 This readme is work in progress.
 
+## [REMOVE] Remaining Tests
+- Maintenance (mostly via Testing API)
+- Persistence Implementations (Redis + HashMap)
+- Pure Jobs
+- More tests for hierarchical API
+- Either
+- Some more errors (check coverage)
+
 ## Getting Started
 
 The starting point for creating new APIs is `com.booleworks.kjobs.api.JobFramework()`.
