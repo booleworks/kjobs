@@ -52,19 +52,19 @@ sealed class Either<out L, out R> {
     }
 
     /**
-     * Applies the given function to the right value and does nothing if this is a left value.
-     */
-    inline fun <T> mapRight(f: (R) -> T): Either<L, T> = when (this) {
-        is Left -> this
-        is Right -> Right(f(value))
-    }
-
-    /**
      * Applies the given function to the left value and does nothing if this is a right value.
      */
     inline fun <T> mapLeft(f: (L) -> T): Either<T, R> = when (this) {
         is Left -> Left(f(value))
         is Right -> this
+    }
+
+    /**
+     * Applies the given function to the right value and does nothing if this is a left value.
+     */
+    inline fun <T> mapRight(f: (R) -> T): Either<L, T> = when (this) {
+        is Left -> this
+        is Right -> Right(f(value))
     }
 
     /**
