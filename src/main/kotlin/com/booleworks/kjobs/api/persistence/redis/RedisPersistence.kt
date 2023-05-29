@@ -56,12 +56,12 @@ open class RedisJobPersistence(
             .ifEmpty { return@fetchJob PersistenceAccessResult.uuidNotFound(uuid) }
             .redisMapToJob(uuid)
 
-    override suspend fun fetchHeartBeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> {
+    override suspend fun fetchHeartbeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> {
         val heartbeatKeys = pool.resource.use { it.keys(config.heartbeatPattern) }.toTypedArray()
         val plainHeartbeats = pool.resource.use { it.mget(*heartbeatKeys) } ?: run { return PersistenceAccessResult.notFound() }
         val filteredHeartbeats = plainHeartbeats.mapIndexed { index, beat ->
             Heartbeat(config.extractInstanceName(heartbeatKeys[index]), LocalDateTime.parse(beat))
-        }.filter { it.lastBeat.isAfter(since) }
+        }.filter { !it.lastBeat.isBefore(since) }
         return PersistenceAccessResult.result(filteredHeartbeats)
     }
 

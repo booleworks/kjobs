@@ -37,7 +37,7 @@ interface JobPersistence {
     /**
      * Fetches all heartbeats since the given date.
      */
-    suspend fun fetchHeartBeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>>
+    suspend fun fetchHeartbeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>>
 
     /**
      * Fetches all jobs in the given status.

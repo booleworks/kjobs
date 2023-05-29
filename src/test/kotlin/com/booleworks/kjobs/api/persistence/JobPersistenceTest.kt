@@ -6,6 +6,7 @@ package com.booleworks.kjobs.api.persistence
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
 import com.booleworks.kjobs.api.persistence.redis.RedisJobPersistence
 import com.booleworks.kjobs.common.expectSuccess
+import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessResult
@@ -13,6 +14,7 @@ import com.booleworks.kjobs.data.uuidNotFound
 import com.github.fppt.jedismock.RedisServer
 import io.kotest.common.runBlocking
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.equals.shouldBeEqual
@@ -168,6 +170,40 @@ class HashMapJobPersistenceTest : FunSpec({
                     JobStatus.SUCCESS, JobStatus.SUCCESS, JobStatus.FAILURE, JobStatus.SUCCESS, JobStatus.FAILURE,
                     JobStatus.FAILURE, JobStatus.CANCELLED, JobStatus.CREATED, JobStatus.CANCEL_REQUESTED, JobStatus.RUNNING,
                 )
+    }
+
+    test("HashMap: test heartbeats") {
+        val persistence = HashMapJobPersistence()
+        val now = LocalDateTime.now()
+        persistence.fetchHeartbeats(now).expectSuccess() shouldHaveSize 0
+        persistence.fetchHeartbeats(now.minusSeconds(5)).expectSuccess() shouldHaveSize 1
+
+        persistence.updateHeartbeat(Heartbeat("HUGO", now)).expectSuccess()
+        persistence.updateHeartbeat(Heartbeat("ME", now)).expectSuccess()
+        persistence.fetchHeartbeats(now).expectSuccess() shouldContainExactly listOf(Heartbeat("ME", now))
+        persistence.fetchHeartbeats(now.minusSeconds(1)).expectSuccess() shouldContainExactly listOf(Heartbeat("ME", now))
+        persistence.fetchHeartbeats(now.plusSeconds(1)).expectSuccess() shouldHaveSize 0
+    }
+
+    test("Redis: test heartbeats") {
+        val redis = RedisServer.newRedisServer().start()
+        val persistence = RedisJobPersistence(JedisPool(redis.host, redis.bindPort))
+        val now = LocalDateTime.now()
+        persistence.fetchHeartbeats(now.minusYears(2000)).expectSuccess() shouldHaveSize 0
+        persistence.transaction {
+            updateHeartbeat(Heartbeat("I1", now.minusSeconds(3)))
+            updateHeartbeat(Heartbeat("I1", now))
+            updateHeartbeat(Heartbeat("I2", now.plusMinutes(1)))
+            updateHeartbeat(Heartbeat("I2", now.minusSeconds(1)))
+            updateHeartbeat(Heartbeat("I3", now.plusSeconds(2)))
+            updateHeartbeat(Heartbeat("I4", now.minusDays(5)))
+            updateHeartbeat(Heartbeat("I4", now.plusDays(5)))
+        }
+        persistence.fetchHeartbeats(now).expectSuccess() shouldContainExactlyInAnyOrder listOf(
+            Heartbeat("I1", now),
+            Heartbeat("I3", now.plusSeconds(2)),
+            Heartbeat("I4", now.plusDays(5)),
+        )
     }
 })
 

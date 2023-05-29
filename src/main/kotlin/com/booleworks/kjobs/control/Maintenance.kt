@@ -64,7 +64,7 @@ object Maintenance {
         maxRestartsPerType: Map<String, Int>,
     ) {
         val liveInstances =
-            jobPersistence.fetchHeartBeats(LocalDateTime.now().minus((heartbeatInterval * HEARTBEAT_TIMEOUT_FACTOR).toJavaDuration())).orQuitWith {
+            jobPersistence.fetchHeartbeats(LocalDateTime.now().minus((heartbeatInterval * HEARTBEAT_TIMEOUT_FACTOR).toJavaDuration())).orQuitWith {
                 logger.error("Failed to fetch heartbeats: $it")
                 return
             }.map { it.instanceName }.toSet()

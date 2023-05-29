@@ -11,7 +11,6 @@ import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessResult
-import com.booleworks.kjobs.data.notFound
 import com.booleworks.kjobs.data.result
 import com.booleworks.kjobs.data.success
 import com.booleworks.kjobs.data.uuidNotFound
@@ -34,8 +33,8 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
         jobs[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.uuidNotFound(uuid)
 
-    override suspend fun fetchHeartBeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> =
-        PersistenceAccessResult.result(listOf(latestHeartbeat))
+    override suspend fun fetchHeartbeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> =
+        PersistenceAccessResult.result(if (latestHeartbeat.lastBeat.isBefore(since)) emptyList() else listOf(latestHeartbeat))
 
     override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
         PersistenceAccessResult.result(jobs.values.filter { it.status == status })
