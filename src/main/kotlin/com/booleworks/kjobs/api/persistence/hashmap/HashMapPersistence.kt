@@ -14,6 +14,7 @@ import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.notFound
 import com.booleworks.kjobs.data.result
 import com.booleworks.kjobs.data.success
+import com.booleworks.kjobs.data.uuidNotFound
 import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
 
@@ -31,7 +32,7 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
         PersistenceAccessResult.success.also { block(this) }
 
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
-        jobs[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.notFound()
+        jobs[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.uuidNotFound(uuid)
 
     override suspend fun fetchHeartBeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> =
         PersistenceAccessResult.result(listOf(latestHeartbeat))
@@ -62,7 +63,7 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
                 it.failures.remove(uuid)
             }
             PersistenceAccessResult.success
-        } ?: PersistenceAccessResult.notFound()
+        } ?: PersistenceAccessResult.uuidNotFound(uuid)
 
     override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
         latestHeartbeat = heartbeat
@@ -86,13 +87,13 @@ class HashMapDataPersistence<INPUT, RESULT>(jobPersistence: HashMapJobPersistenc
         PersistenceAccessResult.success.also { block(this) }
 
     override suspend fun fetchInput(uuid: String): PersistenceAccessResult<INPUT> =
-        inputs[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.notFound()
+        inputs[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.uuidNotFound(uuid)
 
     override suspend fun fetchResult(uuid: String): PersistenceAccessResult<RESULT> =
-        results[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.notFound()
+        results[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.uuidNotFound(uuid)
 
     override suspend fun fetchFailure(uuid: String): PersistenceAccessResult<String> =
-        failures[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.notFound()
+        failures[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.uuidNotFound(uuid)
 
     override suspend fun persistInput(job: Job, input: INPUT): PersistenceAccessResult<Unit> {
         inputs[job.uuid] = input

@@ -50,15 +50,16 @@ interface JobPersistence {
     suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>>
 
     /**
-     * Fetches all jobs which have been finished before the given date.
+     * Fetches all jobs in status [JobStatus.SUCCESS] or [JobStatus.FAILURE]
+     * which have been finished before the given [date].
      */
     suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>>
 
     /**
      * Returns the status of the jobs with the given uuids.
      */
-    suspend fun fetchStati(uuids: List<String>): PersistenceAccessResult<List<JobStatus>> =
-        uuids.map { fetchJob(it) }.unwrapOrReturnFirstError { return@fetchStati it }
+    suspend fun fetchStates(uuids: List<String>): PersistenceAccessResult<List<JobStatus>> =
+        uuids.map { fetchJob(it) }.unwrapOrReturnFirstError { return@fetchStates it }
             .mapResult { jobs -> jobs.map { it.status } }
 }
 

@@ -7,7 +7,6 @@ This readme is work in progress.
 - Persistence Implementations (Redis + HashMap)
 - Pure Jobs
 - More tests for hierarchical API
-- Either
 - Some more errors (check coverage)
 
 ## Getting Started

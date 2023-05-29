@@ -53,7 +53,7 @@ open class RedisJobPersistence(
 
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
         pool.resource.use { it.hgetAll(config.jobKey(uuid)) }
-            .ifEmpty { return@fetchJob PersistenceAccessResult.notFound() }
+            .ifEmpty { return@fetchJob PersistenceAccessResult.uuidNotFound(uuid) }
             .redisMapToJob(uuid)
 
     override suspend fun fetchHeartBeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> {
@@ -77,12 +77,12 @@ open class RedisJobPersistence(
                 && statusAndFinishedAt.getOrNull(1)?.let { LocalDateTime.parse(it) }?.isBefore(date) ?: false
     }
 
-    override suspend fun fetchStati(uuids: List<String>): PersistenceAccessResult<List<JobStatus>> {
+    override suspend fun fetchStates(uuids: List<String>): PersistenceAccessResult<List<JobStatus>> {
         return PersistenceAccessResult.result(
             pool.resource.use { jedis ->
                 uuids.map { uuid ->
                     jedis.hget(config.jobKey(uuid), "status")?.let { status -> JobStatus.valueOf(status) }
-                        ?: return@fetchStati PersistenceAccessResult.uuidNotFound(uuid)
+                        ?: return@fetchStates PersistenceAccessResult.uuidNotFound(uuid)
                 }
             })
     }
@@ -160,18 +160,18 @@ open class RedisDataPersistence<INPUT, RESULT>(
         }
 
     override suspend fun fetchInput(uuid: String): PersistenceAccessResult<INPUT> {
-        val inputBytes = pool.resource.use { it.get(config.inputKey(uuid).toByteArray()) } ?: run { return PersistenceAccessResult.notFound() }
+        val inputBytes = pool.resource.use { it.get(config.inputKey(uuid).toByteArray()) } ?: run { return PersistenceAccessResult.uuidNotFound(uuid) }
         return PersistenceAccessResult.result(inputDeserializer(inputBytes))
     }
 
     override suspend fun fetchResult(uuid: String): PersistenceAccessResult<RESULT> {
-        val resultBytes = pool.resource.use { it.get(config.resultKey(uuid).toByteArray()) } ?: run { return PersistenceAccessResult.notFound() }
+        val resultBytes = pool.resource.use { it.get(config.resultKey(uuid).toByteArray()) } ?: run { return PersistenceAccessResult.uuidNotFound(uuid) }
         return PersistenceAccessResult.result(resultDeserializer(resultBytes))
     }
 
     override suspend fun fetchFailure(uuid: String): PersistenceAccessResult<String> {
         return pool.resource.use { it.get(config.failureKey(uuid)) }?.let { PersistenceAccessResult.result(it) }
-            ?: run { return PersistenceAccessResult.notFound() }
+            ?: run { return PersistenceAccessResult.uuidNotFound(uuid) }
     }
 
     private fun Transaction.handleTransactionException(ex: Throwable): PersistenceAccessResult<Unit> {

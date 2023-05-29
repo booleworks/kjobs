@@ -106,7 +106,7 @@ internal class HierarchicalJobApiImpl<DEP_INPUT, DEP_RESULT>(private val jobConf
                 logger.debug("Launched check of finished dependent jobs for flow emission")
                 do {
                     logger.trace("Checking stati of remaining dependent jobs")
-                    persistence.fetchStati(remainingDependents.toList())
+                    persistence.fetchStates(remainingDependents.toList())
                         .orQuitWith { logger.error(it.message); cancelAllRemainingJobs(); throw DependentJobException(it) }
                         .let { stati ->
                             logger.trace("Fetched information about ${stati.size} remaining dependent jobs")

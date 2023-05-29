@@ -35,7 +35,7 @@ sealed interface PersistenceAccessError {
     /**
      * Indicates that a persistence access failed because the item with id `uuid` was not found.
      */
-    class UuidNotFound(uuid: String) : PersistenceAccessError {
+    data class UuidNotFound(val uuid: String) : PersistenceAccessError {
         override val message = "UUID not found: $uuid"
         override fun toString() = message
     }
