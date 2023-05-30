@@ -207,7 +207,7 @@ class HashMapJobPersistenceTest : FunSpec({
     }
 })
 
-fun newJob(
+internal fun newJob(
     uuid: String,
     status: JobStatus = JobStatus.CREATED,
     startedAt: LocalDateTime? = null,

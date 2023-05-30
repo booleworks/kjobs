@@ -54,15 +54,16 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
 
     override suspend fun updateJob(job: Job): PersistenceAccessResult<Unit> = PersistenceAccessResult.success.also { jobs[job.uuid] = job }
 
-    override suspend fun deleteForUuid(uuid: String, persistencesPerType: Map<String, DataPersistence<*, *>>): PersistenceAccessResult<Unit> =
+    override suspend fun deleteForUuid(uuid: String, persistencesPerType: Map<String, DataPersistence<*, *>>): PersistenceAccessResult<Unit> {
         jobs.remove(uuid)?.let { job ->
             (persistencesPerType[job.type] as? HashMapDataPersistence<*, *>)?.let {
                 it.inputs.remove(uuid)
                 it.results.remove(uuid)
                 it.failures.remove(uuid)
             }
-            PersistenceAccessResult.success
-        } ?: PersistenceAccessResult.uuidNotFound(uuid)
+        }
+        return PersistenceAccessResult.success
+    }
 
     override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
         latestHeartbeat = heartbeat

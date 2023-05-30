@@ -121,6 +121,7 @@ open class RedisJobTransactionalPersistence(
         transaction.del(config.jobKey(uuid))
         transaction.del(config.inputKey(uuid))
         transaction.del(config.resultKey(uuid))
+        transaction.del(config.failureKey(uuid))
         return PersistenceAccessResult.success
     }
 
