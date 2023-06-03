@@ -5,6 +5,7 @@ package com.booleworks.kjobs.api.persistence
 
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
 import com.booleworks.kjobs.api.persistence.redis.RedisJobPersistence
+import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.expectSuccess
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
@@ -209,6 +210,7 @@ class HashMapJobPersistenceTest : FunSpec({
 
 internal fun newJob(
     uuid: String,
+    jobType: String = defaultJobType,
     status: JobStatus = JobStatus.CREATED,
     startedAt: LocalDateTime? = null,
     executingInstance: String? = null,
@@ -216,6 +218,6 @@ internal fun newJob(
     timeout: LocalDateTime? = null, numRestarts: Int = 0
 ) =
     Job(
-        uuid, "DUMMY", listOf("T1", "T2"), "Test $uuid", 5, "ME",
+        uuid, jobType, listOf("T1", "T2"), "Test $uuid", 5, "ME",
         LocalDateTime.of(2022, 7, 22, 0, 0), status, startedAt, executingInstance, finishedAt, timeout, numRestarts
     )
