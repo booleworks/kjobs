@@ -5,20 +5,18 @@ package com.booleworks.kjobs.control
 
 import com.booleworks.kjobs.api.JobFrameworkTestingMode
 import com.booleworks.kjobs.api.persistence.newJob
-import com.booleworks.kjobs.api.persistence.redis.RedisDataPersistence
 import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.expectSuccess
-import com.booleworks.kjobs.common.jacksonObjectMapperWithTime
+import com.booleworks.kjobs.common.newRedisPersistence
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.JobStatus.*
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.uuidNotFound
-import com.fasterxml.jackson.module.kotlin.readValue
 import com.github.fppt.jedismock.RedisServer
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
@@ -39,11 +37,7 @@ class MaintenanceTest : FunSpec({
 
     test("test update heartbeat") {
         val redis = RedisServer.newRedisServer().start()
-        val persistence = RedisDataPersistence<TestInput, TestResult>(JedisPool(redis.host, redis.bindPort),
-            { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
-            { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
-            { jacksonObjectMapperWithTime().readValue(it) },
-            { jacksonObjectMapperWithTime().readValue(it) })
+        val persistence = newRedisPersistence<TestInput, TestResult>(redis)
         val testingMode = JobFrameworkTestingMode("I1", persistence, Either.Left(this), false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
         }
@@ -70,11 +64,7 @@ class MaintenanceTest : FunSpec({
 
     test("test check for cancellation") {
         val redis = RedisServer.newRedisServer().start()
-        val persistence = RedisDataPersistence<TestInput, TestResult>(JedisPool(redis.host, redis.bindPort),
-            { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
-            { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
-            { jacksonObjectMapperWithTime().readValue(it) },
-            { jacksonObjectMapperWithTime().readValue(it) })
+        val persistence = newRedisPersistence<TestInput, TestResult>(redis)
         val testingMode = JobFrameworkTestingMode("I1", persistence, Either.Left(this), false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
         }
@@ -114,11 +104,7 @@ class MaintenanceTest : FunSpec({
     test("test restart jobs from dead instances") {
         val redis = RedisServer.newRedisServer().start()
         val interval = 300.minutes
-        val persistence = RedisDataPersistence<TestInput, TestResult>(JedisPool(redis.host, redis.bindPort),
-            { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
-            { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
-            { jacksonObjectMapperWithTime().readValue(it) },
-            { jacksonObjectMapperWithTime().readValue(it) })
+        val persistence = newRedisPersistence<TestInput, TestResult>(redis)
         val testingMode = JobFrameworkTestingMode("I1", persistence, Either.Left(this), false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
             addJob("other", persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) { jobConfig { maxRestarts = 2 } }
@@ -216,11 +202,7 @@ class MaintenanceTest : FunSpec({
     test("test delete old jobs") {
         val redis = RedisServer.newRedisServer().start()
         val interval = 300.minutes
-        val persistence = RedisDataPersistence<TestInput, TestResult>(JedisPool(redis.host, redis.bindPort),
-            { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
-            { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
-            { jacksonObjectMapperWithTime().readValue(it) },
-            { jacksonObjectMapperWithTime().readValue(it) })
+        val persistence = newRedisPersistence<TestInput, TestResult>(redis)
         val testingMode = JobFrameworkTestingMode("I1", persistence, Either.Left(this), false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
             maintenanceConfig { deleteOldJobsAfter = interval }
@@ -300,11 +282,7 @@ class MaintenanceTest : FunSpec({
 
     test("test reset my running jobs") {
         val redis = RedisServer.newRedisServer().start()
-        val persistence = RedisDataPersistence<TestInput, TestResult>(JedisPool(redis.host, redis.bindPort),
-            { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
-            { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
-            { jacksonObjectMapperWithTime().readValue(it) },
-            { jacksonObjectMapperWithTime().readValue(it) })
+        val persistence = newRedisPersistence<TestInput, TestResult>(redis)
         val testingMode = JobFrameworkTestingMode("I1", persistence, Either.Left(this), false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
             addJob("other", persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) { jobConfig { maxRestarts = 2 } }

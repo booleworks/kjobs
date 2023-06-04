@@ -115,7 +115,7 @@ class SyncMockTest : FunSpec({
                         ) {
                             synchronousResourceConfig {
                                 enabled = true
-                                checkInterval = 5.milliseconds
+                                checkInterval = 10.milliseconds
                             }
                         }
                         maintenanceConfig {

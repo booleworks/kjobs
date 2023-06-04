@@ -88,6 +88,7 @@ class TestException(message: String) : Exception(message)
 fun Any.ser() = jacksonObjectMapperWithTime().writeValueAsBytes(this)
 
 suspend fun HttpResponse.parseTestResult(): TestResult = jacksonObjectMapper().readValue<TestResult>(this.bodyAsText())
+suspend inline fun <reified T> HttpResponse.parse(): T = jacksonObjectMapper().readValue<T>(this.bodyAsText())
 
 fun FunSpec.testWithRedis(name: String, block: suspend RedisDataPersistence<TestInput, TestResult>.() -> Unit) = test(name) {
     runBlocking {

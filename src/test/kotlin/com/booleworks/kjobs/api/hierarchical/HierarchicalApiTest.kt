@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
-package com.booleworks.kjobs.api
+package com.booleworks.kjobs.api.hierarchical
 
-import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApi
+import com.booleworks.kjobs.api.JobFramework
 import com.booleworks.kjobs.api.persistence.redis.RedisDataPersistence
-import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultInstanceName

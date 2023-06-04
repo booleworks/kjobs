@@ -3,7 +3,13 @@
 
 package com.booleworks.kjobs.api
 
-import com.booleworks.kjobs.common.Either
+import com.booleworks.kjobs.api.hierarchical.SubTestInput1
+import com.booleworks.kjobs.api.hierarchical.SubTestInput2
+import com.booleworks.kjobs.api.hierarchical.SubTestResult1
+import com.booleworks.kjobs.api.hierarchical.SubTestResult2
+import com.booleworks.kjobs.api.hierarchical.subJob1
+import com.booleworks.kjobs.api.hierarchical.subJob2
+import com.booleworks.kjobs.api.hierarchical.superComputation
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultComputation

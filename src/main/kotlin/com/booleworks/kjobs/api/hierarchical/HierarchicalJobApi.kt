@@ -50,6 +50,7 @@ interface HierarchicalJobApi<DEP_INPUT, DEP_RESULT> {
 
     /**
      * Creates a flow of finished dependent jobs (i.e. jobs *not* in status [JobStatus.CREATED] or [JobStatus.RUNNING]).
+     * The flow contains a pair of the job's UUID and its result.
      *
      * This will launch a new coroutine checking every [checkInterval] for newly finished jobs which are then emitted to
      * the returned flow.
@@ -63,6 +64,8 @@ interface HierarchicalJobApi<DEP_INPUT, DEP_RESULT> {
      * and/or after creating the flow.
      *
      * In case of an unexpected exception, e.g. access to the persistence fails, a [DependentJobException] is thrown.
+     *
+     * @return a flow containing pairs mapping a job's UUID to its result
      */
     // TODO checkInterval could also be parameterized by the iteration, e.g. to allow to decrease the interval over time
     suspend fun collectDependentResults(
@@ -127,7 +130,7 @@ internal class HierarchicalJobApiImpl<DEP_INPUT, DEP_RESULT>(private val jobConf
                         }
                     val parentStatus = persistence.fetchJob(parent).orQuitWith { cancelAllRemainingJobs(); throw DependentJobException(it) }.status
                     delay(checkInterval)
-                } while (parentStatus == JobStatus.RUNNING)
+                } while (remainingDependents.isNotEmpty() && parentStatus == JobStatus.RUNNING)
                 logger.warn("Parent job with ID $parent finished, but its flow of dependent jobs wasn't collected.")
             }
         }
