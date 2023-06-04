@@ -2,10 +2,6 @@
 
 This readme is work in progress.
 
-## [REMOVE] Remaining Tests
-- Pure Jobs
-- Some more errors (check coverage)
-
 ## Getting Started
 
 Checkout the documentation at www.kjobs.org

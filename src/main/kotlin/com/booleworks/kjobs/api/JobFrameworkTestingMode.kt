@@ -42,10 +42,10 @@ import kotlinx.coroutines.runBlocking
 fun JobFrameworkTestingMode(
     myInstanceName: String,
     jobPersistence: JobPersistence,
-    executionEnvironment: Either<CoroutineScope, Application>,
+    executionEnvironment: CoroutineScope,
     maintenanceEnabled: Boolean,
     configuration: JobFrameworkBuilder.() -> Unit
-) = JobFrameworkBuilder(myInstanceName, jobPersistence, executionEnvironment, maintenanceEnabled).apply(configuration).buildTestingMode()
+) = JobFrameworkBuilder(myInstanceName, jobPersistence, Either.Left(executionEnvironment), maintenanceEnabled).apply(configuration).buildTestingMode()
 
 /**
  * A class providing testing access for some features of the job framework.

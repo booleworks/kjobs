@@ -6,7 +6,6 @@ package com.booleworks.kjobs.executor
 import com.booleworks.kjobs.api.JobFrameworkTestingMode
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapDataPersistence
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
-import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultExecutor
@@ -35,7 +34,7 @@ class ExecutorTest : FunSpec({
     test("test with testing mode") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
-        val testingMode = JobFrameworkTestingMode("ME", jobPersistence, Either.Left(this), false) {
+        val testingMode = JobFrameworkTestingMode("ME", jobPersistence, this, false) {
             addJob("TestJob", dataPersistence, { _, input: TestInput -> ComputationResult.Success(TestResult(input.value)) })
         }
         val job = testingMode.submitJob("TestJob", TestInput(42)).orQuitWith { fail("Expected persistence access to succeed") }

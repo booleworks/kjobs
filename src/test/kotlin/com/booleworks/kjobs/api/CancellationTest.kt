@@ -5,7 +5,6 @@ package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapDataPersistence
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
-import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultComputation
@@ -100,7 +99,7 @@ class CancellationTest : FunSpec({
     test("test cancellation from other states") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
-        val testingMode = JobFrameworkTestingMode("ME", jobPersistence, Either.Left(this), false) {
+        val testingMode = JobFrameworkTestingMode("ME", jobPersistence, this, false) {
             addJob("J1", dataPersistence, { _, input: TestInput -> ComputationResult.Success(TestResult(input.value)) })
         }
 

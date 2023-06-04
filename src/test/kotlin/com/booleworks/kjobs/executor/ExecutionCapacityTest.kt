@@ -7,7 +7,6 @@ import com.booleworks.kjobs.api.JobFrameworkTestingApi
 import com.booleworks.kjobs.api.JobFrameworkTestingMode
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapDataPersistence
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
-import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultInstanceName
@@ -25,7 +24,6 @@ import io.kotest.assertions.fail
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.equals.shouldBeEqual
 import kotlinx.coroutines.CoroutineScope
-import java.time.LocalDateTime
 
 class ExecutionCapacityTest : FunSpec({
 
@@ -125,7 +123,7 @@ private fun CoroutineScope.setupApi(executionCapacityProvider: ExecutionCapacity
     val jobPersistence = HashMapJobPersistence()
     val j1Persistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
     val j2Persistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
-    return jobPersistence to JobFrameworkTestingMode(defaultInstanceName, jobPersistence, Either.Left(this), false) {
+    return jobPersistence to JobFrameworkTestingMode(defaultInstanceName, jobPersistence, this, false) {
         executorConfig { this.executionCapacityProvider = executionCapacityProvider }
         addJob("J1", j1Persistence, { _, _ -> ComputationResult.Success(TestResult(42)) })
         addJob("J2", j2Persistence, { _, _ -> ComputationResult.Success(TestResult(422)) })
