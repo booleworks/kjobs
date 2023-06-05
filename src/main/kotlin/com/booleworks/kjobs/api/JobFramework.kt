@@ -139,6 +139,9 @@ class JobFrameworkBuilder internal constructor(
     /**
      * Generates a new API for a hierarchical job.
      *
+     * *This is an experimental API which might change in the future! It should also be noted that especially the
+     * implementation of the [parentComputation] (which has to be provided by the library user) is not trivial.*
+     *
      * A hierarchical job is a job which can submit further "dependent" jobs. Essentially, these dependent
      * jobs are handled the same way as "normal" jobs added with [addApi].
      *
@@ -151,9 +154,9 @@ class JobFrameworkBuilder internal constructor(
      * The [HierarchicalJobApi] is used to actually [submit dependent jobs][HierarchicalJobApi.submitDependentJob]
      * and [collect their results][HierarchicalJobApi.collectDependentResults].
      *
-     * Note that you might need to adjust the [ExecutionCapacityProvider] of your instance via [executorConfig],
+     * **Note that you might need to adjust the [ExecutionCapacityProvider] of your instance via [executorConfig],
      * since the [parent computation][parentComputation] may spend a lot of time just waiting for its dependent jobs
-     * to finish. Especially sticking with the [DefaultExecutionCapacityProvider] in a single-instance environment
+     * to finish.** Especially sticking with the [DefaultExecutionCapacityProvider] in a single-instance environment
      * will essentially lead to a deadlock, since it allows only a single running job. So since the parent
      * computation is already running, the instance will not be able to start any of its dependent jobs.
      * @param jobType a unique name identifying this type of job

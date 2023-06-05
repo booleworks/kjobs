@@ -6,6 +6,9 @@ This readme is work in progress.
 
 Checkout the documentation at www.kjobs.org
 
+## TODO
+- Rename `JobPrioritizer` to `JobSelector`?
+
 ## Further ideas
 - Route documentation with https://github.com/SMILEY4/ktor-swagger-ui
 - Split the application into separate modules (`core`, `redis`, `ktor`, `ktor-swagger`,...)
