@@ -5,7 +5,6 @@ package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapDataPersistence
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
-import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultComputation
@@ -29,7 +28,6 @@ import io.ktor.http.contentType
 import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
-import io.ktor.server.routing.application
 import io.ktor.server.routing.route
 import io.ktor.server.testing.testApplication
 import kotlin.time.Duration.Companion.milliseconds
@@ -42,7 +40,7 @@ class JobInfoTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, application) {
+                    JobFramework(defaultInstanceName, jobPersistence) {
                         maintenanceConfig { jobCheckInterval = 500.milliseconds }
                         addApi(
                             defaultJobType,
@@ -77,7 +75,7 @@ class JobInfoTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, application) {
+                    JobFramework(defaultInstanceName, jobPersistence) {
                         maintenanceConfig { jobCheckInterval = 500.milliseconds }
                         addApi(
                             defaultJobType,

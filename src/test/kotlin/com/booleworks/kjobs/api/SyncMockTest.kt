@@ -24,7 +24,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
-import io.ktor.server.routing.application
 import io.ktor.server.routing.route
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.delay
@@ -37,7 +36,7 @@ class SyncMockTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, application) {
+                    JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt()) },
                             { call.respond(it) }, defaultComputation
@@ -64,7 +63,7 @@ class SyncMockTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, application) {
+                    JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { call.receiveText().toInt().let { TestInput(it, it) } },
                             { call.respond(it) }, defaultComputation
@@ -108,7 +107,7 @@ class SyncMockTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, application) {
+                    JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), throwException = true) },
                             { call.respond(it) }, defaultComputation

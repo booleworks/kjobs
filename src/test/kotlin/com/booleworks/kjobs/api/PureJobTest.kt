@@ -27,7 +27,7 @@ class PureJobTest : FunSpec({
             val jobPersistence = HashMapJobPersistence()
             val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
             routing {
-                JobFramework(defaultInstanceName, jobPersistence, this@routing.application) {
+                JobFramework(defaultInstanceName, jobPersistence) {
                     addJob(defaultJobType, dataPersistence, defaultComputation)
                     maintenanceConfig { jobCheckInterval = 5.milliseconds }
                 }
@@ -52,7 +52,7 @@ class PureJobTest : FunSpec({
     test("test testing mode") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
-        val testingApi = JobFrameworkTestingMode(defaultInstanceName, jobPersistence, this, false) {
+        val testingApi = JobFrameworkTestingMode(defaultInstanceName, jobPersistence, false) {
             addJob(defaultJobType, dataPersistence, defaultComputation)
         }
         val job = newJob("42")

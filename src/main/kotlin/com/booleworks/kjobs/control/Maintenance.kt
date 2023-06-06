@@ -68,18 +68,15 @@ object Maintenance {
                 logger.error("Failed to fetch heartbeats: $it")
                 return
             }.map { it.instanceName }.toSet()
-
         val runningJobs = jobPersistence.allJobsWithStatus(JobStatus.RUNNING).orQuitWith {
             logger.error("Failed to fetch jobs: $it")
             return
         }
-
         val jobsWithDeadInstances = runningJobs.filter { it.executingInstance !in liveInstances }
         if (jobsWithDeadInstances.isNotEmpty()) {
             val deadInstances = jobsWithDeadInstances.map { it.executingInstance }
             logger.warn("Detected jobs executed by seemingly dead instances. Dead instances are: ${deadInstances.joinToString()}")
         }
-
         restartJobs(jobsWithDeadInstances, persistencesPerType, maxRestartsPerType, "its executing instance seems to be dead")
     }
 

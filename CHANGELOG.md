@@ -11,9 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Option to add a resource `GET info/{uuid}` which returns more information about a job. Can be configured via `ApiBuilder.infoConfig` 
 
 ### Changed
+- Scheduling of maintenance tasks was adjusted. We now create a new thread pool for scheduling the tasks. The `CoroutineDispatcher` for the computation/executor task can be configured via the new parameter `ExecutorConfig.dispatcher`, all other tasks (e.g. updating heartbeats, looking for old jobs or dead instances, etc.) will be executed using `Dispatchers.IO`. According to these changes there are two new configuration options:
+  - `MaintenanceConfig.threadPoolSize` determining the number of threads to be used for task scheduling, the default is 2.
+  - `ExecutorConfig.dispatcher` which allows to determine which `CoroutineDispatcher` should be used for all computations, the default is `Dispatchers.Default`.
+- The main method `JobFramework` dropped the parameter `Either<Application, CoroutineScope>`, since it is not required anymore with the adjusted task scheduling.
 - It is now verified on all resources that the UUID really belongs to the respective job type. Such requests will be answered with HTTP code 400 and a respective error message.
 - Detect and prevent the definition of multiple APIs or jobs with the same job type. The second API/job with the same job type will cause an `IllegalArgumentException` to be thrown.
-- The main method `JobFramework` was split into two methods to simplify the API: Instead of taking an `Either<Application, CoroutineScope>`, there is now one method taking an `Application` and one taking a `CoroutineScope`.
 - Renamed two methods of `JobPersistence`:
   - `fetchStati` to `fetchStates`
   - `fetchHeartBeats` to `fetchHeartbeats` (for consistency with `JobTransactionalPersistence.updateHeartbeat`)

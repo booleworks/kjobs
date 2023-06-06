@@ -37,7 +37,7 @@ class MaintenanceTest : FunSpec({
     test("test update heartbeat") {
         val redis = RedisServer.newRedisServer().start()
         val persistence = newRedisPersistence<TestInput, TestResult>(redis)
-        val testingMode = JobFrameworkTestingMode("I1", persistence, this, false) {
+        val testingMode = JobFrameworkTestingMode("I1", persistence, false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
         }
 
@@ -64,7 +64,7 @@ class MaintenanceTest : FunSpec({
     test("test check for cancellation") {
         val redis = RedisServer.newRedisServer().start()
         val persistence = newRedisPersistence<TestInput, TestResult>(redis)
-        val testingMode = JobFrameworkTestingMode("I1", persistence, this, false) {
+        val testingMode = JobFrameworkTestingMode("I1", persistence, false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
         }
 
@@ -104,7 +104,7 @@ class MaintenanceTest : FunSpec({
         val redis = RedisServer.newRedisServer().start()
         val interval = 300.minutes
         val persistence = newRedisPersistence<TestInput, TestResult>(redis)
-        val testingMode = JobFrameworkTestingMode("I1", persistence, this, false) {
+        val testingMode = JobFrameworkTestingMode("I1", persistence, false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
             addJob("other", persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) { jobConfig { maxRestarts = 2 } }
             maintenanceConfig { heartbeatInterval = interval }
@@ -202,7 +202,7 @@ class MaintenanceTest : FunSpec({
         val redis = RedisServer.newRedisServer().start()
         val interval = 300.minutes
         val persistence = newRedisPersistence<TestInput, TestResult>(redis)
-        val testingMode = JobFrameworkTestingMode("I1", persistence, this, false) {
+        val testingMode = JobFrameworkTestingMode("I1", persistence, false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
             maintenanceConfig { deleteOldJobsAfter = interval }
         }
@@ -282,7 +282,7 @@ class MaintenanceTest : FunSpec({
     test("test reset my running jobs") {
         val redis = RedisServer.newRedisServer().start()
         val persistence = newRedisPersistence<TestInput, TestResult>(redis)
-        val testingMode = JobFrameworkTestingMode("I1", persistence, this, false) {
+        val testingMode = JobFrameworkTestingMode("I1", persistence, false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
             addJob("other", persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) { jobConfig { maxRestarts = 2 } }
         }

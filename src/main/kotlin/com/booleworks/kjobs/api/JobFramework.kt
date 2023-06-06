@@ -7,7 +7,6 @@ import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApi
 import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApiImpl
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
-import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.control.ApiConfig
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.control.JobConfig
@@ -26,14 +25,16 @@ import com.booleworks.kjobs.data.JobPrioritizer
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.TagMatcher
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.util.pipeline.PipelineContext
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.Executors
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
@@ -49,9 +50,6 @@ annotation class KJobsDsl
  * Can be an arbitrary, non-empty, string if there is only a single instance.
  * @param jobPersistence an object allowing to store and retrieve jobs (and heartbeats) from some
  * (usually external) data source, e.g. a redis cache or a postgres database
- * @param application the [Application] whose [CoroutineScope] is used to launch maintenance and
- * execution jobs. To get more control you can also pass a specific [CoroutineScope] instead of
- * the [Application]
  * @param configuration additional configuration options, in particular this includes the
  * possibility to [add APIs][JobFrameworkBuilder.addApi] to a ktor application
  */
@@ -60,28 +58,8 @@ annotation class KJobsDsl
 fun JobFramework(
     myInstanceName: String,
     jobPersistence: JobPersistence,
-    application: Application,
     configuration: JobFrameworkBuilder.() -> Unit
-) = JobFrameworkBuilder(myInstanceName, jobPersistence, Either.Right(application)).apply(configuration).build()
-
-/**
- * Main entry point to set up the job framework from a coroutine scope.
- * @param myInstanceName a unique identifier of this instance, e.g. in a Kubernetes environment.
- * Can be an arbitrary, non-empty, string if there is only a single instance.
- * @param jobPersistence an object allowing to store and retrieve jobs (and heartbeats) from some
- * (usually external) data source, e.g. a redis cache or a postgres database
- * @param coroutineScope the [CoroutineScope] in which maintenance and execution jobs are launched
- * @param configuration additional configuration options, in particular this includes the
- * possibility to [add APIs][JobFrameworkBuilder.addApi] to a ktor application
- */
-@Suppress("FunctionName")
-@KJobsDsl
-fun JobFramework(
-    myInstanceName: String,
-    jobPersistence: JobPersistence,
-    coroutineScope: CoroutineScope,
-    configuration: JobFrameworkBuilder.() -> Unit
-) = JobFrameworkBuilder(myInstanceName, jobPersistence, Either.Left(coroutineScope)).apply(configuration).build()
+) = JobFrameworkBuilder(myInstanceName, jobPersistence).apply(configuration).build()
 
 /**
  * Builder for the KJobs Job Framework. Can be instantiated and configured using [JobFramework].
@@ -90,7 +68,6 @@ fun JobFramework(
 class JobFrameworkBuilder internal constructor(
     private val myInstanceName: String,
     private val jobPersistence: JobPersistence,
-    private val executionBase: Either<CoroutineScope, Application>,
     private val maintenanceEnabled: Boolean = true
 ) {
     private val executorConfig: ExecutorConfig = ExecutorConfig()
@@ -239,12 +216,14 @@ class JobFrameworkBuilder internal constructor(
      * @param jobPrioritizer a job prioritizer, see [JobPrioritizer] for detailed information. The [default prioritizer][DefaultJobPrioritizer] will prioritize
      * first by [Job.priority] and then by [Job.createdAt] (both ascending).
      * @param tagMatcher a tag matcher to this instance to select only jobs with specific [tags][Job.tags]. Default is [TagMatcher.Any].
+     * @param dispatcher the [CoroutineDispatcher] in which the computations are running. By default, this is [Dispatchers.Default].
      */
     @KJobsDsl
     class ExecutorConfig internal constructor(
         var executionCapacityProvider: ExecutionCapacityProvider = DefaultExecutionCapacityProvider,
         var jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
         var tagMatcher: TagMatcher = TagMatcher.Any,
+        var dispatcher: CoroutineDispatcher = Dispatchers.Default
     )
 
     /**
@@ -261,6 +240,8 @@ class JobFrameworkBuilder internal constructor(
      * still be in [JobStatus.RUNNING] state and nobody (including the instance itself) would recognize that the job is actually not computed anymore. So it is
      * highly recommended to set this property to `true`. *Note that this will block the instance on startup while the jobs are being reset, but this should
      * usually be a very short amount of time.*
+     * @param threadPoolSize the number of threads used by the maintenance scheduler. All maintenance scheduling tasks are running in their own thread pool
+     * to ensure that especially the update of heartbeats is not blocked by long-running computations.
      */
     @KJobsDsl
     class MaintenanceConfig internal constructor(
@@ -269,6 +250,7 @@ class JobFrameworkBuilder internal constructor(
         var oldJobDeletionInterval: Duration = 1.days,
         var deleteOldJobsAfter: Duration = 365.days,
         var restartRunningJobsOnStartup: Boolean = true,
+        var threadPoolSize: Int = 2,
     )
 
     /**
@@ -294,16 +276,17 @@ class JobFrameworkBuilder internal constructor(
         apis.values.forEach { it.build(cancellationConfig.enabled) }
         if (maintenanceEnabled) {
             val executor = generateJobExecutor()
-            executionBase.schedule(maintenanceConfig.jobCheckInterval) { executor.execute() }
-            executionBase.schedule(maintenanceConfig.heartbeatInterval) { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
-            executionBase.schedule(maintenanceConfig.heartbeatInterval) {
+            val dispatcher = Executors.newFixedThreadPool(maintenanceConfig.threadPoolSize).asCoroutineDispatcher()
+            dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, executorConfig.dispatcher) { executor.execute() }
+            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, Dispatchers.IO) { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
+            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, Dispatchers.IO) {
                 Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, restartsPerType)
             }
-            executionBase.schedule(maintenanceConfig.oldJobDeletionInterval) {
+            dispatcher.scheduleForever(maintenanceConfig.oldJobDeletionInterval, Dispatchers.IO) {
                 Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType)
             }
             if (cancellationConfig.enabled) {
-                executionBase.schedule(cancellationConfig.checkInterval) { Maintenance.checkForCancellations(jobPersistence) }
+                dispatcher.scheduleForever(cancellationConfig.checkInterval, Dispatchers.IO) { Maintenance.checkForCancellations(jobPersistence) }
             }
         }
     }
@@ -330,12 +313,6 @@ class JobFrameworkBuilder internal constructor(
         jobPersistence, myInstanceName, executorConfig.executionCapacityProvider,
         executorConfig.jobPrioritizer, executorConfig.tagMatcher, cancellationConfig, executorsPerType
     )
-
-    private val Either<CoroutineScope, Application>.schedule: (duration: Duration, task: suspend () -> Unit) -> kotlinx.coroutines.Job
-        get() = when (this) {
-            is Either.Left -> value::scheduleForever
-            is Either.Right -> value::scheduleForever
-        }
 }
 
 /**

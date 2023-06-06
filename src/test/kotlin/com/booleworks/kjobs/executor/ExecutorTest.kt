@@ -34,7 +34,7 @@ class ExecutorTest : FunSpec({
     test("test with testing mode") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
-        val testingMode = JobFrameworkTestingMode("ME", jobPersistence, this, false) {
+        val testingMode = JobFrameworkTestingMode("ME", jobPersistence, false) {
             addJob("TestJob", dataPersistence, { _, input: TestInput -> ComputationResult.Success(TestResult(input.value)) })
         }
         val job = testingMode.submitJob("TestJob", TestInput(42)).orQuitWith { fail("Expected persistence access to succeed") }

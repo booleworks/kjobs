@@ -18,6 +18,7 @@ Checkout the documentation at www.kjobs.org
     - `Job.progress` if the job is in status `RUNNING` and `progress` is not `null`
     - `Job.status` otherwise
   - callback for computations allowing to submit the progress
+- Maintenance job to clear obsolete (too old) heartbeats
 - Allow configurable resource names instead of hardcoded ones (`submit`, `status`, etc)
 - Allow multiple jobs to be started when checking for new jobs (right now, only one job per `jobCheckInterval` can be started)
 - Generify Hierarchical Jobs s.t. they become the standard. They can optionally get `HierarchicalJobApi`s (for *any* configured job, so no need anymore to `addDependentJob`s to hierarchical jobs) and thus maybe even submit other hierarchical jobs.

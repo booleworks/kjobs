@@ -23,7 +23,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.server.application.call
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
-import io.ktor.server.routing.application
 import io.ktor.server.routing.route
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.delay
@@ -36,7 +35,7 @@ class CancellationTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, application) {
+                    JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 100_000) },
                             { call.respond(it.inputValue) }, defaultComputation
@@ -67,7 +66,7 @@ class CancellationTest : FunSpec({
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence, application) {
+                    JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1",
                             this@route,
@@ -99,7 +98,7 @@ class CancellationTest : FunSpec({
     test("test cancellation from other states") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
-        val testingMode = JobFrameworkTestingMode("ME", jobPersistence, this, false) {
+        val testingMode = JobFrameworkTestingMode("ME", jobPersistence, false) {
             addJob("J1", dataPersistence, { _, input: TestInput -> ComputationResult.Success(TestResult(input.value)) })
         }
 

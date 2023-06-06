@@ -123,7 +123,7 @@ private fun CoroutineScope.setupApi(executionCapacityProvider: ExecutionCapacity
     val jobPersistence = HashMapJobPersistence()
     val j1Persistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
     val j2Persistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
-    return jobPersistence to JobFrameworkTestingMode(defaultInstanceName, jobPersistence, this, false) {
+    return jobPersistence to JobFrameworkTestingMode(defaultInstanceName, jobPersistence, false) {
         executorConfig { this.executionCapacityProvider = executionCapacityProvider }
         addJob("J1", j1Persistence, { _, _ -> ComputationResult.Success(TestResult(42)) })
         addJob("J2", j2Persistence, { _, _ -> ComputationResult.Success(TestResult(422)) })

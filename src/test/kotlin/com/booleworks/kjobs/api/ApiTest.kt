@@ -3,7 +3,6 @@
 
 package com.booleworks.kjobs.api
 
-import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultComputation
@@ -29,7 +28,6 @@ import io.ktor.http.contentType
 import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
-import io.ktor.server.routing.application
 import io.ktor.server.routing.route
 import kotlinx.coroutines.delay
 import java.util.*
@@ -42,7 +40,7 @@ class ApiTest : FunSpec({
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             route("test") {
-                JobFramework(defaultInstanceName, persistence, application) {
+                JobFramework(defaultInstanceName, persistence) {
                     maintenanceConfig { jobCheckInterval = 500.milliseconds }
                     addApi(defaultJobType, this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation)
                 }
@@ -61,7 +59,7 @@ class ApiTest : FunSpec({
     testJobFrameworkWithRedis("test API calls with wrong job type") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
-            JobFramework(defaultInstanceName, persistence, application) {
+            JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 50.milliseconds }
                 cancellationConfig { enabled = true }
                 route("test") {

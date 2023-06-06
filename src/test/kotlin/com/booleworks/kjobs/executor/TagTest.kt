@@ -222,7 +222,7 @@ private fun CoroutineScope.setupApi(tagMatcher: TagMatcher? = null): Triple<JobF
     val jobPersistence = HashMapJobPersistence()
     val j1Persistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
     val j2Persistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
-    val testingApi = JobFrameworkTestingMode(defaultInstanceName, jobPersistence, this, false) {
+    val testingApi = JobFrameworkTestingMode(defaultInstanceName, jobPersistence, false) {
         tagMatcher?.let { executorConfig { this.tagMatcher = tagMatcher } }
         addJob("J1", j1Persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {
             jobConfig {

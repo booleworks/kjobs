@@ -6,7 +6,6 @@ package com.booleworks.kjobs.api
 import com.booleworks.kjobs.api.JobFrameworkBuilder.MaintenanceConfig
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
-import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.control.JobConfig
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
@@ -17,8 +16,6 @@ import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobPrioritizer
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher
-import io.ktor.server.application.Application
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
@@ -29,8 +26,6 @@ import kotlinx.coroutines.runBlocking
  * Can be an arbitrary, non-empty, string if there is only a single instance.
  * @param jobPersistence an object allowing to store and retrieve jobs (and heartbeats) from some
  * (usually external) data source, e.g. a redis cache or a postgres database
- * @param executionEnvironment either a specific [CoroutineScope] or a ktor [Application] in which
- * maintenance and execution jobs are launched
  * @param maintenanceEnabled whether all kinds of background jobs (including the [MainJobExecutor])
  * should be run according to [MaintenanceConfig] or not. This may be useful is you want jobs only be
  * triggered via the returned [JobFrameworkTestingMode] object.
@@ -42,10 +37,9 @@ import kotlinx.coroutines.runBlocking
 fun JobFrameworkTestingMode(
     myInstanceName: String,
     jobPersistence: JobPersistence,
-    executionEnvironment: CoroutineScope,
     maintenanceEnabled: Boolean,
     configuration: JobFrameworkBuilder.() -> Unit
-) = JobFrameworkBuilder(myInstanceName, jobPersistence, Either.Left(executionEnvironment), maintenanceEnabled).apply(configuration).buildTestingMode()
+) = JobFrameworkBuilder(myInstanceName, jobPersistence, maintenanceEnabled).apply(configuration).buildTestingMode()
 
 /**
  * A class providing testing access for some features of the job framework.

@@ -37,7 +37,7 @@ class HierarchicalApiTest2 : FunSpec({
 
         routing {
             route("split-job") {
-                JobFramework(defaultInstanceName, intPersistence, this@routing.application) {
+                JobFramework(defaultInstanceName, intPersistence) {
                     addApiForHierarchicalJob(
                         "splitJob", this@route, listPersistence, { call.receive<TestInputList>() }, { call.respond(it) }, parentComputation
                     ) {

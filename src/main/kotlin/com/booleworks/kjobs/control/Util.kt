@@ -3,35 +3,35 @@
 
 package com.booleworks.kjobs.control
 
-import io.ktor.server.application.Application
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
 
 /**
- * Executes the given task with an interval of [duration]. The task will be executed until the application stops.
- * Also, the schedule can be stopped by invoking [Job.cancel] on the returned job.
+ * Executes the given [task] repeatedly until this [CoroutineContext] or the returned job is
+ * cancelled. The task will be started every [interval], independently of the duration of
+ * the task.
+ *
  * Exceptions in the task will not affect the application or other runs of the task.
+ *
+ * By default, the task will be launched in a [SupervisorJob] of this context, but it can be
+ * overridden (e.g. for long-running tasks) using a custom [dispatcher].
  */
-fun Application.scheduleForever(duration: Duration, task: suspend () -> Unit): Job = launch(coroutineContext) {
-    scheduleForever(duration, task)
-}
-
-/**
- * Executes the given task with an interval of [duration].
- * Prefer [Application.scheduleForever] if you want to schedule a task from a ktor application.
- */
-fun CoroutineScope.scheduleForever(duration: Duration, task: suspend () -> Unit): Job {
+fun CoroutineContext.scheduleForever(interval: Duration, dispatcher: CoroutineDispatcher? = null, task: suspend () -> Unit): Job {
     // the SupervisorJob prevents exceptions from task to cancel the parent coroutine (which might be the whole application)
-    val job = SupervisorJob(coroutineContext.job)
-    launch {
+    val job = SupervisorJob(get(Job))
+    CoroutineScope(job).launch {
         while (true) {
-            launch(job) { task() }
-            delay(duration)
+            if (dispatcher != null)
+                launch(dispatcher) { task() }
+            else
+                launch { task() }
+            delay(interval)
         }
     }
     return job

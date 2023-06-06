@@ -30,7 +30,6 @@ import io.ktor.http.contentType
 import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
-import io.ktor.server.routing.application
 import io.ktor.server.routing.route
 import io.ktor.server.testing.ApplicationTestBuilder
 import kotlinx.coroutines.delay
@@ -86,7 +85,7 @@ private fun ApplicationTestBuilder.addTestRoute(
 ) {
     routing {
         route("test") {
-            JobFramework(defaultInstanceName, persistence, application) {
+            JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 20.milliseconds }
                 executorConfig { executionCapacityProvider = ExecutionCapacityProvider { AcceptingAnyJob } }
                 addApiForHierarchicalJob(

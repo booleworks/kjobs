@@ -35,7 +35,7 @@ class DuplicateJobTypeTest : FunSpec({
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
-                JobFramework(defaultInstanceName, persistence, application) {
+                JobFramework(defaultInstanceName, persistence) {
                     maintenanceConfig { jobCheckInterval = 500.milliseconds }
                     route("test1") {
                         addApi("type1", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation)
@@ -52,7 +52,7 @@ class DuplicateJobTypeTest : FunSpec({
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
-                JobFramework(defaultInstanceName, persistence, application) {
+                JobFramework(defaultInstanceName, persistence) {
                     maintenanceConfig { jobCheckInterval = 500.milliseconds }
                     addJob("type1", persistence, defaultComputation)
                     addJob("type1", persistence, defaultComputation)
@@ -65,7 +65,7 @@ class DuplicateJobTypeTest : FunSpec({
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
         routing {
             shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
-                JobFramework(defaultInstanceName, persistence, application) {
+                JobFramework(defaultInstanceName, persistence) {
                     maintenanceConfig { jobCheckInterval = 500.milliseconds }
                     route("test1") {
                         addApi("type1", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation)
@@ -74,7 +74,7 @@ class DuplicateJobTypeTest : FunSpec({
                 }
             }
             shouldThrowWithMessage<IllegalArgumentException>("An API or job with type type1 is already defined") {
-                JobFramework(defaultInstanceName, persistence, application) {
+                JobFramework(defaultInstanceName, persistence) {
                     maintenanceConfig { jobCheckInterval = 500.milliseconds }
                     addJob("type1", persistence, defaultComputation)
                     route("test1") {
@@ -88,7 +88,7 @@ class DuplicateJobTypeTest : FunSpec({
     testJobFrameworkWithRedis("test hierarchical jobs") {
         val persistence = newRedisPersistence<TestInput, TestResult>()
         routing {
-            JobFramework(defaultInstanceName, persistence, application) {
+            JobFramework(defaultInstanceName, persistence) {
                 route("test1") {
                     addApi(
                         subJob1,
@@ -130,7 +130,7 @@ class DuplicateJobTypeTest : FunSpec({
     testJobFrameworkWithRedis("test hierarchical jobs 2") {
         val persistence = newRedisPersistence<TestInput, TestResult>()
         routing {
-            JobFramework(defaultInstanceName, persistence, application) {
+            JobFramework(defaultInstanceName, persistence) {
                 route("test1") {
                     maintenanceConfig { jobCheckInterval = 20.milliseconds }
                     executorConfig { executionCapacityProvider = ExecutionCapacityProvider { ExecutionCapacity.Companion.AcceptingAnyJob } }
