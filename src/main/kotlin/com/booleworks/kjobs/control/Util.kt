@@ -25,7 +25,7 @@ import kotlin.time.Duration
 fun CoroutineContext.scheduleForever(interval: Duration, dispatcher: CoroutineDispatcher? = null, task: suspend () -> Unit): Job {
     // the SupervisorJob prevents exceptions from task to cancel the parent coroutine (which might be the whole application)
     val job = SupervisorJob(get(Job))
-    CoroutineScope(job).launch {
+    CoroutineScope(this + job).launch {
         while (true) {
             if (dispatcher != null)
                 launch(dispatcher) { task() }
