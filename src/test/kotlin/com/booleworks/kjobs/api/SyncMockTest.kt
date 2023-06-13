@@ -30,6 +30,7 @@ import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
 class SyncMockTest : FunSpec({
+
     test("test simple synchronous api") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
@@ -71,7 +72,6 @@ class SyncMockTest : FunSpec({
                             synchronousResourceConfig {
                                 enabled = true
                                 checkInterval = 5.milliseconds
-                                path = "sync"
                                 maxWaitingTime = 50.milliseconds
                                 customPriorityProvider = { it.value }
                             }
@@ -85,11 +85,11 @@ class SyncMockTest : FunSpec({
                     }
                 }
             }
-            client.post("test/sync") { setBody("20") }.parseTestResult() shouldBeEqual TestResult(20)
+            client.post("test/synchronous") { setBody("20") }.parseTestResult() shouldBeEqual TestResult(20)
             val jobs = jobPersistence.allJobsOfInstance(JobStatus.SUCCESS, defaultInstanceName).expectSuccess() shouldHaveSize 1
             jobs.first().priority shouldBeEqual 20
 
-            val abortedJob = client.post("test/sync") { setBody("100") }
+            val abortedJob = client.post("test/synchronous") { setBody("100") }
             abortedJob.status shouldBeEqual HttpStatusCode.BadRequest
             val response = abortedJob.bodyAsText()
             response shouldStartWith "The job did not finish within the timeout of 50ms. You may be able to retrieve the result later via the asynchronous API using the job id "

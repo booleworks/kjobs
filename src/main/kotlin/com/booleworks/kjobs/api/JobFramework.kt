@@ -29,6 +29,9 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.util.pipeline.PipelineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -427,18 +430,41 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
 
 /**
  * Further configuration options for the API.
- * @param basePath an additional base path of the application (in addition to what is effectively predefined by the [Route] passed into
- * [JobFrameworkBuilder.addApi]). Default is the empty string.
+ *
+ * The `*Route` parameters allow to reconfigure the command to generate the route. There are different purposes to reconfigure such commands:
+ *
+ * - adjust the path on which the route is hosted (e.g. `POST submit-my-job` instead of `POST submit`)
+ * - use a different HTTP method (e.g. if you prefer `POST` oder `DELETE` in the `deleteRoute`)
+ * - **use an entirely different route-creation command** which can be useful to integrate some frameworks which generate OpenAPI definitions based on
+ * rewritten `route` commands
+ *
+ * **Note that all routes except for `submitRoute` and `syncRoute` must provide the `uuid` as path parameter!**
+ *
  * @param inputValidation an optional validation of the input which is performed in the `submit` resource. Must return a list of error messages which
- * is empty in case the validation did not find any errors. If the list is not empty, the request is rejected with [HttpStatusCode.NotFound] and
+ * is empty in case the validation did not find any errors. If the list is not empty, the request is rejected with [HttpStatusCode.BadRequest] and
  * a message constructed from the list. Default is an empty list.
  * @param enableDeletion whether a `DELETE` resource should be added which allows the API user to delete a job (usually once the result has been fetched)
+ * @param submitRoute replacement for the submit resource, default is `POST submit`
+ * @param statusRoute replacement for the status resource, default is `GET status`
+ * @param resultRoute replacement for the result resource, default is `GET result`
+ * @param failureRoute replacement for the failure resource, default is `GET failure`
+ * @param deleteRoute replacement for the delete resource, default is `DELETE delete`, only used if the resource is enabled
+ * @param cancelRoute replacement for the cancel resource, default is `POST cancel`, only used if the resource is enabled
+ * @param syncRoute replacement for the sync resource, default is `POST sync`, only used if the resource is enabled
+ * @param infoRoute replacement for the info resource, default is `GET info`, only used if the resource is enabled
  */
 @KJobsDsl
 class ApiConfigBuilder<INPUT> internal constructor(
-    var basePath: String? = null,
     var inputValidation: (INPUT) -> List<String> = { emptyList() },
     var enableDeletion: Boolean = false,
+    var submitRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> post("submit") { block() } },
+    var statusRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("status/{uuid}") { block() } },
+    var resultRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("result/{uuid}") { block() } },
+    var failureRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("failure/{uuid}") { block() } },
+    var deleteRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> delete("delete/{uuid}") { block() } },
+    var cancelRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> post("cancel/{uuid}") { block() } },
+    var syncRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> post("synchronous") { block() } },
+    var infoRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("info/{uuid}") { block() } },
 ) {
     internal fun <RESULT> toApiConfig(
         inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
@@ -446,7 +472,10 @@ class ApiConfigBuilder<INPUT> internal constructor(
         enableCancellation: Boolean,
         syncMockConfig: SynchronousResourceConfig<INPUT>,
         jobInfoConfig: JobInfoConfig
-    ) = ApiConfig(inputReceiver, resultResponder, basePath, inputValidation, enableDeletion, enableCancellation, syncMockConfig, jobInfoConfig)
+    ) = ApiConfig(
+        inputReceiver, resultResponder, inputValidation, enableDeletion, enableCancellation, syncMockConfig, jobInfoConfig,
+        submitRoute, statusRoute, resultRoute, failureRoute, deleteRoute, cancelRoute, syncRoute, infoRoute
+    )
 }
 
 /**
@@ -483,7 +512,6 @@ class JobConfigBuilder<INPUT> internal constructor(
  *
  * By default, the synchronous API is disabled.
  * @param enabled whether the synchronous resource is enabled for this API, by default it is not enabled
- * @param path the path on which the synchronous resource should be placed, default is `synchronous`
  * @param checkInterval the interval in which the job status should be checked after it was submitted
  * @param maxWaitingTime the maximum time to wait for the job to complete. If this time is exceeded, status 400 is returned including the information
  * about the UUID of the generated job.
@@ -492,33 +520,30 @@ class JobConfigBuilder<INPUT> internal constructor(
 @KJobsDsl
 class SynchronousResourceConfigBuilder<INPUT>(
     var enabled: Boolean = false,
-    var path: String = "synchronous",
     var checkInterval: Duration = 200.milliseconds,
     var maxWaitingTime: Duration = 1.hours,
     var customPriorityProvider: (INPUT) -> Int = { 0 }
 ) {
-    internal fun toSynchronousResourceConfig() = SynchronousResourceConfig(enabled, path, checkInterval, maxWaitingTime, customPriorityProvider)
+    internal fun toSynchronousResourceConfig() = SynchronousResourceConfig(enabled, checkInterval, maxWaitingTime, customPriorityProvider)
 }
 
 /**
  * Configuration for the job info.
  *
- * If [enabled] the KJobs will provide an additional `GET` resource on the given [path] which can return general information
- * about the job. The content returned by the resource can be configured via the [responder].
+ * If [enabled] the KJobs will provide an additional resource (defined in [ApiConfigBuilder.infoRoute], default `GET info/{uuid}`
+ * which can return general information about the job. The content returned by the resource can be configured via the [responder].
  *
  * Note that the default implementation of the [responder] requires JSON serialization to be installed in the Ktor server.
  *
  * @param enabled whether the job info resource is enabled or not, by default it is not enabled
- * @param path the path on which the job info should be placed, default is `info`
  * @param responder describes how the job info should be returned, by default the [Job] is serialized and returned as JSON
  */
 @KJobsDsl
 class JobInfoConfigBuilder(
     var enabled: Boolean = false,
-    var path: String = "info",
     var responder: suspend PipelineContext<Unit, ApplicationCall>.(Job) -> Unit = { call.respond(it) }
 ) {
-    internal fun toJobInfoConfig() = JobInfoConfig(enabled, path, responder)
+    internal fun toJobInfoConfig() = JobInfoConfig(enabled, responder)
 }
 
 internal const val DEFAULT_MAX_JOB_RESTARTS = 3

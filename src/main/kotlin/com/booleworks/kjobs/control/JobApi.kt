@@ -20,10 +20,6 @@ import io.ktor.server.application.call
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
-import io.ktor.server.routing.delete
-import io.ktor.server.routing.get
-import io.ktor.server.routing.post
-import io.ktor.server.routing.route
 import io.ktor.util.pipeline.PipelineContext
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
@@ -89,115 +85,114 @@ private val apiLog = LoggerFactory.getLogger("ApiLog")
  * - the way this information is returned is defined by [JobInfoConfig.responder]
  *
  * If the persistence access in any of the routes fails, status 500 with a respective message is returned.
+ *
+ * The paths or definitions of these routes can be overridden using the `ApiConfigBuilder.*Route` methods.
  */
-internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESULT>, jobConfig: JobConfig<INPUT, RESULT>) =
-    with(apiConfig) {
-        route(apiConfig.basePath ?: "") {
-            post("submit") {
-                validateAndSubmit(apiConfig, jobConfig, inputReceiver())?.let { call.respond(it) }
-            }
+internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESULT>, jobConfig: JobConfig<INPUT, RESULT>) = with(apiConfig) {
+    submitRoute {
+        validateAndSubmit(apiConfig, jobConfig, inputReceiver())?.let { call.respond(it) }
+    }
 
-            get("status/{uuid}") {
-                parseUuid()?.let { resultStatus(it, jobConfig.jobType, jobConfig.persistence) }
-            }
+    statusRoute {
+        parseUuid()?.let { resultStatus(it, jobConfig.jobType, jobConfig.persistence) }
+    }
 
-            get("result/{uuid}") {
-                parseUuid()?.let { uuid ->
-                    val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@get
-                    if (job.status != JobStatus.SUCCESS) {
-                        call.respondText("Cannot return the result for job with ID $uuid and status ${job.status}.", status = BadRequest)
+    resultRoute {
+        parseUuid()?.let { uuid ->
+            val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@resultRoute
+            if (job.status != JobStatus.SUCCESS) {
+                call.respondText("Cannot return the result for job with ID $uuid and status ${job.status}.", status = BadRequest)
+            } else {
+                result(job, jobConfig.persistence)?.let { resultResponder(it) }
+            }
+        }
+    }
+
+    failureRoute {
+        parseUuid()?.let { uuid ->
+            val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@failureRoute
+            if (job.status != JobStatus.FAILURE) {
+                call.respondText("Cannot return a failure for job with ID $uuid and status ${job.status}.", status = BadRequest)
+            } else {
+                failure(job, jobConfig.persistence)?.let { call.respondText(it) }
+            }
+        }
+    }
+
+    if (enableDeletion) {
+        deleteRoute {
+            parseUuid()?.let { uuid ->
+                fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence)?.let { job ->
+                    if (job.type != jobConfig.jobType) {
+                        call.respond(
+                            BadRequest,
+                            "The job with ID $uuid belongs to another job type. Please call the delete resource with the correct path."
+                        )
+                    } else if (job.status in setOf(JobStatus.CREATED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)) {
+                        call.respond(BadRequest, "Cannot delete job with ID $uuid, because it is in a wrong status: ${job.status}")
                     } else {
-                        result(job, jobConfig.persistence)?.let { resultResponder(it) }
-                    }
-                }
-            }
-
-            get("failure/{uuid}") {
-                parseUuid()?.let { uuid ->
-                    val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@get
-                    if (job.status != JobStatus.FAILURE) {
-                        call.respondText("Cannot return a failure for job with ID $uuid and status ${job.status}.", status = BadRequest)
-                    } else {
-                        failure(job, jobConfig.persistence)?.let { call.respondText(it) }
-                    }
-                }
-            }
-
-            if (enableDeletion) {
-                delete("delete/{uuid}") {
-                    parseUuid()?.let { uuid ->
-                        fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence)?.let { job ->
-                            if (job.type != jobConfig.jobType) {
-                                call.respond(
-                                    BadRequest,
-                                    "The job with ID $uuid belongs to another job type. Please call the delete resource with the correct path."
-                                )
-                            } else if (job.status in setOf(JobStatus.CREATED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)) {
-                                call.respond(BadRequest, "Cannot delete job with ID $uuid, because it is in a wrong status: ${job.status}")
-                            } else {
-                                jobConfig.persistence.transaction { deleteForUuid(uuid.toString(), mapOf(jobConfig.jobType to jobConfig.persistence)) }
-                                    .onLeft { call.respond(InternalServerError, "Deletion of Job with ID $uuid failed with: $it") }
-                                    .onRight { call.respond("Deleted") }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (enableCancellation) {
-                post("cancel/{uuid}") {
-                    parseUuid()?.let { uuid ->
-                        val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@post
-                        call.respond(cancelJob(job, jobConfig.persistence))
-                    }
-                }
-            }
-
-            if (syncMockConfig.enabled) {
-                post(syncMockConfig.path) {
-                    val uuid = validateAndSubmit(apiConfig, jobConfig.copy(priorityProvider = syncMockConfig.priorityProvider), inputReceiver()) ?: return@post
-                    apiLog.trace("Submitted job for synchronous computation, got ID $uuid")
-                    var status: JobStatus
-                    val timeout = LocalDateTime.now().plus(syncMockConfig.maxWaitingTime.inWholeMilliseconds, ChronoUnit.MILLIS)
-                    do {
-                        delay(syncMockConfig.checkInterval)
-                        status = jobConfig.persistence.fetchJob(uuid).orQuitWith {
-                            call.respondText("Synchronous computation failed during job access: ${it.message}", status = InternalServerError)
-                            return@post
-                        }.status
-                        apiLog.trace("Synchronous job with ID {} is in status {}", uuid, status)
-                    } while (status in setOf(JobStatus.CREATED, JobStatus.RUNNING) && LocalDateTime.now() < timeout)
-                    if (status == JobStatus.SUCCESS) {
-                        jobConfig.persistence.fetchResult(uuid)
-                            .orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@post }
-                            .let { resultResponder(it) }
-                    } else if (status == JobStatus.FAILURE) {
-                        jobConfig.persistence.fetchFailure(uuid)
-                            .orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@post }
-                            .let { call.respond(InternalServerError, "Computation failed with message: $it") }
-                    } else {
-                        if (LocalDateTime.now() > timeout) {
-                            call.respondText(
-                                "The job did not finish within the timeout of ${syncMockConfig.maxWaitingTime}. " +
-                                        "You may be able to retrieve the result later via the asynchronous API using the job id $uuid.", status = BadRequest
-                            )
-                        } else {
-                            call.respondText("Job finished in an unexpected status $status", status = InternalServerError)
-                        }
-                    }
-                }
-            }
-
-            if (jobInfoConfig.enabled) {
-                get("${jobInfoConfig.path}/{uuid}") {
-                    parseUuid()?.let { uuid ->
-                        val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@get
-                        with(jobInfoConfig) { this@get.responder(job) }
+                        jobConfig.persistence.transaction { deleteForUuid(uuid.toString(), mapOf(jobConfig.jobType to jobConfig.persistence)) }
+                            .onLeft { call.respond(InternalServerError, "Deletion of Job with ID $uuid failed with: $it") }
+                            .onRight { call.respond("Deleted") }
                     }
                 }
             }
         }
     }
+
+    if (enableCancellation) {
+        cancelRoute {
+            parseUuid()?.let { uuid ->
+                val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@cancelRoute
+                call.respond(cancelJob(job, jobConfig.persistence))
+            }
+        }
+    }
+
+    if (syncMockConfig.enabled) {
+        syncRoute {
+            val uuid = validateAndSubmit(apiConfig, jobConfig.copy(priorityProvider = syncMockConfig.priorityProvider), inputReceiver()) ?: return@syncRoute
+            apiLog.trace("Submitted job for synchronous computation, got ID $uuid")
+            var status: JobStatus
+            val timeout = LocalDateTime.now().plus(syncMockConfig.maxWaitingTime.inWholeMilliseconds, ChronoUnit.MILLIS)
+            do {
+                delay(syncMockConfig.checkInterval)
+                status = jobConfig.persistence.fetchJob(uuid).orQuitWith {
+                    call.respondText("Synchronous computation failed during job access: ${it.message}", status = InternalServerError)
+                    return@syncRoute
+                }.status
+                apiLog.trace("Synchronous job with ID {} is in status {}", uuid, status)
+            } while (status in setOf(JobStatus.CREATED, JobStatus.RUNNING) && LocalDateTime.now() < timeout)
+            if (status == JobStatus.SUCCESS) {
+                jobConfig.persistence.fetchResult(uuid)
+                    .orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@syncRoute }
+                    .let { resultResponder(it) }
+            } else if (status == JobStatus.FAILURE) {
+                jobConfig.persistence.fetchFailure(uuid)
+                    .orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@syncRoute }
+                    .let { call.respond(InternalServerError, "Computation failed with message: $it") }
+            } else {
+                if (LocalDateTime.now() > timeout) {
+                    call.respondText(
+                        "The job did not finish within the timeout of ${syncMockConfig.maxWaitingTime}. " +
+                                "You may be able to retrieve the result later via the asynchronous API using the job id $uuid.", status = BadRequest
+                    )
+                } else {
+                    call.respondText("Job finished in an unexpected status $status", status = InternalServerError)
+                }
+            }
+        }
+    }
+
+    if (jobInfoConfig.enabled) {
+        infoRoute {
+            parseUuid()?.let { uuid ->
+                val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@infoRoute
+                with(jobInfoConfig) { this@infoRoute.responder(job) }
+            }
+        }
+    }
+}
 
 internal suspend inline fun cancelJob(job: Job, persistence: JobPersistence): String = when (job.status) {
     // TODO: what about the risk of the job status being overridden?
@@ -233,12 +228,19 @@ internal suspend inline fun cancelJob(job: Job, persistence: JobPersistence): St
 internal class ApiConfig<INPUT, RESULT>(
     val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
     val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
-    val basePath: String?,
     val inputValidation: (INPUT) -> List<String>,
     val enableDeletion: Boolean,
     val enableCancellation: Boolean,
     val syncMockConfig: SynchronousResourceConfig<INPUT>,
     val jobInfoConfig: JobInfoConfig,
+    val submitRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
+    val statusRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
+    val resultRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
+    val failureRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
+    val deleteRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
+    val cancelRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
+    val syncRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
+    val infoRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
 )
 
 internal data class JobConfig<INPUT, RESULT>(
@@ -252,7 +254,6 @@ internal data class JobConfig<INPUT, RESULT>(
 
 internal class SynchronousResourceConfig<INPUT>(
     val enabled: Boolean,
-    val path: String,
     val checkInterval: Duration,
     val maxWaitingTime: Duration,
     val priorityProvider: (INPUT) -> Int,
@@ -260,7 +261,6 @@ internal class SynchronousResourceConfig<INPUT>(
 
 internal class JobInfoConfig(
     var enabled: Boolean = false,
-    var path: String = "info",
     var responder: suspend PipelineContext<Unit, ApplicationCall>.(Job) -> Unit = { call.respond(it) }
 )
 

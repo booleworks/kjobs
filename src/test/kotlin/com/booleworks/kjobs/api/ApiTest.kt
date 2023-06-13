@@ -28,6 +28,8 @@ import io.ktor.http.contentType
 import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import kotlinx.coroutines.delay
 import java.util.*
@@ -102,9 +104,92 @@ class ApiTest : FunSpec({
         client.delete("test/delete/$uuid1").status shouldBeEqual HttpStatusCode.OK
         client.delete("test2/delete/$uuid2").status shouldBeEqual HttpStatusCode.OK
     }
+
+    testJobFrameworkWithRedis("test API calls with reconfigured resources") {
+        val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        routing {
+            JobFramework(defaultInstanceName, persistence) {
+                maintenanceConfig { jobCheckInterval = 20.milliseconds }
+                cancellationConfig { enabled = true }
+                route("test") {
+                    addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                        synchronousResourceConfig { enabled = true }
+                        infoConfig { enabled = true }
+                        apiConfig {
+                            enableDeletion = true
+                            submitRoute = { block -> post("sub") { block() } }
+                            statusRoute = { block -> get("stat/{uuid}") { block() } }
+                            resultRoute = { block -> get("res/{uuid}") { block() } }
+                            failureRoute = { block -> get("fail/{uuid}") { block() } }
+                            deleteRoute = { block -> get("del/{uuid}") { block() } }
+                            cancelRoute = { block -> post("cancellation/{uuid}") { block() } }
+                            syncRoute = { block -> post("sync") { block() } }
+                            infoRoute = { block -> post("info/{uuid}") { block() } }
+                        }
+                    }
+                }
+            }
+        }
+
+        val uuid = client.post("test/sub") { contentType(ContentType.Application.Json); setBody(TestInput().ser()) }
+            .shouldHaveStatus(HttpStatusCode.OK).bodyAsText().shouldNotBeNull()
+        delay(100.milliseconds)
+        client.get("test/stat/$uuid").shouldHaveStatus(HttpStatusCode.OK)
+        client.get("test/res/$uuid").shouldHaveStatus(HttpStatusCode.OK)
+        client.post("test/cancellation/$uuid").shouldHaveStatus(HttpStatusCode.OK)
+        client.post("test/info/$uuid").shouldHaveStatus(HttpStatusCode.OK)
+        client.get("test/del/$uuid").shouldHaveStatus(HttpStatusCode.OK)
+
+        val uuidFail = client.post("test/sub") { contentType(ContentType.Application.Json); setBody(TestInput(throwException = true).ser()) }
+            .shouldHaveStatus(HttpStatusCode.OK).bodyAsText().shouldNotBeNull()
+        client.post("test/sync") { contentType(ContentType.Application.Json); setBody(TestInput().ser()) }.shouldHaveStatus(HttpStatusCode.OK).bodyAsText()
+            .shouldNotBeNull()
+        client.get("test/fail/$uuidFail").shouldHaveStatus(HttpStatusCode.OK)
+
+        client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(throwException = true).ser()) }
+            .shouldHaveStatus(HttpStatusCode.NotFound)
+        client.get("test/status/$uuid").shouldHaveStatus(HttpStatusCode.NotFound)
+        client.get("test/result/$uuid").shouldHaveStatus(HttpStatusCode.NotFound)
+        client.get("test/failure/$uuid").shouldHaveStatus(HttpStatusCode.NotFound)
+        client.post("test/cancel/$uuid").shouldHaveStatus(HttpStatusCode.NotFound)
+        client.delete("test/delete/$uuid").shouldHaveStatus(HttpStatusCode.NotFound)
+        client.get("test/info/$uuid").shouldHaveStatus(HttpStatusCode.NotFound)
+        client.post("test/synchronous") { contentType(ContentType.Application.Json); setBody(TestInput(throwException = true).ser()) }
+            .shouldHaveStatus(HttpStatusCode.NotFound)
+    }
+
+    testJobFrameworkWithRedis("test input validation") {
+        val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        routing {
+            JobFramework(defaultInstanceName, persistence) {
+                maintenanceConfig { jobCheckInterval = 20.milliseconds }
+                route("test") {
+                    addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                        synchronousResourceConfig { enabled = true }
+                        apiConfig {
+                            inputValidation = { if (it.value >= 0) emptyList() else listOf("Value must not be negative", "Some second message") }
+                        }
+                    }
+                }
+            }
+        }
+        client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(-1).ser()) }
+            .shouldHaveStatus(HttpStatusCode.BadRequest).bodyAsText() shouldBeEqual "Value must not be negative, Some second message"
+        client.post("test/synchronous") { contentType(ContentType.Application.Json); setBody(TestInput(-1).ser()) }
+            .shouldHaveStatus(HttpStatusCode.BadRequest).bodyAsText() shouldBeEqual "Value must not be negative, Some second message"
+        val uuid = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(0).ser()) }
+            .shouldHaveStatus(HttpStatusCode.OK).bodyAsText().shouldNotBeNull()
+        client.post("test/synchronous") { contentType(ContentType.Application.Json); setBody(TestInput(0).ser()) }
+            .shouldHaveStatus(HttpStatusCode.OK).bodyAsText() shouldBeEqual "{\n  \"inputValue\" : 0\n}"
+        client.get("test/result/$uuid").shouldHaveStatus(HttpStatusCode.OK).bodyAsText() shouldBeEqual "{\n  \"inputValue\" : 0\n}"
+    }
 })
 
 suspend fun HttpResponse.shouldBeWrongJobTypeBadRequest() {
     this.status shouldBeEqual HttpStatusCode.BadRequest
     this.bodyAsText() shouldBeEqual "Illegal job type. A job with the given uuid was found, but it was created from a different resource."
+}
+
+fun HttpResponse.shouldHaveStatus(code: HttpStatusCode) = this.also {
+    this.status shouldBeEqual code
 }

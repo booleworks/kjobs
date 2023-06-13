@@ -76,6 +76,16 @@ val DefaultJobPrioritizer: JobPrioritizer = JobPrioritizer { jobs -> jobs.minWit
 
 /**
  * A tag matcher specifies whether an instance can compute jobs with the given list of tags.
+ *
+ * There are already predefined implementations:
+ * - [TagMatcher.Any]
+ * - [TagMatcher.OneOf]
+ * - [TagMatcher.AllOf]
+ * - [TagMatcher.Exactly]
+ *
+ * However, you are free to create your own tag matcher which just needs to implement the [matches]
+ * method. Not that you are actually not limited to use the tags, but you can also use other attributes
+ * of Job.
  */
 fun interface TagMatcher {
 

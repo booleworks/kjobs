@@ -69,7 +69,7 @@ class JobInfoTest : FunSpec({
         }
     }
 
-    test("test with custom path and text") {
+    test("test with custom text") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         testApplication {
@@ -87,7 +87,6 @@ class JobInfoTest : FunSpec({
                         ) {
                             infoConfig {
                                 enabled = true
-                                path = "information"
                                 responder = { call.respond("Information about UUID ${it.uuid}") }
                             }
                         }
@@ -95,8 +94,7 @@ class JobInfoTest : FunSpec({
                 }
             }
             val uuid = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput().ser()) }.bodyAsText()
-            client.get("test/info/$uuid").status shouldBeEqual HttpStatusCode.NotFound
-            val infoResponse = client.get("test/information/$uuid")
+            val infoResponse = client.get("test/info/$uuid")
             infoResponse.status shouldBeEqual HttpStatusCode.OK
             infoResponse.bodyAsText() shouldBeEqual "Information about UUID $uuid"
         }
