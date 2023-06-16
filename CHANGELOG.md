@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0-RC5] - 2023-06-xx
+## [1.0.0-RC5] - 2023-06-16
 
 ### Added
 - New configuration properties to customize the configuration of routes. This can be used to simply changing the path of a resource, but also to use different route creation commands which can be required e.g. to generate OpenAPI definitions. The respective properties are defined on `ApiConfigBuilder` and are initialized with the current default behavior. The following properties were added:
@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SynchronousResourceConfigBuilder.path` was removed -- use `ApiConfigBuilder.syncRoute` instead (`syncRoute = { block -> post("path") { block() } }`)
 - `JobInfoConfigBuilder.path` was removed -- use `ApiConfigBuilder.jobInfoRoute` instead (`jobInfoRoute = { block -> get("jobInfo") { block() } }`)
 
+### Changed
+- Minor dependency updates
 
 ## [1.0.0-RC4] - 2023-06-07
 
