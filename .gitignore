@@ -1,0 +1,13 @@
+# OS X
+.DS_Store
+
+# IntelliJ IDEA files
+.idea/
+.idea_modules/
+*.iml
+
+# vim swap files
+*.swp
+
+# build files
+target/

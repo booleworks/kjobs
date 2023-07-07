@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.booleworks</groupId>
+  <artifactId>kjobs</artifactId>
+  <version>1.0.0-RC6-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>Kotlin Job Framework</name>
+  <description>A Job Framework for Asynchronous Webservices in Kotlin and Ktor</description>
+  <url>https://github.com/booleworks/kjobs</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/license/mit</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>BooleWorks</id>
+      <name>BooleWorks Team</name>
+      <organization>BooleWorks GmbH</organization>
+      <organizationUrl>https://www.booleworks.com</organizationUrl>
+      <email>info@booleworks.com</email>
+    </developer>
+  </developers>
+
+  <scm>
+    <url>https://github.com/booleworks/kjobs.git</url>
+  </scm>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <kotlin.code.style>official</kotlin.code.style>
+    <kotlin.compiler.jvmTarget>11</kotlin.compiler.jvmTarget>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+
+    <version.kotlin>1.9.0</version.kotlin>
+    <version.ktor>2.3.2</version.ktor>
+    <version.slf4j>1.7.36</version.slf4j>
+    <version.redis>4.4.3</version.redis>
+
+    <version.kotest>5.6.1</version.kotest>
+    <version.mockk>1.13.5</version.mockk>
+    <version.jedis-mock>1.0.9</version.jedis-mock>
+    <version.jackson>2.15.2</version.jackson>
+    <version.logback>1.2.12</version.logback>
+
+    <version.maven-compiler>3.11.0</version.maven-compiler>
+    <version.maven-resources>3.3.1</version.maven-resources>
+    <version.maven-surefire-plugin>3.1.2</version.maven-surefire-plugin>
+    <version.maven-source>3.3.0</version.maven-source>
+    <version.jacoco>0.8.10</version.jacoco>
+    <version.dokka>1.8.20</version.dokka>
+    <version.detekt>1.22.0</version.detekt>
+    <version.maven-gpg>1.6</version.maven-gpg>
+    <version.nexus-staging>1.6.13</version.nexus-staging>
+  </properties>
+
+  <build>
+    <sourceDirectory>src/main/kotlin</sourceDirectory>
+    <testSourceDirectory>src/test/kotlin</testSourceDirectory>
+
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <includes>
+          <include>com/booleworks/kjobs/version.txt</include>
+        </includes>
+        <filtering>true</filtering>
+      </resource>
+    </resources>
+
+    <plugins>
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <version>${version.kotlin}</version>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>test-compile</id>
+            <phase>test-compile</phase>
+            <goals>
+              <goal>test-compile</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <jvmTarget>11</jvmTarget>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${version.maven-compiler}</version>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>${version.maven-resources}</version>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${version.maven-surefire-plugin}</version>
+      </plugin>
+
+      <!-- Compile jar with sources -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>${version.maven-source}</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- JaCoCo (Test Coverage)  -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${version.jacoco}</version>
+        <executions>
+          <execution>
+            <id>default-prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>default-report</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>default-check</id>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                </rule>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jetbrains.dokka</groupId>
+        <artifactId>dokka-maven-plugin</artifactId>
+        <version>${version.dokka}</version>
+        <executions>
+          <execution>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>dokka</goal>
+              <goal>javadocJar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>com.github.ozsie</groupId>
+        <artifactId>detekt-maven-plugin</artifactId>
+        <version>${version.detekt}</version>
+        <executions>
+          <execution>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <config>detekt.yml</config>
+          <excludes>**/test/**;**/generated/**gg</excludes>
+          <report>
+            <report>txt:target/detekt/detekt.txt</report>
+            <report>html:target/detekt/detekt.html</report>
+          </report>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <!-- Kotlin -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-stdlib</artifactId>
+      <version>${version.kotlin}</version>
+    </dependency>
+
+    <!-- KTOR -->
+    <dependency>
+      <groupId>io.ktor</groupId>
+      <artifactId>ktor-server-core-jvm</artifactId>
+      <version>${version.ktor}</version>
+    </dependency>
+
+    <!-- Logging -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${version.slf4j}</version>
+    </dependency>
+
+    <!-- Redis -->
+    <dependency>
+      <groupId>redis.clients</groupId>
+      <artifactId>jedis</artifactId>
+      <version>${version.redis}</version>
+    </dependency>
+
+    <!-- Testing Framework -->
+    <dependency>
+      <groupId>io.kotest</groupId>
+      <artifactId>kotest-runner-junit5-jvm</artifactId>
+      <version>${version.kotest}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Ktor and Jackson Test Dependencies-->
+    <dependency>
+      <groupId>io.ktor</groupId>
+      <artifactId>ktor-server-test-host-jvm</artifactId>
+      <version>${version.ktor}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.ktor</groupId>
+      <artifactId>ktor-client-mock-jvm</artifactId>
+      <version>${version.ktor}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.ktor</groupId>
+      <artifactId>ktor-server-content-negotiation-jvm</artifactId>
+      <version>${version.ktor}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.ktor</groupId>
+      <artifactId>ktor-serialization-jackson-jvm</artifactId>
+      <version>${version.ktor}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+      <version>${version.jackson}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <version>${version.logback}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Mocking -->
+    <dependency>
+      <groupId>io.mockk</groupId>
+      <artifactId>mockk-jvm</artifactId>
+      <version>${version.mockk}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.github.fppt</groupId>
+      <artifactId>jedis-mock</artifactId>
+      <version>${version.jedis-mock}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <!-- Deploy to Maven Central -->
+          <plugin>
+            <groupId>org.sonatype.plugins</groupId>
+            <artifactId>nexus-staging-maven-plugin</artifactId>
+            <version>${version.nexus-staging}</version>
+            <extensions>true</extensions>
+            <configuration>
+              <serverId>ossrh-s01</serverId>
+              <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
+              <autoReleaseAfterClose>false</autoReleaseAfterClose>
+            </configuration>
+          </plugin>
+
+          <!-- Sign components -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>${version.maven-gpg}</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>
