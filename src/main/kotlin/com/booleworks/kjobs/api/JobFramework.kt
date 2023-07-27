@@ -7,22 +7,23 @@ import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApi
 import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApiImpl
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
-import com.booleworks.kjobs.control.ApiConfig
 import com.booleworks.kjobs.control.ComputationResult
-import com.booleworks.kjobs.control.JobConfig
-import com.booleworks.kjobs.control.JobInfoConfig
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
 import com.booleworks.kjobs.control.SpecificExecutor
-import com.booleworks.kjobs.control.SynchronousResourceConfig
 import com.booleworks.kjobs.control.scheduleForever
 import com.booleworks.kjobs.control.setupJobApi
+import com.booleworks.kjobs.data.ApiConfig
 import com.booleworks.kjobs.data.DefaultExecutionCapacityProvider
 import com.booleworks.kjobs.data.DefaultJobPrioritizer
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobConfig
+import com.booleworks.kjobs.data.JobInfoConfig
 import com.booleworks.kjobs.data.JobPrioritizer
+import com.booleworks.kjobs.data.JobStatistics
 import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.SynchronousResourceConfig
 import com.booleworks.kjobs.data.TagMatcher
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -39,6 +40,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
@@ -80,6 +82,7 @@ class JobFrameworkBuilder internal constructor(
     private val executorConfig: ExecutorConfig = ExecutorConfig()
     private val maintenanceConfig: MaintenanceConfig = MaintenanceConfig()
     private val cancellationConfig: CancellationConfig = CancellationConfig()
+    private val statisticsConfig: StatisticsConfig = StatisticsConfig(jobPersistence)
     private val apis: MutableMap<String, ApiBuilder<*, *>> = mutableMapOf()
     private val jobs: MutableMap<String, JobBuilder<*, *>> = mutableMapOf()
     private val executorsPerType: MutableMap<String, SpecificExecutor<*, *>> = mutableMapOf()
@@ -213,9 +216,22 @@ class JobFrameworkBuilder internal constructor(
     fun maintenanceConfig(configuration: MaintenanceConfig.() -> Unit) = configuration(maintenanceConfig)
 
     /**
-     * Provides configuration options for the cancellation of jobs.
+     * Enables the cancellation of jobs.
      */
-    fun cancellationConfig(configuration: CancellationConfig.() -> Unit) = configuration(cancellationConfig)
+    fun enableCancellation(configuration: CancellationConfig.() -> Unit) {
+        cancellationConfig.enabled = true
+        configuration(cancellationConfig)
+    }
+
+    /**
+     * Enables the global statistics resource.
+     * @param basePath the path on which the statistics resource is enabled
+     */
+    fun enableStatistics(basePath: Route, configuration: StatisticsConfig.() -> Unit) {
+        statisticsConfig.enabled = true
+        statisticsConfig.basePath = basePath
+        configuration(statisticsConfig)
+    }
 
     /**
      * Further configuration options for the executor
@@ -267,22 +283,50 @@ class JobFrameworkBuilder internal constructor(
      * [checkInterval] is needed to update the set of jobs in status [JobStatus.CANCEL_REQUESTED] from the database. These are jobs which are
      * already running and will try to be aborted by cancelling their [coroutine job][kotlinx.coroutines.Job].
      *
-     * @param enabled whether cancellation is enabled or not. This will enable the resource `POST cancel/{uuid}`. Default is `false`.
      * @param checkInterval the interval with which the instance should check for cancelled jobs. Default is 1 second. This value can be set much
      * higher depending on your needs (i.e. how urgent it is to abort a cancelled job which is still running).
      */
     @KJobsDsl
     class CancellationConfig internal constructor(
-        var enabled: Boolean = false,
+        internal var enabled: Boolean = false,
         var checkInterval: Duration = 1.seconds,
     )
 
-    fun build(): kotlinx.coroutines.Job? {
+    /**
+     * Configuration options for a global statistics resource.
+     *
+     * This resource is intended to provide general information about the jobs which are currently stored in the database.
+     *
+     * [statisticsGenerator] is a function providing the statistics object. You can let it create your own arbitrary object or use one of the provided functions
+     * [JobStatistics.forAllJobs] (which is the default) or [JobStatistics.byType].
+     *
+     * [routeDefinition] allows to override the generated route (including its definition and what it returns). By default, a resource `GET /statistics`
+     * is generated which returns the result of the [statisticsGenerator].
+     */
+    @KJobsDsl
+    class StatisticsConfig internal constructor(persistence: JobPersistence) {
+        internal var enabled: Boolean = false
+        internal lateinit var basePath: Route
+
+        private var _statisticsGenerator: AtomicReference<suspend () -> Any> = AtomicReference { JobStatistics.forAllJobs(persistence) }
+        var statisticsGenerator: suspend () -> Any
+            get() = _statisticsGenerator.get()
+            set(value) = _statisticsGenerator.set(value)
+
+        var routeDefinition: Route.() -> Unit = { get("statistics") { call.respond(statisticsGenerator()) } }
+    }
+
+    internal fun build(): kotlinx.coroutines.Job? {
         if (maintenanceConfig.restartRunningJobsOnStartup) runBlocking {
             Maintenance.resetMyRunningJobs(jobPersistence, myInstanceName, persistencesPerType, restartsPerType)
         }
         apis.values.forEach { it.build(cancellationConfig.enabled) }
-        if (maintenanceEnabled) {
+        if (statisticsConfig.enabled) {
+            with(statisticsConfig) {
+                basePath.routeDefinition()
+            }
+        }
+        return if (maintenanceEnabled) {
             val supervisor = SupervisorJob()
             val executor = generateJobExecutor()
             val dispatcher = Executors.newFixedThreadPool(maintenanceConfig.threadPoolSize).asCoroutineDispatcher() + supervisor
@@ -298,8 +342,7 @@ class JobFrameworkBuilder internal constructor(
                 dispatcher.scheduleForever(cancellationConfig.checkInterval, Dispatchers.IO) { Maintenance.checkForCancellations(jobPersistence) }
             }
             return supervisor
-        }
-        return null
+        } else null
     }
 
     @Suppress("UNCHECKED_CAST")

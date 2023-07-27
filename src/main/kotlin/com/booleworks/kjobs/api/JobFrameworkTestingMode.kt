@@ -6,13 +6,13 @@ package com.booleworks.kjobs.api
 import com.booleworks.kjobs.api.JobFrameworkBuilder.MaintenanceConfig
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
-import com.booleworks.kjobs.control.JobConfig
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
 import com.booleworks.kjobs.control.SpecificExecutor
 import com.booleworks.kjobs.control.submit
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobConfig
 import com.booleworks.kjobs.data.JobPrioritizer
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher

@@ -42,8 +42,7 @@ class CancellationTest : FunSpec({
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 100_000) },
                             { call.respond(it.inputValue) }, defaultComputation
                         )
-                        cancellationConfig {
-                            enabled = true
+                        enableCancellation {
                             checkInterval = 5.milliseconds
                         }
                         maintenanceConfig {
@@ -79,8 +78,7 @@ class CancellationTest : FunSpec({
                             { call.respond(it.inputValue) },
                             { _, input -> Thread.sleep(input.expectedDelay.toLong()); ComputationResult.Success(TestResult(input.value)) }
                         )
-                        cancellationConfig {
-                            enabled = true
+                        enableCancellation {
                             checkInterval = 5.milliseconds
                         }
                         maintenanceConfig {

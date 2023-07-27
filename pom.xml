@@ -199,7 +199,7 @@
         </executions>
         <configuration>
           <config>detekt.yml</config>
-          <excludes>**/test/**;**/generated/**gg</excludes>
+          <excludes>**/test/**</excludes>
           <report>
             <report>txt:target/detekt/detekt.txt</report>
             <report>html:target/detekt/detekt.html</report>
@@ -256,6 +256,12 @@
     <dependency>
       <groupId>io.ktor</groupId>
       <artifactId>ktor-client-mock-jvm</artifactId>
+      <version>${version.ktor}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.ktor</groupId>
+      <artifactId>ktor-client-content-negotiation-jvm</artifactId>
       <version>${version.ktor}</version>
       <scope>test</scope>
     </dependency>

@@ -6,7 +6,9 @@ package com.booleworks.kjobs.control
 import com.booleworks.kjobs.api.JobFrameworkBuilder
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
+import com.booleworks.kjobs.data.ApiConfig
 import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobConfig
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.PersistenceAccessResult
@@ -26,7 +28,6 @@ import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import java.util.*
-import kotlin.time.Duration
 
 private val apiLog = LoggerFactory.getLogger("ApiLog")
 
@@ -224,45 +225,6 @@ internal suspend inline fun cancelJob(job: Job, persistence: JobPersistence): St
         "Job with id ${job.uuid} has already finished with status ${job.status}"
     }
 }
-
-internal class ApiConfig<INPUT, RESULT>(
-    val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
-    val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
-    val inputValidation: (INPUT) -> List<String>,
-    val enableDeletion: Boolean,
-    val enableCancellation: Boolean,
-    val syncMockConfig: SynchronousResourceConfig<INPUT>,
-    val jobInfoConfig: JobInfoConfig,
-    val submitRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val statusRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val resultRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val failureRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val deleteRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val cancelRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val syncRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val infoRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-)
-
-internal data class JobConfig<INPUT, RESULT>(
-    val jobType: String,
-    val persistence: DataPersistence<INPUT, RESULT>,
-    val myInstanceName: String,
-    val tagProvider: (INPUT) -> List<String>,
-    val customInfoProvider: (INPUT) -> String?,
-    val priorityProvider: (INPUT) -> Int,
-)
-
-internal class SynchronousResourceConfig<INPUT>(
-    val enabled: Boolean,
-    val checkInterval: Duration,
-    val maxWaitingTime: Duration,
-    val priorityProvider: (INPUT) -> Int,
-)
-
-internal class JobInfoConfig(
-    var enabled: Boolean = false,
-    var responder: suspend PipelineContext<Unit, ApplicationCall>.(Job) -> Unit = { call.respond(it) }
-)
 
 internal suspend inline fun <INPUT> submit(
     input: INPUT,

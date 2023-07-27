@@ -7,10 +7,10 @@ import com.booleworks.kjobs.api.JobFrameworkBuilder
 import com.booleworks.kjobs.common.getOrElse
 import com.booleworks.kjobs.common.unwrapOrReturnFirstError
 import com.booleworks.kjobs.control.ComputationResult
-import com.booleworks.kjobs.control.JobConfig
 import com.booleworks.kjobs.control.cancelJob
 import com.booleworks.kjobs.control.submit
 import com.booleworks.kjobs.data.Job
+import com.booleworks.kjobs.data.JobConfig
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.mapResult

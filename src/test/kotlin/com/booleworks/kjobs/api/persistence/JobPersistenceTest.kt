@@ -212,12 +212,13 @@ internal fun newJob(
     uuid: String,
     jobType: String = defaultJobType,
     status: JobStatus = JobStatus.CREATED,
+    createdAt: LocalDateTime = LocalDateTime.of(2022, 7, 22, 0, 0),
     startedAt: LocalDateTime? = null,
     executingInstance: String? = null,
     finishedAt: LocalDateTime? = null,
-    timeout: LocalDateTime? = null, numRestarts: Int = 0
+    timeout: LocalDateTime? = null,
+    numRestarts: Int = 0
 ) =
     Job(
-        uuid, jobType, listOf("T1", "T2"), "Test $uuid", 5, "ME",
-        LocalDateTime.of(2022, 7, 22, 0, 0), status, startedAt, executingInstance, finishedAt, timeout, numRestarts
+        uuid, jobType, listOf("T1", "T2"), "Test $uuid", 5, "ME", createdAt, status, startedAt, executingInstance, finishedAt, timeout, numRestarts
     )

@@ -30,6 +30,8 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> =
         PersistenceAccessResult.success.also { block(this) }
 
+    override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = PersistenceAccessResult.result(jobs.values.toList())
+    
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
         jobs[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.uuidNotFound(uuid)
 

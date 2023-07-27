@@ -30,6 +30,11 @@ interface JobPersistence {
     suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit>
 
     /**
+     * Fetches all jobs.
+     */
+    suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>>
+
+    /**
      * Fetches the job with the given uuid.
      */
     suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job>

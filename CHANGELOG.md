@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `JobFramework()` method now returns a coroutine job which can be used to terminate all maintenance jobs
+- A new statistics resource which can be enabled in a `JobFrameworkBuilder` via `enableStatistics`. By default (if enabled), it creates a resource `GET statistics` which returns a `JobStatistics` object in JSON format.
+- A new method `JobPersistence.fetchAllJobs` which must be implemented by the user of the library (unless the `RedisJobPersistence` is used where it is already implemented).
+
+### Changed
+- Renamed `cancellationConfig` to `enableCancellation`. Setting `enabled = true` is not necessary/possible anymore.
+- Updated to Kotlin 1.9.0
+- Some minor internal refactoring
 
 
 ## [1.0.0-RC5] - 2023-06-16

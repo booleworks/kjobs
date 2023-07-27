@@ -51,6 +51,8 @@ open class RedisJobPersistence(
         PersistenceAccessResult.success
     }
 
+    override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = getAllJobsBy { _, _ -> true }
+
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
         pool.resource.use { it.hgetAll(config.jobKey(uuid)) }
             .ifEmpty { return@fetchJob PersistenceAccessResult.uuidNotFound(uuid) }
@@ -89,9 +91,10 @@ open class RedisJobPersistence(
 
     private fun getAllJobsBy(condition: (Jedis, String) -> Boolean): PersistenceAccessResult<List<Job>> {
         return pool.resource.use { jedis ->
-            jedis.keys(config.jobPattern)
+            jedis.keys(config.jobPattern).asSequence()
                 .filter { condition(jedis, it) }
                 .map { jedis.hgetAll(it).redisMapToJob(config.extractUuid(it)) }
+                .toList()
         }.unwrapOrReturnFirstError { return@getAllJobsBy it }
     }
 }

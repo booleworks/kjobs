@@ -63,7 +63,7 @@ class ApiTest : FunSpec({
         routing {
             JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 50.milliseconds }
-                cancellationConfig { enabled = true }
+                enableCancellation {}
                 route("test") {
                     addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
                         apiConfig { enableDeletion = true }
@@ -110,7 +110,7 @@ class ApiTest : FunSpec({
         routing {
             JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 20.milliseconds }
-                cancellationConfig { enabled = true }
+                enableCancellation { }
                 route("test") {
                     addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
                         synchronousResourceConfig { enabled = true }
