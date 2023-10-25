@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed `cancellationConfig` to `enableCancellation`. Setting `enabled = true` is not necessary/possible anymore.
 - `DataPersistence.dataTransaction` now takes a type parameter `T` s.t. the result of the `block` can be returned
 - Additional safety net in case of database connection problems (KJobs will repeatedly try to set the job to `FAILURE` to avoid that the job remains in state `RUNNING` although it failed because of the database problems)
-- Updated to Kotlin 1.9.10 and some other minor dependency updates
+- Updated to Kotlin 1.9.10, Redis to 5.0.2, and some other minor dependency updates
 - Some minor internal refactoring
 
 

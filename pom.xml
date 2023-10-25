@@ -43,7 +43,7 @@
     <version.kotlin>1.9.10</version.kotlin>
     <version.ktor>2.3.5</version.ktor>
     <version.slf4j>1.7.36</version.slf4j>
-    <version.redis>4.4.3</version.redis>
+    <version.redis>5.0.2</version.redis>
 
     <version.kotest>5.7.2</version.kotest>
     <version.mockk>1.13.8</version.mockk>
