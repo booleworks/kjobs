@@ -5,16 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0-RC6] - 2023-xx-yy
+## [1.0.0-RC6] - 2023-10-25
 
 ### Added
 - `JobFramework()` method now returns a coroutine job which can be used to terminate all maintenance jobs
 - A new statistics resource which can be enabled in a `JobFrameworkBuilder` via `enableStatistics`. By default (if enabled), it creates a resource `GET statistics` which returns a `JobStatistics` object in JSON format.
 - A new method `JobPersistence.fetchAllJobs` which must be implemented by the user of the library (unless the `RedisJobPersistence` is used where it is already implemented).
+- The heartbeat now also checks if the executor job is still running regularly. If it is not, the heartbeat will not be updated anymore, s.t. the instance may be considered dead.
 
 ### Changed
 - Renamed `cancellationConfig` to `enableCancellation`. Setting `enabled = true` is not necessary/possible anymore.
-- Updated to Kotlin 1.9.0
+- `DataPersistence.dataTransaction` now takes a type parameter `T` s.t. the result of the `block` can be returned
+- Additional safety net in case of database connection problems (KJobs will repeatedly try to set the job to `FAILURE` to avoid that the job remains in state `RUNNING` although it failed because of the database problems)
+- Updated to Kotlin 1.9.10 and some other minor dependency updates
 - Some minor internal refactoring
 
 

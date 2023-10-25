@@ -69,7 +69,7 @@ inline fun <R> PersistenceAccessResult<R>.ifError(block: (PersistenceAccessError
 /**
  * Maps the result using the given mapping function.
  */
-fun <R, T> PersistenceAccessResult<R>.mapResult(mapper: (R) -> T): PersistenceAccessResult<T> = this.mapRight(mapper)
+inline fun <R, T> PersistenceAccessResult<R>.mapResult(mapper: (R) -> T): PersistenceAccessResult<T> = this.mapRight(mapper)
 
 /**
  * Whether this persistence access was successful.

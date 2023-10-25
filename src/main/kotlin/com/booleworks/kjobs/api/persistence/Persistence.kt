@@ -122,8 +122,10 @@ interface JobTransactionalPersistence {
 interface DataPersistence<INPUT, RESULT> : JobPersistence {
     /**
      * Opens a new transaction to allow write operations.
+     *
+     * The type parameter `T` will usually be `Unit` but the transaction may also return a value.
      */
-    suspend fun dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> Unit): PersistenceAccessResult<Unit>
+    suspend fun <T> dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> T): PersistenceAccessResult<T>
 
     /**
      * Fetches the job input with the given uuid.

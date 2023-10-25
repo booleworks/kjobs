@@ -39,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
+import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
@@ -330,8 +331,9 @@ class JobFrameworkBuilder internal constructor(
             val supervisor = SupervisorJob()
             val executor = generateJobExecutor()
             val dispatcher = Executors.newFixedThreadPool(maintenanceConfig.threadPoolSize).asCoroutineDispatcher() + supervisor
-            dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, executorConfig.dispatcher) { executor.execute() }
-            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, Dispatchers.IO) { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
+            val executorHeartbeat = AtomicReference(Instant.now())
+            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, Dispatchers.IO) { Maintenance.updateHeartbeat(jobPersistence, myInstanceName, executorHeartbeat to maintenanceConfig.jobCheckInterval) }
+            dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, executorConfig.dispatcher) { executor.execute(executorHeartbeat) }
             dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, Dispatchers.IO) {
                 Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, restartsPerType)
             }

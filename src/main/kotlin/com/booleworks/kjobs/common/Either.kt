@@ -6,6 +6,7 @@ package com.booleworks.kjobs.common
 import com.booleworks.kjobs.common.Either.Left
 import com.booleworks.kjobs.common.Either.Right
 import com.booleworks.kjobs.data.PersistenceAccessResult
+import org.jetbrains.annotations.Contract
 
 /**
  * An implementation of Either, inspired by [Arrow](https://arrow-kt.io/).

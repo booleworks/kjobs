@@ -7,11 +7,13 @@ import com.booleworks.kjobs.api.JobFrameworkBuilder.CancellationConfig
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.DataTransactionalPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
+import com.booleworks.kjobs.common.getOrElse
 import com.booleworks.kjobs.data.ExecutionCapacity
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobPrioritizer
 import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher
 import com.booleworks.kjobs.data.ifError
@@ -26,10 +28,13 @@ import kotlinx.coroutines.time.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.time.Instant
 import java.time.LocalDateTime
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
 private val log: Logger = LoggerFactory.getLogger("JobExecutor")
@@ -57,8 +62,11 @@ class MainJobExecutor(
 ) {
     /**
      * The main execution routine of the job executor.
+     * The execution of this routine can be tracked by passing an [executorHeartbeat]
+     * which will be set to [Instant.now] at the beginning of the function.
      */
-    suspend fun execute() = coroutineScope {
+    suspend fun execute(executorHeartbeat: AtomicReference<Instant>?) = coroutineScope {
+        executorHeartbeat?.set(Instant.now())
         val myCapacity = getExecutionCapacity() ?: return@coroutineScope
         if (!myCapacity.mayTakeJobs) {
             log.trace("No capacity for further jobs.")
@@ -153,11 +161,12 @@ class SpecificExecutor<INPUT, RESULT>(
     internal fun CoroutineScope.launchComputationJob(job: Job) = launch(Dispatchers.Default) {
         val uuid = job.uuid
         val jobInput = persistence.fetchInput(uuid).orQuitWith {
-            log.error("Could not fetch job input for ID ${uuid}: $it")
+            abortComputationWithError(persistence, uuid, "Failed to fetch job input for ID ${uuid}: $it", "Failed to fetch job input: $it")
             return@launch
         }
         // Parsing input may take some time. Afterward, we check if anyone might have "stolen" the job (because of overlapping transactions)
         val executingInstance = persistence.fetchJob(uuid).orQuitWith {
+            abortComputationWithError(persistence, uuid, "Failed to fetch job: $it", "Failed to fetch job: $it")
             log.error("Failed to fetch job: $it")
             return@launch
         }.executingInstance
@@ -186,7 +195,15 @@ class SpecificExecutor<INPUT, RESULT>(
     private suspend inline fun writeResultToDb(id: String, computationResult: ComputationResult<RESULT>) {
         log.trace("Fetching job with ID $id to update its result")
         val job = persistence.fetchJob(id).orQuitWith {
-            log.warn("Job with ID $id was deleted from the database during the computation!")
+            when (it) {
+                is PersistenceAccessError.InternalError -> {
+                    abortComputationWithError(persistence, id, "Failed to fetch job with ID ${id}: $it", "Failed to fetch job: $it")
+                }
+
+                PersistenceAccessError.NotFound, is PersistenceAccessError.UuidNotFound -> {
+                    log.warn("Job with ID $id was deleted from the database during the computation!")
+                }
+            }
             return
         }
         if (job.executingInstance != myInstanceName) {
@@ -208,7 +225,7 @@ class SpecificExecutor<INPUT, RESULT>(
             }
 
             is ComputationResult.Success ->
-                updateResultOrFailure(job, computationResult, id, "failure") { persistOrUpdateResult(job, computationResult.result) }
+                updateResultOrFailure(job, computationResult, id, "result") { persistOrUpdateResult(job, computationResult.result) }
         }
     }
 
@@ -224,14 +241,49 @@ class SpecificExecutor<INPUT, RESULT>(
                 // Should we do nothing, reset it to CREATED, or set it to FAILURE?
                 // Currently, we decide to do nothing and just wait for the cleanup tasks to reset the job.
                 // Also, we explicitly log an error, since this situation is generally bad.
-                log.error("Failed to persist $type for ID $id: $it")
+                abortComputationWithError(persistence, id, "Failed to persist $type for ID $id: $it", "Failed to persist $type")
                 return@dataTransaction
             }
             updateJob(job).ifError {
-                log.error("Failed to update the job for ID $id after finishing the computation. The job will remain in an inconsistent state! $it")
+                abortComputationWithError(
+                    persistence, id,
+                    "Failed to update the job for ID $id after finishing the computation: $it",
+                    "Failed to update the job after finishing the computation"
+                )
             }
         }.ifError {
-            log.error("Failed to update the job for ID $id after finishing the computation. The job might remain in an inconsistent state! $it")
+            abortComputationWithError(
+                persistence, id,
+                "Failed to update the job for ID $id after finishing the computation: $it",
+                "Failed to update the job after finishing the computation"
+            )
         }
+    }
+
+    private suspend fun abortComputationWithError(persistence: DataPersistence<INPUT, RESULT>, uuid: String, logMessage: String, resultMessage: String) {
+        log.error(logMessage)
+        log.info("Trying to set job with ID $uuid to `FAILURE`")
+        for (i in 1..UPDATE_RETRIES_ON_PERSISTENCE_ERROR) {
+            val updateSuccess = persistence.dataTransaction {
+                persistence.fetchJob(uuid).map({ false }) { job ->
+                    updateJob(job.copy(status = JobStatus.FAILURE, finishedAt = LocalDateTime.now())).orQuitWith { log.error(it.message); return@map false }
+                    persistOrUpdateFailure(job, resultMessage).orQuitWith { log.error(it.message); return@map false }
+                    true
+                }
+            }.getOrElse { false }
+            if (!updateSuccess) {
+                if (i >= UPDATE_RETRIES_ON_PERSISTENCE_ERROR) {
+                    log.error("Update failed $UPDATE_RETRIES_ON_PERSISTENCE_ERROR times. Giving up. The application might remain in an inconsistent state.")
+                }
+                val waitPeriod = i * UPDATE_RETRIES_WAIT_PERIOD
+                log.error("Update failed, trying again in $waitPeriod seconds")
+                delay(waitPeriod.seconds)
+            }
+        }
+    }
+
+    companion object {
+        const val UPDATE_RETRIES_ON_PERSISTENCE_ERROR = 10
+        const val UPDATE_RETRIES_WAIT_PERIOD = 5
     }
 }

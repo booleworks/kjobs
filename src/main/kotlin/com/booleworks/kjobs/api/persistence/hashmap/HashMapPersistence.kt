@@ -7,6 +7,7 @@ import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.DataTransactionalPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.api.persistence.JobTransactionalPersistence
+import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
@@ -31,7 +32,7 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
         PersistenceAccessResult.success.also { block(this) }
 
     override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = PersistenceAccessResult.result(jobs.values.toList())
-    
+
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
         jobs[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.uuidNotFound(uuid)
 
@@ -85,8 +86,8 @@ class HashMapDataPersistence<INPUT, RESULT>(jobPersistence: HashMapJobPersistenc
     internal val results = ConcurrentHashMap<String, RESULT>()
     internal val failures = ConcurrentHashMap<String, String>()
 
-    override suspend fun dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> Unit): PersistenceAccessResult<Unit> =
-        PersistenceAccessResult.success.also { block(this) }
+    override suspend fun <T> dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> T): PersistenceAccessResult<T> =
+        Either.Right(block(this))
 
     override suspend fun fetchInput(uuid: String): PersistenceAccessResult<INPUT> =
         inputs[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.uuidNotFound(uuid)

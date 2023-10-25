@@ -69,7 +69,8 @@ class JobFrameworkTestingApi internal constructor(
         jobPrioritizer: JobPrioritizer = executorConfig.jobPrioritizer,
         tagMatcher: TagMatcher = executorConfig.tagMatcher
     ) = runBlocking(Dispatchers.Default) {
-        MainJobExecutor(jobPersistence, myInstanceName, executionCapacityProvider, jobPrioritizer, tagMatcher, cancellationConfig, executorsPerType).execute()
+        MainJobExecutor(jobPersistence, myInstanceName, executionCapacityProvider, jobPrioritizer, tagMatcher, cancellationConfig, executorsPerType)
+            .execute(null)
     }
 
     /**
@@ -93,7 +94,9 @@ class JobFrameworkTestingApi internal constructor(
      * Updates the heartbeat of the given [instance], the default is the instance provided in [JobFrameworkTestingMode].
      * @see Maintenance.updateHeartbeat
      */
-    fun updateHeartbeat(instance: String = myInstanceName) = runBlocking { Maintenance.updateHeartbeat(jobPersistence, instance) }
+    fun updateHeartbeat(instance: String = myInstanceName) = runBlocking {
+        Maintenance.updateHeartbeat(jobPersistence, instance, null)
+    }
 
     /**
      * Performs the cancellation check which updates the internal list of jobs to be cancelled.

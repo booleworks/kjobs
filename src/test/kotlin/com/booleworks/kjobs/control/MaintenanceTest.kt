@@ -41,7 +41,7 @@ class MaintenanceTest : FunSpec({
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
         }
 
-        val directCall = { instance: String -> suspend { Maintenance.updateHeartbeat(persistence, instance) } }
+        val directCall = { instance: String -> suspend { Maintenance.updateHeartbeat(persistence, instance, null) } }
         val testingCall = { instance: String -> suspend { testingMode.updateHeartbeat(instance) } }
 
         for (method in listOf(directCall, testingCall)) {
