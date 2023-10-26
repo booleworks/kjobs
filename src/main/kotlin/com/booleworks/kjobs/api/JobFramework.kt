@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 BooleWorks GmbH
 
+@file:Suppress("LateinitUsage") // this is an internal API and we (hopefully) know what we're doing
+
 package com.booleworks.kjobs.api
 
 import com.booleworks.kjobs.api.hierarchical.HierarchicalJobApi
@@ -332,7 +334,9 @@ class JobFrameworkBuilder internal constructor(
             val executor = generateJobExecutor()
             val dispatcher = Executors.newFixedThreadPool(maintenanceConfig.threadPoolSize).asCoroutineDispatcher() + supervisor
             val executorHeartbeat = AtomicReference(Instant.now())
-            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, Dispatchers.IO) { Maintenance.updateHeartbeat(jobPersistence, myInstanceName, executorHeartbeat to maintenanceConfig.jobCheckInterval) }
+            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, Dispatchers.IO) {
+                Maintenance.updateHeartbeat(jobPersistence, myInstanceName, executorHeartbeat to maintenanceConfig.jobCheckInterval)
+            }
             dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, executorConfig.dispatcher) { executor.execute(executorHeartbeat) }
             dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, Dispatchers.IO) {
                 Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, restartsPerType)
@@ -383,7 +387,6 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
     private val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
     private val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
 ) {
-    @Suppress("LateinitUsage") // this is an internal API and we (hopefully) know what we're doing
     internal lateinit var computation: suspend (Job, INPUT) -> ComputationResult<RESULT>
     private val apiConfig: ApiConfigBuilder<INPUT> = ApiConfigBuilder()
     internal val jobConfig: JobConfigBuilder<INPUT> = JobConfigBuilder()

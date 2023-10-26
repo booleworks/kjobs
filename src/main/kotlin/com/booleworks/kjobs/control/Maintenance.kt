@@ -27,6 +27,8 @@ import kotlin.time.toJavaDuration
  */
 private const val HEARTBEAT_TIMEOUT_FACTOR = 2.1
 
+private const val NR_OF_ALLOWED_MISSED_EXECUTOR_HEARTBEATS = 5
+
 /**
  * A collection of maintenance jobs.
  */
@@ -51,7 +53,8 @@ object Maintenance {
     ) {
         val lastExecutorHeartbeat = executorHeartbeat?.first?.get()
         if (lastExecutorHeartbeat != null
-            && Instant.now().toEpochMilli() - lastExecutorHeartbeat.toEpochMilli() > executorHeartbeat.second.inWholeMilliseconds * 5
+            && Instant.now().toEpochMilli() - lastExecutorHeartbeat.toEpochMilli() >
+            executorHeartbeat.second.inWholeMilliseconds * NR_OF_ALLOWED_MISSED_EXECUTOR_HEARTBEATS
         ) {
             logger.error("Last executor heartbeat was at ${lastExecutorHeartbeat.atZone(ZoneId.systemDefault())}. The executor might have stopped working!")
         } else {

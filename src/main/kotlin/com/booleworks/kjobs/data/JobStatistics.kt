@@ -4,6 +4,8 @@
 package com.booleworks.kjobs.data
 
 import com.booleworks.kjobs.api.persistence.JobPersistence
+import com.booleworks.kjobs.data.JobStatistics.Companion.byType
+import com.booleworks.kjobs.data.JobStatistics.Companion.forAllJobs
 import java.time.Duration
 
 /**
@@ -35,6 +37,7 @@ data class JobStatistics(
         suspend fun byType(persistence: JobPersistence): Map<String, JobStatistics> =
             persistence.fetchAllJobs().orQuitWith { error(it.message) }.groupBy { it.type }.mapValues { forJobs(it.value) }
 
+        @Suppress("MagicNumber")
         private fun forJobs(jobs: List<Job>): JobStatistics {
             val statusToJobs = jobs.groupBy { it.status }.withDefault { emptyList() }
             val created = statusToJobs.getValue(JobStatus.CREATED).count()
