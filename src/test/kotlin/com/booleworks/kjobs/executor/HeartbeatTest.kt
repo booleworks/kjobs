@@ -33,7 +33,7 @@ class HeartbeatTest : FunSpec({
         }
         transaction { persistJob(job) }
         coroutineScope {
-            coroutineContext.scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName, null) }
+            coroutineContext.scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
             coroutineContext.scheduleForever(5.milliseconds) {
                 Maintenance.restartJobsFromDeadInstances(
                     this@testWithRedis,
@@ -62,7 +62,7 @@ class HeartbeatTest : FunSpec({
         }
         transaction { persistJob(job) }
         coroutineScope {
-            val heartbeat = coroutineContext.scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName, null) }
+            val heartbeat = coroutineContext.scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
             coroutineContext.scheduleForever(5.milliseconds) {
                 Maintenance.restartJobsFromDeadInstances(
                     this@testWithRedis,
@@ -102,7 +102,7 @@ class HeartbeatTest : FunSpec({
         }
         transaction { persistJob(job) }
         coroutineScope {
-            val heartbeat = coroutineContext.scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName, null) }
+            val heartbeat = coroutineContext.scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
             coroutineContext.scheduleForever(5.milliseconds) {
                 Maintenance.restartJobsFromDeadInstances(
                     this@testWithRedis,
@@ -148,8 +148,8 @@ class HeartbeatTest : FunSpec({
         }
         transaction { persistJob(deadJob); persistJob(liveJob) }
         coroutineScope {
-            coroutineContext.scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Live instance", null) }
-            coroutineContext.scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Other instance", null) }
+            coroutineContext.scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Live instance") }
+            coroutineContext.scheduleForever(5.milliseconds) { Maintenance.updateHeartbeat(this@testWithRedis, "Other instance") }
             coroutineContext.scheduleForever(5.milliseconds) {
                 Maintenance.restartJobsFromDeadInstances(
                     this@testWithRedis,

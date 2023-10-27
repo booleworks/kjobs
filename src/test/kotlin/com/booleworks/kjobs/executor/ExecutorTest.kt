@@ -74,7 +74,7 @@ class ExecutorTest : FunSpec({
         val job = newJob()
         val input = TestInput(42)
         dataTransaction { persistJob(job); persistInput(job, input) }
-        defaultExecutor(this).execute(null)
+        defaultExecutor(this).execute()
         val jobAfterComputation = fetchJob(job.uuid).right()
         jobAfterComputation.uuid shouldBeEqual job.uuid
         jobAfterComputation.type shouldBeEqual "TestJob"
@@ -96,7 +96,7 @@ class ExecutorTest : FunSpec({
         val job = newJob()
         val input = TestInput(42, throwException = true)
         dataTransaction { persistJob(job); persistInput(job, input) }
-        defaultExecutor(this).execute(null)
+        defaultExecutor(this).execute()
         val jobAfterComputation = fetchJob(job.uuid).right()
         jobAfterComputation.uuid shouldBeEqual job.uuid
         jobAfterComputation.type shouldBeEqual "TestJob"
@@ -118,7 +118,7 @@ class ExecutorTest : FunSpec({
         val job = newJob()
         val input = TestInput(42, expectedDelay = 10, throwException = true)
         dataTransaction { persistJob(job); persistInput(job, input) }
-        defaultExecutor(this, timeout = { _, _ -> 1.milliseconds }).execute(null)
+        defaultExecutor(this, timeout = { _, _ -> 1.milliseconds }).execute()
         val jobAfterComputation = fetchJob(job.uuid).right()
         jobAfterComputation.uuid shouldBeEqual job.uuid
         jobAfterComputation.type shouldBeEqual "TestJob"

@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0-RC6] - 2023-10-25
+## [1.0.0-RC7] - 2023-10-27
+
+### Changed
+- Bugfix for `scheduleForever`: Exceptions from the task will not be propagated up anymore and cause the whole scheduling to be aborted. Instead, they are just ignored (and usually logged to the console).
+- Removed the internal feature again that the heartbeat also checks for the main executor to run. This should be superfluous with the above bugfix.
+
+
+## [1.0.0-RC6] - 2023-10-26
 
 ### Added
 - `JobFramework()` method now returns a coroutine job which can be used to terminate all maintenance jobs

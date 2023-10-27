@@ -28,9 +28,7 @@ import kotlinx.coroutines.time.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.time.Instant
 import java.time.LocalDateTime
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -62,11 +60,8 @@ class MainJobExecutor(
 ) {
     /**
      * The main execution routine of the job executor.
-     * The execution of this routine can be tracked by passing an [executorHeartbeat]
-     * which will be set to [Instant.now] at the beginning of the function.
      */
-    suspend fun execute(executorHeartbeat: AtomicReference<Instant>?) = coroutineScope {
-        executorHeartbeat?.set(Instant.now())
+    suspend fun execute() = coroutineScope {
         val myCapacity = getExecutionCapacity() ?: return@coroutineScope
         if (!myCapacity.mayTakeJobs) {
             log.trace("No capacity for further jobs.")

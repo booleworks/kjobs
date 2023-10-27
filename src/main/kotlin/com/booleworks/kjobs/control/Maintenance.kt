@@ -13,10 +13,7 @@ import com.booleworks.kjobs.data.ifError
 import com.booleworks.kjobs.data.orQuitWith
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneId
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
@@ -26,8 +23,6 @@ import kotlin.time.toJavaDuration
  * factor 2) and wait some more time for the job to write the heartbeat in the database.
  */
 private const val HEARTBEAT_TIMEOUT_FACTOR = 2.1
-
-private const val NR_OF_ALLOWED_MISSED_EXECUTOR_HEARTBEATS = 5
 
 /**
  * A collection of maintenance jobs.
@@ -39,27 +34,10 @@ object Maintenance {
         internal set
 
     /**
-     * Updates the heartbeat for this instance (with name [myInstanceName]) in the [persistence].
-     *
-     * Optionally, an [executorHeartbeat] can be passed to this function. It consists of a reference to an [Instant] and the `jobCheckInterval`,
-     * i.e. the interval in which the executor is started. The reference to the instant should be updated by the executor every time it is running.
-     * If the last "beat" of the executor is longer than 5 times the `jobCheckInterval` ago, then the executor is assumed to be broken and the heartbeat
-     * is not updated anymore. Instead, an error message will be logged.
+     * Updates the heartbeat for this instance in the [persistence].
      */
-    suspend fun updateHeartbeat(
-        persistence: JobPersistence,
-        myInstanceName: String,
-        executorHeartbeat: Pair<AtomicReference<Instant>, Duration>?,
-    ) {
-        val lastExecutorHeartbeat = executorHeartbeat?.first?.get()
-        if (lastExecutorHeartbeat != null
-            && Instant.now().toEpochMilli() - lastExecutorHeartbeat.toEpochMilli() >
-            executorHeartbeat.second.inWholeMilliseconds * NR_OF_ALLOWED_MISSED_EXECUTOR_HEARTBEATS
-        ) {
-            logger.error("Last executor heartbeat was at ${lastExecutorHeartbeat.atZone(ZoneId.systemDefault())}. The executor might have stopped working!")
-        } else {
-            persistence.transaction { updateHeartbeat(Heartbeat(myInstanceName, LocalDateTime.now())) }
-        }
+    suspend fun updateHeartbeat(persistence: JobPersistence, myInstanceName: String) {
+        persistence.transaction { updateHeartbeat(Heartbeat(myInstanceName, LocalDateTime.now())) }
     }
 
     /**

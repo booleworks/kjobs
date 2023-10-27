@@ -28,9 +28,9 @@ fun CoroutineContext.scheduleForever(interval: Duration, dispatcher: CoroutineDi
     CoroutineScope(this + supervisor).launch {
         while (true) {
             if (dispatcher != null)
-                launch(dispatcher) { task() }
+                launch(supervisor + dispatcher) { task() }
             else
-                launch { task() }
+                launch(supervisor) { task() }
             delay(interval)
         }
     }

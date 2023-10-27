@@ -69,8 +69,7 @@ class JobFrameworkTestingApi internal constructor(
         jobPrioritizer: JobPrioritizer = executorConfig.jobPrioritizer,
         tagMatcher: TagMatcher = executorConfig.tagMatcher
     ) = runBlocking(Dispatchers.Default) {
-        MainJobExecutor(jobPersistence, myInstanceName, executionCapacityProvider, jobPrioritizer, tagMatcher, cancellationConfig, executorsPerType)
-            .execute(null)
+        MainJobExecutor(jobPersistence, myInstanceName, executionCapacityProvider, jobPrioritizer, tagMatcher, cancellationConfig, executorsPerType).execute()
     }
 
     /**
@@ -95,7 +94,7 @@ class JobFrameworkTestingApi internal constructor(
      * @see Maintenance.updateHeartbeat
      */
     fun updateHeartbeat(instance: String = myInstanceName) = runBlocking {
-        Maintenance.updateHeartbeat(jobPersistence, instance, null)
+        Maintenance.updateHeartbeat(jobPersistence, instance)
     }
 
     /**
