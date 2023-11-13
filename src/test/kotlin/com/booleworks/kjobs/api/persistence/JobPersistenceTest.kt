@@ -22,7 +22,7 @@ import io.kotest.matchers.equals.shouldBeEqual
 import redis.clients.jedis.JedisPool
 import java.time.LocalDateTime
 
-class HashMapJobPersistenceTest : FunSpec({
+class JobPersistenceTest : FunSpec({
 
     fun testPersistences(testName: String, block: suspend (JobPersistence) -> Unit) = runBlocking {
         test("HashMap: $testName") { block(HashMapJobPersistence()) }
@@ -67,7 +67,7 @@ class HashMapJobPersistenceTest : FunSpec({
             startedAt = LocalDateTime.of(2022, 7, 23, 0, 0), executingInstance = "You"
         )
     }
-
+    
     testPersistences("test all jobs with status") { persistence ->
         persistence.transaction {
             persistJob(newJob("42", status = JobStatus.RUNNING)).expectSuccess()

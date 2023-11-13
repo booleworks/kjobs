@@ -86,7 +86,6 @@ class MainJobExecutor(
     private suspend inline fun getAndReserveJob(executionCapacity: ExecutionCapacity): Job? {
         val job = selectJobWithHighestPriority(executionCapacity)
         if (job != null) {
-            log.debug("Job executor selected job: ${job.uuid}")
             job.executingInstance = myInstanceName
             job.startedAt = LocalDateTime.now()
             job.status = JobStatus.RUNNING
@@ -97,6 +96,7 @@ class MainJobExecutor(
                 log.error("Failed to update job with ID ${job.uuid}: $it")
                 return null
             }
+            log.debug("Job executor selected job: ${job.uuid}")
             return job
         } else {
             log.trace("No jobs left to execute.")

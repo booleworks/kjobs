@@ -41,13 +41,7 @@ open class RedisJobPersistence(
                 RedisJobTransactionalPersistence(this@run, config)
                     .run { block() }
                     .also { exec() }
-            }.onFailure { exception ->
-                val message = exception.message ?: "Undefined error"
-                logger.error("Jedis transaction failed with: $message", exception)
-                val discardResult = runCatching { discard() }.onFailure { discardException -> logger.error("Discarding transaction failed", discardException) }
-                logger.error("Discarded the transaction with result: $discardResult")
-                return PersistenceAccessResult.internalError(message)
-            }
+            }.onFailure { exception -> return handleTransactionException(exception) }
         }
         PersistenceAccessResult.success
     }
@@ -117,7 +111,7 @@ open class RedisJobTransactionalPersistence(
 
     override suspend fun updateJob(job: Job): PersistenceAccessResult<Unit> {
         persistJob(job)
-        transaction.hdel(config.jobKey(job.uuid), *job.nullFields().toTypedArray())
+        job.nullFields().takeIf { it.isNotEmpty() }?.let { transaction.hdel(config.jobKey(job.uuid), *it.toTypedArray()) }
         return PersistenceAccessResult.success
     }
 
@@ -156,10 +150,8 @@ open class RedisDataPersistence<INPUT, RESULT>(
                 runCatching {
                     RedisDataTransactionalPersistence(this@run, inputSerializer, resultSerializer, config)
                         .run { block() }
-                        .also { exec().filterIsInstance<Throwable>().firstOrNull()?.let { handleTransactionException<T>(it) } }
-                }.getOrElse {
-                    return handleTransactionException(it)
-                }
+                        .also { exec() }
+                }.getOrElse { exception -> return handleTransactionException(exception) }
             }
         }.let { Either.Right(it) }
 
@@ -176,14 +168,6 @@ open class RedisDataPersistence<INPUT, RESULT>(
     override suspend fun fetchFailure(uuid: String): PersistenceAccessResult<String> {
         return pool.resource.use { it.get(config.failureKey(uuid)) }?.let { PersistenceAccessResult.result(it) }
             ?: run { return PersistenceAccessResult.uuidNotFound(uuid) }
-    }
-
-    private fun <T> Transaction.handleTransactionException(ex: Throwable): PersistenceAccessResult<T> {
-        val message = ex.message ?: "Undefined error"
-        logger.error("Jedis transaction failed with: $message", ex)
-        val discardResult = runCatching { discard() }.onFailure { discardException -> logger.error("Discarding transaction failed", discardException) }
-        logger.error("Discarded the transaction with result: $discardResult")
-        return PersistenceAccessResult.internalError(message)
     }
 }
 
@@ -214,6 +198,14 @@ open class RedisDataTransactionalPersistence<INPUT, RESULT>(
         transaction.set(config.failureKey(job.uuid), failure)
         return PersistenceAccessResult.success
     }
+}
+
+private fun <T> Transaction.handleTransactionException(ex: Throwable): PersistenceAccessResult<T> {
+    val message = ex.message ?: "Undefined error"
+    logger.error("Jedis transaction failed with: $message", ex)
+    val discardResult = runCatching { discard() }.onFailure { discardException -> logger.error("Discarding transaction failed", discardException) }
+    logger.error("Discarded the transaction with result: $discardResult")
+    return PersistenceAccessResult.internalError(message)
 }
 
 internal fun Job.toRedisMap(): Map<String, String> =
