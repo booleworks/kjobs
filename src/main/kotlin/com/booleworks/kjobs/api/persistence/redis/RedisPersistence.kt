@@ -19,8 +19,9 @@ import com.booleworks.kjobs.data.result
 import com.booleworks.kjobs.data.success
 import com.booleworks.kjobs.data.uuidNotFound
 import org.slf4j.LoggerFactory
-import redis.clients.jedis.Jedis
 import redis.clients.jedis.JedisPool
+import redis.clients.jedis.Pipeline
+import redis.clients.jedis.Response
 import redis.clients.jedis.Transaction
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -32,8 +33,8 @@ private val logger = LoggerFactory.getLogger(RedisDataPersistence::class.java)
  * the Redis instance and a [Redis configuration][config].
  */
 open class RedisJobPersistence(
-    private val pool: JedisPool,
-    private val config: RedisConfig = DefaultRedisConfig(),
+    protected val pool: JedisPool,
+    protected val config: RedisConfig = DefaultRedisConfig(),
 ) : JobPersistence {
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = pool.resource.use { jedis ->
         jedis.multi().run {
@@ -46,7 +47,7 @@ open class RedisJobPersistence(
         PersistenceAccessResult.success
     }
 
-    override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = getAllJobsBy { _, _ -> true }
+    override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = getAllJobsBy<Unit>()
 
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
         pool.resource.use { it.hgetAll(config.jobKey(uuid)) }
@@ -63,18 +64,19 @@ open class RedisJobPersistence(
     }
 
     override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy { jedis, key -> jedis.hget(key, "status") == status.toString() }
+        getAllJobsBy({ transaction, key -> transaction.hget(key, "status") }) { it == status.toString() }
 
     override suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy { jedis, key -> jedis.hmget(key, "status", "executingInstance") == listOf(status.toString(), instance) }
+        getAllJobsBy({ transaction, key -> transaction.hmget(key, "status", "executingInstance") }) { it == listOf(status.toString(), instance) }
 
-    override suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>> = getAllJobsBy { jedis, key ->
-        val statusAndFinishedAt = jedis.hmget(key, "status", "finishedAt")
-        (statusAndFinishedAt[0] == JobStatus.SUCCESS.toString() || statusAndFinishedAt[0] == JobStatus.FAILURE.toString())
-                && statusAndFinishedAt.getOrNull(1)?.let { LocalDateTime.parse(it) }?.isBefore(date) ?: false
-    }
+    override suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>> =
+        getAllJobsBy({ transaction, key -> transaction.hmget(key, "status", "finishedAt") }) { statusAndFinishedAt ->
+            (statusAndFinishedAt[0] == JobStatus.SUCCESS.toString() || statusAndFinishedAt[0] == JobStatus.FAILURE.toString())
+                    && statusAndFinishedAt.getOrNull(1)?.let { LocalDateTime.parse(it) }?.isBefore(date) ?: false
+        }
 
     override suspend fun fetchStates(uuids: List<String>): PersistenceAccessResult<List<JobStatus>> {
+        // TODO use pipelining
         return PersistenceAccessResult.result(
             pool.resource.use { jedis ->
                 uuids.map { uuid ->
@@ -84,12 +86,20 @@ open class RedisJobPersistence(
             })
     }
 
-    private fun getAllJobsBy(condition: (Jedis, String) -> Boolean): PersistenceAccessResult<List<Job>> {
+    private fun <T> getAllJobsBy(query: ((Pipeline, String) -> Response<T>)? = null, condition: ((T) -> Boolean)? = null): PersistenceAccessResult<List<Job>> {
         return pool.resource.use { jedis ->
-            jedis.keys(config.jobPattern).asSequence()
-                .filter { condition(jedis, it) }
-                .map { jedis.hgetAll(it).redisMapToJob(config.extractUuid(it)) }
-                .toList()
+            val allJobKeys = jedis.keys(config.jobPattern)
+            val relevantKeys = if (query != null && condition != null) {
+                val keyQueries = jedis.pipelined().use { pipeline ->
+                    allJobKeys.map { it to query(pipeline, it) }.also { pipeline.sync() }
+                }
+                keyQueries.filter { condition(it.second.get()) }.map { it.first }
+            } else {
+                allJobKeys
+            }
+            jedis.pipelined().use { pipeline ->
+                relevantKeys.map { it to pipeline.hgetAll(it) }.also { pipeline.sync() }
+            }.map { it.second.get().redisMapToJob(config.extractUuid(it.first)) }
         }.unwrapOrReturnFirstError { return@getAllJobsBy it }
     }
 }
@@ -101,8 +111,8 @@ open class RedisJobPersistence(
  * executed, so the only real kind of error would be connection problems which are ok to be caught in [RedisJobPersistence.transaction].
  */
 open class RedisJobTransactionalPersistence(
-    private val transaction: Transaction,
-    private val config: RedisConfig
+    protected val transaction: Transaction,
+    protected val config: RedisConfig
 ) : JobTransactionalPersistence {
     override suspend fun persistJob(job: Job): PersistenceAccessResult<Unit> {
         transaction.hset(config.jobKey(job.uuid), job.toRedisMap())
@@ -135,12 +145,12 @@ open class RedisJobTransactionalPersistence(
  * [Redis configuration][config].
  */
 open class RedisDataPersistence<INPUT, RESULT>(
-    private val pool: JedisPool,
-    private val inputSerializer: (INPUT) -> ByteArray,
-    private val resultSerializer: (RESULT) -> ByteArray,
-    private val inputDeserializer: (ByteArray) -> INPUT,
-    private val resultDeserializer: (ByteArray) -> RESULT,
-    private val config: RedisConfig = DefaultRedisConfig(),
+    pool: JedisPool,
+    protected val inputSerializer: (INPUT) -> ByteArray,
+    protected val resultSerializer: (RESULT) -> ByteArray,
+    protected val inputDeserializer: (ByteArray) -> INPUT,
+    protected val resultDeserializer: (ByteArray) -> RESULT,
+    config: RedisConfig = DefaultRedisConfig(),
 ) : RedisJobPersistence(pool, config), DataPersistence<INPUT, RESULT> {
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = dataTransaction(block)
 
@@ -178,10 +188,10 @@ open class RedisDataPersistence<INPUT, RESULT>(
  * executed, so the only real kind of error would be connection problems which are ok to be caught in [RedisDataPersistence.dataTransaction].
  */
 open class RedisDataTransactionalPersistence<INPUT, RESULT>(
-    private val transaction: Transaction,
-    private val inputSerializer: (INPUT) -> ByteArray,
-    private val resultSerializer: (RESULT) -> ByteArray,
-    private val config: RedisConfig
+    transaction: Transaction,
+    protected val inputSerializer: (INPUT) -> ByteArray,
+    protected val resultSerializer: (RESULT) -> ByteArray,
+    config: RedisConfig
 ) : RedisJobTransactionalPersistence(transaction, config), DataTransactionalPersistence<INPUT, RESULT> {
 
     override suspend fun persistInput(job: Job, input: INPUT): PersistenceAccessResult<Unit> {

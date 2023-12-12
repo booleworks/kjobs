@@ -25,8 +25,8 @@ import java.util.concurrent.ConcurrentHashMap
  * otherwise using this implementation does not make sense.
  */
 open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
-    private val jobs = ConcurrentHashMap<String, Job>()
-    private var latestHeartbeat = Heartbeat("", LocalDateTime.now()) // dummy value
+    protected val jobs = ConcurrentHashMap<String, Job>()
+    protected var latestHeartbeat = Heartbeat("", LocalDateTime.now()) // dummy value
 
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> =
         PersistenceAccessResult.success.also { block(this) }

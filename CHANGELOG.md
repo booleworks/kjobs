@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC9] - 2023-12-12
+
+### Changed
+- Fields of open persistence classes are now protected to allow proper inheritance
+- Significantly improved performance of fetching jobs Redis implementation (by using [Pipelining](https://redis.io/docs/manual/pipelining/))
+- Some dependency updates, especially SLF4J from 1.7.36 to 2.0.9
+
+
 ## [1.0.0-RC8] - 2023-11-13
 
 ### Changed
