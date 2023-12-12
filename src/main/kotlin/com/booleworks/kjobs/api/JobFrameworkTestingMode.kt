@@ -6,6 +6,7 @@ package com.booleworks.kjobs.api
 import com.booleworks.kjobs.api.JobFrameworkBuilder.MaintenanceConfig
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
+import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
 import com.booleworks.kjobs.control.SpecificExecutor
@@ -139,6 +140,6 @@ class JobFrameworkTestingApi internal constructor(
     /**
      * Cancels the given job.
      */
-    fun cancelJob(job: Job): String =
+    fun cancelJob(job: Job): Either<String, String> =
         runBlocking { com.booleworks.kjobs.control.cancelJob(job, jobPersistence) }
 }

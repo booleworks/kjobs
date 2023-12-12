@@ -315,7 +315,7 @@ class JobFrameworkBuilder internal constructor(
         internal var enabled: Boolean = false
         internal lateinit var basePath: Route
 
-        private var _statisticsGenerator: AtomicReference<suspend () -> Any> = AtomicReference { JobStatistics.forAllJobs(persistence) }
+        private var _statisticsGenerator: AtomicReference<suspend () -> Any> = AtomicReference(suspend { JobStatistics.forAllJobs(persistence) })
         var statisticsGenerator: suspend () -> Any
             get() = _statisticsGenerator.get()
             set(value) = _statisticsGenerator.set(value)

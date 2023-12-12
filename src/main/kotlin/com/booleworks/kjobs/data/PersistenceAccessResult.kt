@@ -33,6 +33,14 @@ sealed interface PersistenceAccessError {
     }
 
     /**
+     * Indicates that an update was not performed since the data has been modified by someone else.
+     */
+    object Modified : PersistenceAccessError {
+        override val message = "The update was not performed because the data to update has been altered by someone else"
+        override fun toString() = message
+    }
+
+    /**
      * Indicates that a persistence access failed because the item with id `uuid` was not found.
      */
     data class UuidNotFound(val uuid: String) : PersistenceAccessError {
@@ -90,6 +98,12 @@ fun <R> Either.Companion.result(result: R): PersistenceAccessResult<R> = Either.
  * Returns an object indicating that the persistence access failed because the item was not found.
  */
 fun <R> Either.Companion.notFound(): PersistenceAccessResult<R> = Either.Left(NotFound)
+
+/**
+ * Returns an object indicating that an update was not performed since the updated data was modified by
+ * someone else.
+ */
+fun <R> Either.Companion.modified(): PersistenceAccessResult<R> = Either.Left(PersistenceAccessError.Modified)
 
 /**
  * Returns an object indicating that the persistence access failed because the item with id [uuid] was not found.

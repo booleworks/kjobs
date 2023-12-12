@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC15] - 2024-06-10
+
+### Added
+- New method `JobPersistence.transactionWithPreconditions` which executes a transaction only if a given set of preconditions is still met when the transaction is executed. This should improve the reservation and cancellation of jobs.
+
+### Changed
+- Minor bug fixes and test improvements
+- Moved to Kotlin 2.0.0 and Java 17
+- Minor dependency updates
+
+
 ## [1.0.0-RC14] - 2024-05-08
 
 ### Changed

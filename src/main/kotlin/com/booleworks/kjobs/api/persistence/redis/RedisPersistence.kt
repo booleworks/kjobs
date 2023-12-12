@@ -13,6 +13,7 @@ import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.internalError
+import com.booleworks.kjobs.data.modified
 import com.booleworks.kjobs.data.notFound
 import com.booleworks.kjobs.data.result
 import com.booleworks.kjobs.data.success
@@ -51,6 +52,33 @@ open class RedisJobPersistence(
             RedisJobTransactionalPersistence(commands, config).run { block() }
             commands.exec().get()
             PersistenceAccessResult.success
+        } catch (exception: Exception) {
+            return handleTransactionException(exception)
+        } finally {
+            connection.close()
+        }
+    }
+
+    override suspend fun transactionWithPreconditions(
+        preconditions: Map<String, (Job) -> Boolean>,
+        block: suspend JobTransactionalPersistence.() -> Unit
+    ): PersistenceAccessResult<Unit> {
+        preconditions.forEach { (uuid, condition) ->
+            stringCommands.watch(uuid)
+            val job = stringCommands.hgetall(config.jobKey(uuid)).get()
+                .ifEmpty { return PersistenceAccessResult.uuidNotFound(uuid) }
+                .redisMapToJob(uuid).rightOr { return PersistenceAccessResult.internalError("Failed to convert internal job") }
+            if (!condition(job)) {
+                return PersistenceAccessResult.modified()
+            }
+        }
+        val connection = redisClient.connect()
+        val commands = connection.async()
+        return try {
+            commands.multi().get()
+            RedisJobTransactionalPersistence(commands, config).run { block() }
+            val transactionResult = commands.exec().get()
+            if (transactionResult == null || transactionResult.wasDiscarded()) PersistenceAccessResult.modified() else PersistenceAccessResult.success
         } catch (exception: Exception) {
             return handleTransactionException(exception)
         } finally {
@@ -306,4 +334,4 @@ internal fun Map<String, String>.redisMapToJob(uuidIn: String? = null): Persiste
 
 private const val TAG_SEPARATOR = """\\\\"""
 
-fun <K, V> List<KeyValue<K, V>>.get(key: K): V? = firstOrNull { it.key == key }?.value
+fun <K, V> List<KeyValue<K, V>>.get(key: K): V? = firstOrNull { it.key == key }?.getValueOrElse(null)

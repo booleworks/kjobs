@@ -12,6 +12,7 @@ import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessResult
+import com.booleworks.kjobs.data.modified
 import com.booleworks.kjobs.data.result
 import com.booleworks.kjobs.data.success
 import com.booleworks.kjobs.data.uuidNotFound
@@ -31,19 +32,29 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> =
         PersistenceAccessResult.success.also { block(this) }
 
-    override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = PersistenceAccessResult.result(jobs.values.toList())
+    override suspend fun transactionWithPreconditions(
+        preconditions: Map<String, (Job) -> Boolean>,
+        block: suspend JobTransactionalPersistence.() -> Unit
+    ): PersistenceAccessResult<Unit> {
+        preconditions.forEach { (uuid, condition) ->
+            jobs[uuid]?.also { if (!condition(it)) return PersistenceAccessResult.modified() } ?: run { return PersistenceAccessResult.uuidNotFound(uuid) }
+        }
+        return transaction(block)
+    }
+
+    override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = PersistenceAccessResult.result(jobs.values.map { it.copy() })
 
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
-        jobs[uuid]?.let { PersistenceAccessResult.result(it) } ?: PersistenceAccessResult.uuidNotFound(uuid)
+        jobs[uuid]?.let { PersistenceAccessResult.result(it.copy()) } ?: PersistenceAccessResult.uuidNotFound(uuid)
 
     override suspend fun fetchHeartbeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> =
-        PersistenceAccessResult.result(if (latestHeartbeat.lastBeat.isBefore(since)) emptyList() else listOf(latestHeartbeat))
+        PersistenceAccessResult.result(if (latestHeartbeat.lastBeat.isBefore(since)) emptyList() else listOf(latestHeartbeat.copy()))
 
     override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
-        PersistenceAccessResult.result(jobs.values.filter { it.status == status })
+        PersistenceAccessResult.result(jobs.values.filter { it.status == status }.map { it.copy() })
 
     override suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>> =
-        PersistenceAccessResult.result(jobs.values.filter { it.status == status && it.executingInstance == instance })
+        PersistenceAccessResult.result(jobs.values.filter { it.status == status && it.executingInstance == instance }.map { it.copy() })
 
     override suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>> =
         PersistenceAccessResult.result(jobs.values.filter {
@@ -51,7 +62,7 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
                 JobStatus.SUCCESS,
                 JobStatus.FAILURE
             ) && it.finishedAt?.isBefore(date) ?: false
-        })
+        }.map { it.copy() })
 
     override suspend fun persistJob(job: Job): PersistenceAccessResult<Unit> = PersistenceAccessResult.success.also { jobs[job.uuid] = job }
 

@@ -31,7 +31,7 @@ class ExecutionCapacityTest : FunSpec({
         val (jobPersistence, testingApi) = setupApi(executionCapacityProvider = DefaultExecutionCapacityProvider)
         val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
-        job1.setRunning(jobPersistence)
+        jobPersistence.setRunning(job1.uuid)
         testingApi.runExecutor()
         jobPersistence.fetchJob(job2.uuid).expectSuccess().status shouldBeEqual JobStatus.CREATED
 
@@ -45,9 +45,9 @@ class ExecutionCapacityTest : FunSpec({
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
         val job3 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
         val job4 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
-        job1.setRunning(jobPersistence)
-        job2.setRunning(jobPersistence)
-        job3.setRunning(jobPersistence)
+        jobPersistence.setRunning(job1.uuid)
+        jobPersistence.setRunning(job2.uuid)
+        jobPersistence.setRunning(job3.uuid)
         testingApi.runExecutor(executionCapacityProvider = { ExecutionCapacity.Companion.AcceptingNoJob })
         jobPersistence.fetchJob(job4.uuid).expectSuccess().status shouldBeEqual JobStatus.CREATED
 
@@ -61,9 +61,9 @@ class ExecutionCapacityTest : FunSpec({
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
         val job3 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
         val job4 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
-        job1.setRunning(jobPersistence)
-        job2.setRunning(jobPersistence)
-        job3.setRunning(jobPersistence)
+        jobPersistence.setRunning(job1.uuid)
+        jobPersistence.setRunning(job2.uuid)
+        jobPersistence.setRunning(job3.uuid)
         testingApi.runExecutor()
         jobPersistence.fetchJob(job4.uuid).expectSuccess().status shouldBeEqual JobStatus.CREATED
 
@@ -99,10 +99,10 @@ class ExecutionCapacityTest : FunSpec({
             jobPersistence.fetchJob(job5.uuid).expectSuccess().shouldHaveBeenStarted()
         }
 
-        job5.reset(jobPersistence)
-        job1.setRunning(jobPersistence)
-        job2.setRunning(jobPersistence)
-        job3.setRunning(jobPersistence)
+        jobPersistence.reset(job5.uuid)
+        jobPersistence.setRunning(job1.uuid)
+        jobPersistence.setRunning(job2.uuid)
+        jobPersistence.setRunning(job3.uuid)
         testingApi.runExecutor()
         listOf(job4, job5).forEach { jobPersistence.fetchJob(it.uuid).expectSuccess().status shouldBeEqual JobStatus.CREATED }
 

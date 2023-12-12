@@ -6,13 +6,16 @@ package com.booleworks.kjobs.control
 import com.booleworks.kjobs.api.JobFrameworkBuilder
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
+import com.booleworks.kjobs.common.Either
 import com.booleworks.kjobs.data.ApiConfig
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobConfig
+import com.booleworks.kjobs.data.JobInfoConfig
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.PollStatus
+import com.booleworks.kjobs.data.SynchronousResourceConfig
 import com.booleworks.kjobs.data.mapResult
 import com.booleworks.kjobs.data.orQuitWith
 import io.ktor.http.HttpStatusCode.Companion.BadRequest
@@ -29,7 +32,7 @@ import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
-import java.util.*
+import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 
 private val apiLog = LoggerFactory.getLogger("ApiLog")
@@ -73,7 +76,7 @@ private val apiLog = LoggerFactory.getLogger("ApiLog")
  * - performs the same steps as `submit` but does not return the uuid
  * - waits until the job is computed (computation might be performed by another instance)
  * - returns the result of the computation using [ApiConfig.resultResponder]
- * - the default path `synchronous` can be changed via [SynchronousResourceConfig.path]
+ * - the default path `synchronous` can be changed via [ApiConfig.syncRoute]
  *
  * ### `DELETE delete/{uuid}` (if enabled via [ApiConfig.enableDeletion])
  * - deletes the job with the given uuid
@@ -85,7 +88,7 @@ private val apiLog = LoggerFactory.getLogger("ApiLog")
  *
  * ### `GET info/{uuid}` (if enabled via [JobInfoConfig.enabled])
  * - returns information about the job with the given uuid
- * - the default path `info` can be changed via [JobInfoConfig.path]
+ * - the default path `info` can be changed via [ApiConfig.infoRoute]
  * - the way this information is returned is defined by [JobInfoConfig.responder]
  *
  * If the persistence access in any of the routes fails, status 500 with a respective message is returned.
@@ -148,7 +151,9 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
         cancelRoute {
             parseUuid()?.let { uuid ->
                 val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@cancelRoute
-                call.respond(cancelJob(job, jobConfig.persistence))
+                cancelJob(job, jobConfig.persistence)
+                    .onLeft { call.respond(InternalServerError, it) }
+                    .onRight { call.respond(it) }
             }
         }
     }
@@ -229,34 +234,56 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
     }
 }
 
-internal suspend inline fun cancelJob(job: Job, persistence: JobPersistence): String = when (job.status) {
-    // TODO: what about the risk of the job status being overridden?
-    //  The execution job could take the job at the same time and might not see the respective cancellation update.
-    JobStatus.CREATED -> {
-        apiLog.info("Cancelling job with ID ${job.uuid} from status CREATED")
-        job.status = JobStatus.CANCELLED
-        job.finishedAt = LocalDateTime.now()
-        persistence.transaction { updateJob(job) }
-        "Job with id ${job.uuid} was cancelled successfully"
-    }
+internal suspend inline fun cancelJob(job: Job, persistence: JobPersistence): Either<String, String> {
+    when (job.status) {
+        JobStatus.CREATED -> {
+            apiLog.info("Cancelling job with ID ${job.uuid} from status CREATED")
+            job.status = JobStatus.CANCELLED
+            job.finishedAt = LocalDateTime.now()
+            val jobInStatusCreated: Map<String, (Job) -> Boolean> = mapOf(job.uuid to { it.status == JobStatus.CREATED })
+            val cancelResult = persistence.transactionWithPreconditions(jobInStatusCreated) { updateJob(job) }
+            return if (cancelResult.isRight) {
+                Either.Right("Job with id ${job.uuid} was cancelled successfully")
+            } else {
+                if ((cancelResult as? Either.Left)?.value is PersistenceAccessError.Modified) {
+                    apiLog.warn("Job with ID ${job.uuid} was modified before it could be cancelled")
+                } else {
+                    apiLog.warn("Cancelling job with ID ${job.uuid} failed with ${(cancelResult as? Either.Left)?.value}")
+                }
+                Either.Left("Cancellation failed")
+            }
+        }
 
-    JobStatus.RUNNING -> {
-        apiLog.info("Cancelling job with ID ${job.uuid} from status RUNNING")
-        job.status = JobStatus.CANCEL_REQUESTED
-        persistence.transaction { updateJob(job) }
-        "Job with id ${job.uuid} is currently running and will be cancelled as soon as possible. " +
-                "If it finishes in the meantime, the cancel request will be ignored."
-    }
+        JobStatus.RUNNING -> {
+            apiLog.info("Cancelling job with ID ${job.uuid} from status RUNNING")
+            job.status = JobStatus.CANCEL_REQUESTED
+            val jobInStatusRunning: Map<String, (Job) -> Boolean> = mapOf(job.uuid to { it.status == JobStatus.RUNNING })
+            val cancelResult = persistence.transactionWithPreconditions(jobInStatusRunning) { updateJob(job) }
+            return if (cancelResult.isRight) {
+                Either.Right(
+                    "Job with id ${job.uuid} is currently running and will be cancelled as soon as possible. " +
+                            "If it finishes in the meantime, the cancel request will be ignored."
+                )
+            } else {
+                if ((cancelResult as? Either.Left)?.value is PersistenceAccessError.Modified) {
+                    apiLog.warn("Job with ID ${job.uuid} was modified before it could be cancelled")
+                } else {
+                    apiLog.warn("Cancelling job with ID ${job.uuid} failed with ${(cancelResult as? Either.Left)?.value}")
+                }
+                Either.Left("Cancellation failed")
+            }
+        }
 
-    JobStatus.CANCEL_REQUESTED -> {
-        apiLog.warn("Detected a duplicate cancellation request for job with ID ${job.uuid}")
-        "Cancellation for job with id ${job.uuid} has already been requested"
-    }
+        JobStatus.CANCEL_REQUESTED -> {
+            apiLog.warn("Detected a duplicate cancellation request for job with ID ${job.uuid}")
+            return Either.Right("Cancellation for job with id ${job.uuid} has already been requested")
+        }
 
-    JobStatus.SUCCESS, JobStatus.FAILURE, JobStatus.CANCELLED -> {
-        if (job.status == JobStatus.CANCELLED) apiLog.warn("Detected a duplicate cancellation request for job with ID ${job.uuid}")
-        else apiLog.warn("Got a cancellation request for already finished job in status ${job.status} with ID ${job.uuid}")
-        "Job with id ${job.uuid} has already finished with status ${job.status}"
+        JobStatus.SUCCESS, JobStatus.FAILURE, JobStatus.CANCELLED -> {
+            if (job.status == JobStatus.CANCELLED) apiLog.warn("Detected a duplicate cancellation request for job with ID ${job.uuid}")
+            else apiLog.warn("Got a cancellation request for already finished job in status ${job.status} with ID ${job.uuid}")
+            return Either.Right("Job with id ${job.uuid} has already finished with status ${job.status}")
+        }
     }
 }
 
@@ -297,6 +324,8 @@ private suspend inline fun PipelineContext<Unit, ApplicationCall>.fetchJobAndChe
             is PersistenceAccessError.InternalError -> call.respondText("Failed to access job with ID $uuid: $it", status = InternalServerError)
             is PersistenceAccessError.NotFound, is PersistenceAccessError.UuidNotFound ->
                 call.respondText("No job with ID $uuid could be found.", status = NotFound)
+
+            is PersistenceAccessError.Modified -> error("Unexpected")
         }
         return null
     }

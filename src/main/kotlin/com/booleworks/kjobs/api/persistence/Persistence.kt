@@ -7,6 +7,7 @@ import com.booleworks.kjobs.common.unwrapOrReturnFirstError
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.mapResult
 import java.time.LocalDateTime
@@ -28,6 +29,28 @@ interface JobPersistence {
      * Opens a new transaction to allow write operations.
      */
     suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit>
+
+    /**
+     * Starts a transaction similar to [transaction], but executes it only if all [preconditions] are met
+     * when entering the transaction.
+     *
+     * The [preconditions] contain a set of job UUIDs mapped to a predicate on the respective job which should
+     * be satisfied.
+     *
+     * If possible, any external modifications to the given jobs should be prevented during the transaction,
+     * s.t. the jobs can only be modified within this transaction.
+     *
+     * If any of the [preconditions] is not met, [PersistenceAccessError.Modified] is returned.
+     *
+     * Implementing classes are not required to check the [preconditions] and/or prevent modifications to the
+     * respective jobs, if the Persistence does not provide such a mechanism (which means that the behavior is
+     * the same as [transaction]). However, this may lead to some unfortunate behavior in rare cases, e.g.
+     * that a job is computed multiple times in parallel.
+     */
+    suspend fun transactionWithPreconditions(
+        preconditions: Map<String, (Job) -> Boolean>,
+        block: suspend JobTransactionalPersistence.() -> Unit
+    ): PersistenceAccessResult<Unit>
 
     /**
      * Fetches all jobs.

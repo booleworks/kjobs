@@ -27,6 +27,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.time.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -94,8 +95,13 @@ class MainJobExecutor(
             // timeout will be recomputed shortly, but we need to set a timeout for the case that the pod is restarted in between
             // (jobs will not be restarted without a timeout being set)
             job.timeout = LocalDateTime.now().plusMinutes(2)
-            jobPersistence.transaction { updateJob(job) }.orQuitWith {
-                log.error("Failed to update job with ID ${job.uuid}: $it")
+            val jobInCreatedStatus: Map<String, (Job) -> Boolean> = mapOf(job.uuid to { it.status == JobStatus.CREATED })
+            jobPersistence.transactionWithPreconditions(jobInCreatedStatus) { updateJob(job) }.orQuitWith {
+                if (it == PersistenceAccessError.Modified) {
+                    log.warn("Job with ID ${job.uuid} was modified before it could be reserved.")
+                } else {
+                    log.error("Failed to update job with ID ${job.uuid}: $it")
+                }
                 return null
             }
             log.debug("Job executor selected job: ${job.uuid}")
@@ -153,7 +159,9 @@ class SpecificExecutor<INPUT, RESULT>(
 ) {
     internal fun CoroutineScope.launchComputationJob(job: Job) = launch(Dispatchers.Default + CoroutineName("Computation of Job ${job.uuid}")) {
         val uuid = job.uuid
-        val jobInput = persistence.fetchInput(uuid).orQuitWith {
+        val jobInput = withContext(Dispatchers.IO) { // input may be large
+            persistence.fetchInput(uuid)
+        }.orQuitWith {
             abortComputationWithError(persistence, uuid, "Failed to fetch job input for ID ${uuid}: $it", "Failed to fetch job input: $it")
             return@launch
         }
@@ -196,6 +204,8 @@ class SpecificExecutor<INPUT, RESULT>(
                 PersistenceAccessError.NotFound, is PersistenceAccessError.UuidNotFound -> {
                     log.warn("Job with ID $id was deleted from the database during the computation!")
                 }
+
+                is PersistenceAccessError.Modified -> error("Unexpected return value")
             }
             return
         }

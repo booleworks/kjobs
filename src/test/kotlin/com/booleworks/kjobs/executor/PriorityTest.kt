@@ -19,12 +19,11 @@ import com.booleworks.kjobs.data.JobStatus.CREATED
 import com.booleworks.kjobs.data.JobStatus.SUCCESS
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.equals.shouldBeEqual
-import kotlinx.coroutines.CoroutineScope
 
 class PriorityTest : FunSpec({
 
     test("test priority setting") {
-        val testingApi = setupApi()
+        val (testingApi, _) = setupApi()
         val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
         val job3 = testingApi.submitJob("J2", TestInput(5)).expectSuccess()
@@ -36,76 +35,76 @@ class PriorityTest : FunSpec({
     }
 
     test("test default priority-based job selection") {
-        val testingApi = setupApi()
-        val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
-        val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
-        val job3 = testingApi.submitJob("J2", TestInput(5)).expectSuccess()
-        val job4 = testingApi.submitJob("J2", TestInput(15)).expectSuccess()
+        val (testingApi, persistence) = setupApi()
+        val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess().uuid
+        val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess().uuid
+        val job3 = testingApi.submitJob("J2", TestInput(5)).expectSuccess().uuid
+        val job4 = testingApi.submitJob("J2", TestInput(15)).expectSuccess().uuid
 
         testingApi.runExecutor()
-        job3 shouldHaveStatus SUCCESS
-        listOf(job1, job2, job4) shouldHaveStatus CREATED
+        listOf(job3).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
+        listOf(job1, job2, job4).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus CREATED
 
         testingApi.runExecutor()
-        job1 shouldHaveStatus SUCCESS
-        listOf(job2, job4) shouldHaveStatus CREATED
+        listOf(job1).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
+        listOf(job2, job4).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus CREATED
 
         testingApi.runExecutor()
-        job4 shouldHaveStatus SUCCESS
-        job2 shouldHaveStatus CREATED
+        listOf(job4).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
+        listOf(job2).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus CREATED
 
         testingApi.runExecutor()
-        job2 shouldHaveStatus SUCCESS
+        listOf(job2).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
     }
 
     test("test job selection with custom job prioritizer") {
-        val testingApi = setupApi { jobs -> jobs.maxByOrNull { it.priority } }
-        val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
-        val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
-        val job3 = testingApi.submitJob("J2", TestInput(5)).expectSuccess()
-        val job4 = testingApi.submitJob("J2", TestInput(15)).expectSuccess()
+        val (testingApi, persistence) = setupApi { jobs -> jobs.maxByOrNull { it.priority } }
+        val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess().uuid
+        val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess().uuid
+        val job3 = testingApi.submitJob("J2", TestInput(5)).expectSuccess().uuid
+        val job4 = testingApi.submitJob("J2", TestInput(15)).expectSuccess().uuid
 
         testingApi.runExecutor()
-        job2 shouldHaveStatus SUCCESS
-        listOf(job1, job3, job4) shouldHaveStatus CREATED
+        listOf(job2).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
+        listOf(job1, job3, job4).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus CREATED
 
         testingApi.runExecutor()
-        job4 shouldHaveStatus SUCCESS
-        listOf(job1, job3) shouldHaveStatus CREATED
+        listOf(job4).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
+        listOf(job1, job3).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus CREATED
 
         testingApi.runExecutor()
-        job1 shouldHaveStatus SUCCESS
-        job3 shouldHaveStatus CREATED
+        listOf(job1).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
+        listOf(job3).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus CREATED
 
         testingApi.runExecutor()
-        job3 shouldHaveStatus SUCCESS
+        listOf(job3).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
     }
 
     test("test job selection with overridden priority") {
-        val testingApi = setupApi { jobs -> jobs.maxByOrNull { it.priority } }
-        val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
-        val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
-        val job3 = testingApi.submitJob("J2", TestInput(5)).expectSuccess()
-        val job4 = testingApi.submitJob("J2", TestInput(15)).expectSuccess()
+        val (testingApi, persistence) = setupApi { jobs -> jobs.maxByOrNull { it.priority } }
+        val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess().uuid
+        val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess().uuid
+        val job3 = testingApi.submitJob("J2", TestInput(5)).expectSuccess().uuid
+        val job4 = testingApi.submitJob("J2", TestInput(15)).expectSuccess().uuid
 
         testingApi.runExecutor(jobPrioritizer = { jobs -> jobs.maxByOrNull { it.createdAt } })
-        job4 shouldHaveStatus SUCCESS
-        listOf(job1, job2, job3) shouldHaveStatus CREATED
+        listOf(job4).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
+        listOf(job1, job2, job3).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus CREATED
 
         testingApi.runExecutor(jobPrioritizer = { jobs -> jobs.find { it.type == "J2" } })
-        job3 shouldHaveStatus SUCCESS
-        listOf(job1, job2) shouldHaveStatus CREATED
+        listOf(job3).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
+        listOf(job1, job2).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus CREATED
 
         testingApi.runExecutor()
-        job2 shouldHaveStatus SUCCESS
-        job1 shouldHaveStatus CREATED
+        listOf(job2).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
+        listOf(job1).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus CREATED
 
         testingApi.runExecutor()
-        job1 shouldHaveStatus SUCCESS
+        listOf(job1).map { persistence.fetchJob(it).expectSuccess() } shouldHaveStatus SUCCESS
     }
 })
 
-private fun CoroutineScope.setupApi(jobPrioritizer: JobPrioritizer? = null): JobFrameworkTestingApi {
+private fun setupApi(jobPrioritizer: JobPrioritizer? = null): Pair<JobFrameworkTestingApi, HashMapJobPersistence> {
     val jobPersistence = HashMapJobPersistence()
     val j1Persistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
     val j2Persistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
@@ -122,7 +121,7 @@ private fun CoroutineScope.setupApi(jobPrioritizer: JobPrioritizer? = null): Job
             }
         }
     }
-    return testingApi
+    return testingApi to jobPersistence
 }
 
 private infix fun Job.shouldHaveStatus(status: JobStatus) {

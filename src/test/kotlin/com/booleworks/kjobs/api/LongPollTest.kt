@@ -37,6 +37,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTimedValue
 
+@kotlin.time.ExperimentalTime
 class LongPollTest : FunSpec({
     test("test long polling") {
         val redis = RedisServer.newRedisServer().start()
