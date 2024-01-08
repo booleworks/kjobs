@@ -14,6 +14,7 @@ import com.booleworks.kjobs.data.orQuitWith
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
@@ -30,9 +31,6 @@ private const val HEARTBEAT_TIMEOUT_FACTOR = 2.1
 object Maintenance {
     private val logger: Logger = LoggerFactory.getLogger(Maintenance::class.java)
 
-    var jobsToBeCancelled = setOf<String>()
-        internal set
-
     /**
      * Updates the heartbeat for this instance in the [persistence].
      */
@@ -42,12 +40,14 @@ object Maintenance {
 
     /**
      * Retrieves all jobs from the [persistence] in status [JobStatus.CANCEL_REQUESTED] and writes their
-     * uuids to [jobsToBeCancelled].
+     * uuids to the [jobCancellationQueue]. The queue is simply overridden (which is why it is in an atomic
+     * reference).
      */
-    suspend fun checkForCancellations(persistence: JobPersistence) {
+    suspend fun checkForCancellations(persistence: JobPersistence, jobCancellationQueue: AtomicReference<Set<String>>) {
         // we don't filter for instance here to also cancel jobs which might have been stolen from us
-        jobsToBeCancelled =
+        jobCancellationQueue.set(
             persistence.allJobsWithStatus(JobStatus.CANCEL_REQUESTED).mapRight { jobs -> jobs.map { it.uuid } }.getOrElse { emptyList() }.toSet()
+        )
     }
 
     /**

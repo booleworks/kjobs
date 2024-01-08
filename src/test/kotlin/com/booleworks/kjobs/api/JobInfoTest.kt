@@ -50,7 +50,7 @@ class JobInfoTest : FunSpec({
                             { call.respond<TestResult>(it) },
                             defaultComputation
                         ) {
-                            infoConfig { enabled = true }
+                            enableJobInfoResource()
                         }
                     }
                 }
@@ -85,10 +85,7 @@ class JobInfoTest : FunSpec({
                             { call.respond<TestResult>(it) },
                             defaultComputation
                         ) {
-                            infoConfig {
-                                enabled = true
-                                responder = { call.respond("Information about UUID ${it.uuid}") }
-                            }
+                            enableJobInfoResource { responder = { call.respond("Information about UUID ${it.uuid}") } }
                         }
                     }
                 }

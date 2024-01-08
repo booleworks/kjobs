@@ -15,6 +15,8 @@ import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.mapResult
 import com.booleworks.kjobs.data.orQuitWith
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -105,7 +107,7 @@ internal class HierarchicalJobApiImpl<DEP_INPUT, DEP_RESULT>(private val jobConf
 
     override suspend fun collectDependentResults(checkInterval: Duration, cancelRemainingJobsOnFlowCompletion: Boolean) = channelFlow {
         coroutineScope {
-            launch {
+            launch(Dispatchers.IO + CoroutineName("Collector of dependent results for hierarchical job $parent")) {
                 logger.debug("Launched check of finished dependent jobs for flow emission")
                 do {
                     logger.trace("Checking stati of remaining dependent jobs")

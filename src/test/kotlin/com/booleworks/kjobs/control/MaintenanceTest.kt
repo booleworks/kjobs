@@ -27,6 +27,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.delay
 import redis.clients.jedis.JedisPool
 import java.time.LocalDateTime
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -63,16 +64,17 @@ class MaintenanceTest : FunSpec({
 
     test("test check for cancellation") {
         val redis = RedisServer.newRedisServer().start()
+        val jobCancellationQueue = AtomicReference(setOf<String>())
         val persistence = newRedisPersistence<TestInput, TestResult>(redis)
         val testingMode = JobFrameworkTestingMode("I1", persistence, false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
         }
 
-        val directCall = suspend { Maintenance.checkForCancellations(persistence) }
-        val testingCall = suspend { testingMode.checkForCancellations() }
+        val directCall = suspend { Maintenance.checkForCancellations(persistence, jobCancellationQueue) }
+        val testingCall = suspend { testingMode.checkForCancellations(jobCancellationQueue) }
 
         for (method in listOf(directCall, testingCall)) {
-            Maintenance.jobsToBeCancelled = setOf()
+            jobCancellationQueue.set( setOf())
             JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
             persistence.transaction {
                 persistJob(newJob("42", status = CANCEL_REQUESTED))
@@ -80,23 +82,23 @@ class MaintenanceTest : FunSpec({
                 persistJob(newJob("44", status = CANCEL_REQUESTED))
                 persistJob(newJob("45", status = CANCELLED))
             }
-            Maintenance.jobsToBeCancelled shouldHaveSize 0
+            jobCancellationQueue.get() shouldHaveSize 0
             method()
-            Maintenance.jobsToBeCancelled shouldContainExactlyInAnyOrder listOf("42", "44")
+            jobCancellationQueue.get() shouldContainExactlyInAnyOrder listOf("42", "44")
             persistence.transaction {
                 persistJob(newJob("44", status = CANCELLED))
                 persistJob(newJob("46", status = CANCEL_REQUESTED))
                 persistJob(newJob("47", status = CANCEL_REQUESTED))
             }
             method()
-            Maintenance.jobsToBeCancelled shouldContainExactlyInAnyOrder listOf("42", "46", "47")
+            jobCancellationQueue.get() shouldContainExactlyInAnyOrder listOf("42", "46", "47")
             persistence.transaction {
                 persistJob(newJob("42", status = CANCELLED))
                 persistJob(newJob("46", status = CREATED))
                 persistJob(newJob("47", status = RUNNING))
             }
             method()
-            Maintenance.jobsToBeCancelled shouldHaveSize 0
+            jobCancellationQueue.get() shouldHaveSize 0
         }
     }
 

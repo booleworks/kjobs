@@ -44,7 +44,7 @@ class StatisticsTest : FunSpec({
             routing {
                 route("base") {
                     JobFramework(defaultInstanceName, jobPersistence) {
-                        enableStatistics(this@route) {}
+                        enableStatistics(this@route)
                         setupTwoJobApis(this@route, dataPersistence)
                     }
                 }

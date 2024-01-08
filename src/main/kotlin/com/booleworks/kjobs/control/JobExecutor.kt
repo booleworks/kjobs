@@ -8,6 +8,7 @@ import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.DataTransactionalPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.common.getOrElse
+import com.booleworks.kjobs.control.polling.LongPollManager
 import com.booleworks.kjobs.data.ExecutionCapacity
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
@@ -18,6 +19,7 @@ import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher
 import com.booleworks.kjobs.data.ifError
 import com.booleworks.kjobs.data.orQuitWith
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
@@ -29,9 +31,8 @@ import kotlinx.coroutines.yield
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
-import kotlin.math.min
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
@@ -56,6 +57,7 @@ class MainJobExecutor(
     private val jobPrioritizer: JobPrioritizer,
     private val tagMatcher: TagMatcher,
     private val cancellationConfig: CancellationConfig,
+    private val jobCancellationQueue: AtomicReference<Set<String>>,
     private val specificExecutors: Map<String, SpecificExecutor<*, *>>
 ) {
     /**
@@ -70,7 +72,7 @@ class MainJobExecutor(
         val job = getAndReserveJob(myCapacity) ?: return@coroutineScope
         val coroutineJob = with(specificExecutors[job.type]!!) { launchComputationJob(job) }
         if (cancellationConfig.enabled) {
-            launchCancellationCheck(coroutineJob, job.uuid)
+            launchCancellationCheck(coroutineJob, jobCancellationQueue, job.uuid)
         }
     }
 
@@ -112,34 +114,29 @@ class MainJobExecutor(
         return result.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.let(jobPrioritizer::invoke)
     }
 
-    private fun CoroutineScope.launchCancellationCheck(coroutineJob: CoroutineJob, uuid: String) = launch(Dispatchers.Default) {
-        while (coroutineJob.isActive) {
-            if (Maintenance.jobsToBeCancelled.contains(uuid)) {
-                coroutineJob.cancelAndJoin()
-                jobPersistence.fetchJob(uuid).onRight { job ->
-                    if (job.status == JobStatus.SUCCESS || job.status == JobStatus.FAILURE) {
-                        log.info("Job with ID $uuid was cancelled, but finished before the cancellation was processed.")
-                    } else {
-                        job.status = JobStatus.CANCELLED
-                        job.finishedAt = LocalDateTime.now()
-                        jobPersistence.transaction { updateJob(job) }.orQuitWith {
-                            log.error("Failed to update job with ID $uuid to status CANCELLED: $it")
-                            return@launch
+    private fun CoroutineScope.launchCancellationCheck(coroutineJob: CoroutineJob, jobCancellationQueue: AtomicReference<Set<String>>, uuid: String) {
+        launch(Dispatchers.IO + CoroutineName("Cancellation check for job $uuid")) {
+            while (coroutineJob.isActive) {
+                if (jobCancellationQueue.get().contains(uuid)) {
+                    coroutineJob.cancelAndJoin()
+                    jobPersistence.fetchJob(uuid).onRight { job ->
+                        if (job.status == JobStatus.SUCCESS || job.status == JobStatus.FAILURE) {
+                            log.info("Job with ID $uuid was cancelled, but finished before the cancellation was processed.")
+                        } else {
+                            job.status = JobStatus.CANCELLED
+                            job.finishedAt = LocalDateTime.now()
+                            jobPersistence.transaction { updateJob(job) }.orQuitWith {
+                                log.error("Failed to update job with ID $uuid to status CANCELLED: $it")
+                                return@launch
+                            }
+                            log.info("Job with ID $uuid was cancelled successfully.")
                         }
-                        log.info("Job with ID $uuid was cancelled successfully.")
                     }
+                    return@launch
                 }
-                return@launch
+                delay(cancellationConfig.checkInterval)
             }
-            delay(min(INTERNAL_CANCELLATION_CHECK_INTERVAL.inWholeMilliseconds, cancellationConfig.checkInterval.inWholeMilliseconds))
         }
-    }
-
-    companion object {
-        /**
-         * The interval in which [Maintenance.jobsToBeCancelled] is checked during the run of a job.
-         */
-        val INTERNAL_CANCELLATION_CHECK_INTERVAL = 100.milliseconds
     }
 }
 
@@ -150,10 +147,11 @@ class SpecificExecutor<INPUT, RESULT>(
     private val myInstanceName: String,
     private val persistence: DataPersistence<INPUT, RESULT>,
     private val computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
+    private val longPollManager: () -> LongPollManager,
     private val timeoutComputation: (Job, INPUT) -> Duration,
     private val maxRestarts: Int
 ) {
-    internal fun CoroutineScope.launchComputationJob(job: Job) = launch(Dispatchers.Default) {
+    internal fun CoroutineScope.launchComputationJob(job: Job) = launch(Dispatchers.Default + CoroutineName("Computation of Job ${job.uuid}")) {
         val uuid = job.uuid
         val jobInput = persistence.fetchInput(uuid).orQuitWith {
             abortComputationWithError(persistence, uuid, "Failed to fetch job input for ID ${uuid}: $it", "Failed to fetch job input: $it")
@@ -226,12 +224,12 @@ class SpecificExecutor<INPUT, RESULT>(
 
     private suspend inline fun <C : ComputationResult<RESULT>> updateResultOrFailure(
         job: Job, computation: C, id: String, type: String,
-        crossinline updateAction: suspend DataTransactionalPersistence<*, RESULT>.() -> PersistenceAccessResult<Unit>
+        crossinline updateData: suspend DataTransactionalPersistence<*, RESULT>.() -> PersistenceAccessResult<Unit>
     ) {
         job.finishedAt = LocalDateTime.now()
         job.status = computation.resultStatus()
         persistence.dataTransaction {
-            updateAction().orQuitWith {
+            updateData().orQuitWith {
                 // Here it's difficult to tell what we should do with the job, since we don't know why persisting the job failed.
                 // Should we do nothing, reset it to CREATED, or set it to FAILURE?
                 // Currently, we decide to do nothing and just wait for the cleanup tasks to reset the job.
@@ -245,6 +243,12 @@ class SpecificExecutor<INPUT, RESULT>(
                     "Failed to update the job for ID $id after finishing the computation: $it",
                     "Failed to update the job after finishing the computation"
                 )
+            }
+        }.onRight {
+            when (computation.resultStatus()) {
+                JobStatus.SUCCESS -> longPollManager().publishSuccess(job.uuid)
+                JobStatus.FAILURE -> longPollManager().publishFailure(job.uuid)
+                else -> error("Unexpected result status")
             }
         }.ifError {
             abortComputationWithError(

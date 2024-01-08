@@ -42,14 +42,9 @@ class SyncMockTest : FunSpec({
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt()) },
                             { call.respond(it) }, defaultComputation
                         ) {
-                            synchronousResourceConfig {
-                                enabled = true
-                                checkInterval = 5.milliseconds
-                            }
+                            enableSynchronousResource { checkInterval = 5.milliseconds }
                         }
-                        maintenanceConfig {
-                            jobCheckInterval = 5.milliseconds
-                        }
+                        maintenanceConfig { jobCheckInterval = 5.milliseconds }
                     }
                 }
             }
@@ -69,19 +64,14 @@ class SyncMockTest : FunSpec({
                             "J1", this@route, dataPersistence, { call.receiveText().toInt().let { TestInput(it, it) } },
                             { call.respond(it) }, defaultComputation
                         ) {
-                            synchronousResourceConfig {
-                                enabled = true
+                            enableSynchronousResource {
                                 checkInterval = 5.milliseconds
                                 maxWaitingTime = 50.milliseconds
                                 customPriorityProvider = { it.value }
                             }
-                            jobConfig {
-                                priorityProvider = { 2 }
-                            }
+                            jobConfig { priorityProvider = { 2 } }
                         }
-                        maintenanceConfig {
-                            jobCheckInterval = 5.milliseconds
-                        }
+                        maintenanceConfig { jobCheckInterval = 5.milliseconds }
                     }
                 }
             }
@@ -112,14 +102,9 @@ class SyncMockTest : FunSpec({
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), throwException = true) },
                             { call.respond(it) }, defaultComputation
                         ) {
-                            synchronousResourceConfig {
-                                enabled = true
-                                checkInterval = 10.milliseconds
-                            }
+                            enableSynchronousResource { checkInterval = 10.milliseconds }
                         }
-                        maintenanceConfig {
-                            jobCheckInterval = 5.milliseconds
-                        }
+                        maintenanceConfig { jobCheckInterval = 5.milliseconds }
                     }
                 }
             }

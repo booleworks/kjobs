@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC10] - 2024-xx-yy
+
+### Added
+- Support for **Long Polling** which is an alternative to `status` calls. Instead of returning the current status directly (as for `status` calls), a call to `poll/<uuid>` will wait for the job to finish or until a configured timeout is hit. This can significantly reduce the number of (usually `status`) calls coming from clients. Furthermore, the clients don't need to think about reasonable intervals for `status` calls anymore.
+  - The result of a long polling call is a `PollStatus` which can be `SUCCESS`, `FAILURE`, `ABORTED` (if the job was already cancelled), or `TIMEOUT`.
+  - Long polling must be enabled via `ApiBuilder.enableLongPolling` and can be configured with a `LongPollManager` and a timeout. It is recommended to set the timeout to at most 10 minutes or less to avoid read timeouts of client or server.
+  - Clients are free (and encouraged) to start the next poll call immediately after receiving a `TIMEOUT` response 
+  - Long polling requires a `LongPollManager` which may be tricky when running on multiple instances. However, a Redis-based implementation is already provided by KJobs.
+  - Clients can request a specific timeout in milliseconds by passing the query parameter `timeout`, e.g. `poll/<uuid>?timeout=1000` will wait at least one second for the result. The timeout is ignored if it is larger than the one configured in `LongPollingConfigBuilder.maximumConnectionTimeout`.
+
+
+### Changed
+- Internal refactoring of job cancellation queue (eliminated global state in `Maintenance.jobToBeCancelled` with an atomic reference which is passed as parameter)
+- Added default empty configuration for `JobFrameworkBuilder.enableCancellation` and `JobFrameworkBuilder.enableStatistics`
+- Renamed `ApiBuilder.synchronousResourceConfig` to `enableSynchronousResource` which enables the synchronous resource on the method call, thus `SynchronousResourceConfigBuilder.enabled` cannot be set anymore from outside
+- Renamed `ApiBuilder.infoConfig` to `enableJobInfoResource` which enables the job info resource on the method call, thus `JobInfoConfigBuilder.enabled` cannot be set anymore from outside
+
+
 ## [1.0.0-RC9] - 2023-12-12
 
 ### Changed
@@ -38,7 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed `cancellationConfig` to `enableCancellation`. Setting `enabled = true` is not necessary/possible anymore.
 - `DataPersistence.dataTransaction` now takes a type parameter `T` s.t. the result of the `block` can be returned
 - Additional safety net in case of database connection problems (KJobs will repeatedly try to set the job to `FAILURE` to avoid that the job remains in state `RUNNING` although it failed because of the database problems)
-- Updated to Kotlin 1.9.10, Redis to 5.0.2, and some other minor dependency updates
+- Added names to all created coroutines, thus the method `scheduleForever` now also requires an (arbitrary) coroutine name
+- Updated to Kotlin 1.9.22, Redis to 5.0.2, and some other minor dependency updates
 - Some minor internal refactoring
 
 

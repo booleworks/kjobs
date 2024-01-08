@@ -63,17 +63,17 @@ class ApiTest : FunSpec({
         routing {
             JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 50.milliseconds }
-                enableCancellation {}
+                enableCancellation()
                 route("test") {
                     addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
                         apiConfig { enableDeletion = true }
-                        infoConfig { enabled = true }
+                        enableJobInfoResource {}
                     }
                 }
                 route("test2") {
                     addApi("testType2", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
                         apiConfig { enableDeletion = true }
-                        infoConfig { enabled = true }
+                        enableJobInfoResource {}
                     }
                 }
             }
@@ -110,11 +110,11 @@ class ApiTest : FunSpec({
         routing {
             JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 20.milliseconds }
-                enableCancellation { }
+                enableCancellation()
                 route("test") {
                     addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
-                        synchronousResourceConfig { enabled = true }
-                        infoConfig { enabled = true }
+                        enableSynchronousResource()
+                        enableJobInfoResource()
                         apiConfig {
                             enableDeletion = true
                             submitRoute = { block -> post("sub") { block() } }
@@ -165,7 +165,7 @@ class ApiTest : FunSpec({
                 maintenanceConfig { jobCheckInterval = 20.milliseconds }
                 route("test") {
                     addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
-                        synchronousResourceConfig { enabled = true }
+                        enableSynchronousResource()
                         apiConfig {
                             inputValidation = { if (it.value >= 0) emptyList() else listOf("Value must not be negative", "Some second message") }
                         }

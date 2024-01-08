@@ -18,6 +18,7 @@ import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Set up the job framework in testing mode. This returns a [JobFrameworkTestingMode] object which allows
@@ -67,9 +68,19 @@ class JobFrameworkTestingApi internal constructor(
     fun runExecutor(
         executionCapacityProvider: ExecutionCapacityProvider = executorConfig.executionCapacityProvider,
         jobPrioritizer: JobPrioritizer = executorConfig.jobPrioritizer,
-        tagMatcher: TagMatcher = executorConfig.tagMatcher
+        tagMatcher: TagMatcher = executorConfig.tagMatcher,
+        jobCancellationQueue: AtomicReference<Set<String>> = AtomicReference(setOf())
     ) = runBlocking(Dispatchers.Default) {
-        MainJobExecutor(jobPersistence, myInstanceName, executionCapacityProvider, jobPrioritizer, tagMatcher, cancellationConfig, executorsPerType).execute()
+        MainJobExecutor(
+            jobPersistence,
+            myInstanceName,
+            executionCapacityProvider,
+            jobPrioritizer,
+            tagMatcher,
+            cancellationConfig,
+            jobCancellationQueue,
+            executorsPerType
+        ).execute()
     }
 
     /**
@@ -101,7 +112,9 @@ class JobFrameworkTestingApi internal constructor(
      * Performs the cancellation check which updates the internal list of jobs to be cancelled.
      * @see Maintenance.checkForCancellations
      */
-    fun checkForCancellations() = runBlocking { Maintenance.checkForCancellations(jobPersistence) }
+    fun checkForCancellations(jobCancellationQueue: AtomicReference<Set<String>>) = runBlocking {
+        Maintenance.checkForCancellations(jobPersistence, jobCancellationQueue)
+    }
 
     /**
      * Restarts jobs from dead instances.

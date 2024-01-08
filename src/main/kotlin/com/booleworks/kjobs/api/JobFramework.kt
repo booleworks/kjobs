@@ -13,6 +13,8 @@ import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
 import com.booleworks.kjobs.control.SpecificExecutor
+import com.booleworks.kjobs.control.polling.LongPollManager
+import com.booleworks.kjobs.control.polling.NopLongPollManager
 import com.booleworks.kjobs.control.scheduleForever
 import com.booleworks.kjobs.control.setupJobApi
 import com.booleworks.kjobs.data.ApiConfig
@@ -25,6 +27,8 @@ import com.booleworks.kjobs.data.JobInfoConfig
 import com.booleworks.kjobs.data.JobPrioritizer
 import com.booleworks.kjobs.data.JobStatistics
 import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.LongPollingConfig
+import com.booleworks.kjobs.data.PollStatus
 import com.booleworks.kjobs.data.SynchronousResourceConfig
 import com.booleworks.kjobs.data.TagMatcher
 import io.ktor.http.HttpStatusCode
@@ -47,6 +51,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 @DslMarker
@@ -118,10 +123,10 @@ class JobFrameworkBuilder internal constructor(
         return ApiBuilder(myInstanceName, jobType, route, dataPersistence, inputReceiver, resultResponder).apply {
             configuration()
             this.computation = computation
-            this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
+            this@JobFrameworkBuilder.apis[jobType] = this
+            this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor(longPollingConfig.longPollManager)
             this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
             this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
-            this@JobFrameworkBuilder.apis[jobType] = this
         }
     }
 
@@ -174,7 +179,7 @@ class JobFrameworkBuilder internal constructor(
             configuration()
             dependents.keys.forEach { this@JobFrameworkBuilder.checkForDuplicateType(it) }
             this.computation = { job, input -> superComputation(job, input, dependents.mapValues { HierarchicalJobApiImpl(it.value.first, job.uuid) }) }
-            this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor()
+            this@JobFrameworkBuilder.executorsPerType[jobType] = specificExecutor(longPollingConfig.longPollManager)
             this@JobFrameworkBuilder.persistencesPerType[jobType] = dataPersistence
             this@JobFrameworkBuilder.restartsPerType[jobType] = jobConfig.maxRestarts
             this@JobFrameworkBuilder.executorsPerType += dependents.mapValues { it.value.second }
@@ -220,7 +225,7 @@ class JobFrameworkBuilder internal constructor(
     /**
      * Enables the cancellation of jobs.
      */
-    fun enableCancellation(configuration: CancellationConfig.() -> Unit) {
+    fun enableCancellation(configuration: CancellationConfig.() -> Unit = {}) {
         cancellationConfig.enabled = true
         configuration(cancellationConfig)
     }
@@ -229,7 +234,7 @@ class JobFrameworkBuilder internal constructor(
      * Enables the global statistics resource.
      * @param basePath the path on which the statistics resource is enabled
      */
-    fun enableStatistics(basePath: Route, configuration: StatisticsConfig.() -> Unit) {
+    fun enableStatistics(basePath: Route, configuration: StatisticsConfig.() -> Unit = {}) {
         statisticsConfig.enabled = true
         statisticsConfig.basePath = basePath
         configuration(statisticsConfig)
@@ -330,20 +335,23 @@ class JobFrameworkBuilder internal constructor(
         }
         return if (maintenanceEnabled) {
             val supervisor = SupervisorJob()
-            val executor = generateJobExecutor()
+            val jobCancellationQueue = AtomicReference(setOf<String>())
+            val executor = generateJobExecutor(jobCancellationQueue)
             val dispatcher = Executors.newFixedThreadPool(maintenanceConfig.threadPoolSize).asCoroutineDispatcher() + supervisor
-            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, Dispatchers.IO) {
+            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, "Update heartbeat for $myInstanceName", Dispatchers.IO) {
                 Maintenance.updateHeartbeat(jobPersistence, myInstanceName)
             }
-            dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, executorConfig.dispatcher) { executor.execute() }
-            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, Dispatchers.IO) {
+            dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, "Main executor run", executorConfig.dispatcher) { executor.execute() }
+            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, "Restart jobs of dead instances", Dispatchers.IO) {
                 Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, restartsPerType)
             }
-            dispatcher.scheduleForever(maintenanceConfig.oldJobDeletionInterval, Dispatchers.IO) {
+            dispatcher.scheduleForever(maintenanceConfig.oldJobDeletionInterval, "Delete old jobs", Dispatchers.IO) {
                 Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType)
             }
             if (cancellationConfig.enabled) {
-                dispatcher.scheduleForever(cancellationConfig.checkInterval, Dispatchers.IO) { Maintenance.checkForCancellations(jobPersistence) }
+                dispatcher.scheduleForever(cancellationConfig.checkInterval, "Check for cancellations", Dispatchers.IO) {
+                    Maintenance.checkForCancellations(jobPersistence, jobCancellationQueue)
+                }
             }
             return supervisor
         } else null
@@ -367,9 +375,9 @@ class JobFrameworkBuilder internal constructor(
         require(!(jobType in apis || jobType in jobs || jobType in executorsPerType)) { "An API or job with type $jobType is already defined" }
     }
 
-    private fun generateJobExecutor(): MainJobExecutor = MainJobExecutor(
-        jobPersistence, myInstanceName, executorConfig.executionCapacityProvider,
-        executorConfig.jobPrioritizer, executorConfig.tagMatcher, cancellationConfig, executorsPerType
+    private fun generateJobExecutor(jobCancellationQueue: AtomicReference<Set<String>>): MainJobExecutor = MainJobExecutor(
+        jobPersistence, myInstanceName, executorConfig.executionCapacityProvider, executorConfig.jobPrioritizer,
+        executorConfig.tagMatcher, cancellationConfig, jobCancellationQueue, executorsPerType
     )
 }
 
@@ -390,6 +398,7 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
     internal val jobConfig: JobConfigBuilder<INPUT> = JobConfigBuilder()
     private val syncConfig: SynchronousResourceConfigBuilder<INPUT> = SynchronousResourceConfigBuilder()
     private val infoConfig: JobInfoConfigBuilder = JobInfoConfigBuilder()
+    internal val longPollingConfig: LongPollingConfigBuilder = LongPollingConfigBuilder()
 
     /**
      * Provides further configuration options about the API.
@@ -404,19 +413,41 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
     /**
      * Provides configuration options for the synchronous resource.
      */
-    fun synchronousResourceConfig(configuration: SynchronousResourceConfigBuilder<INPUT>.() -> Unit) = configuration(syncConfig)
+    fun enableSynchronousResource(configuration: SynchronousResourceConfigBuilder<INPUT>.() -> Unit = {}) {
+        syncConfig.enabled = true
+        configuration(syncConfig)
+    }
 
     /**
      * Provides configuration options for the job info resource.
      */
-    fun infoConfig(configuration: JobInfoConfigBuilder.() -> Unit) = configuration(infoConfig)
+    fun enableJobInfoResource(configuration: JobInfoConfigBuilder.() -> Unit = {}) {
+        infoConfig.enabled = true
+        configuration(infoConfig)
+    }
 
-    internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> =
-        SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation, jobConfig.maxRestarts)
+    /**
+     * Provides configuration options for the long polling resource.
+     */
+    fun enableLongPolling(longPollManager: () -> LongPollManager, configuration: LongPollingConfigBuilder.() -> Unit = {}) {
+        longPollingConfig.enabled = true
+        longPollingConfig.longPollManager = longPollManager
+        configuration(longPollingConfig)
+    }
+
+    internal fun specificExecutor(longPollManager: () -> LongPollManager): SpecificExecutor<INPUT, RESULT> =
+        SpecificExecutor(myInstanceName, persistence, computation, longPollManager, jobConfig.timeoutComputation, jobConfig.maxRestarts)
 
     internal fun build(enableCancellation: Boolean) = with(route) {
         setupJobApi(
-            apiConfig.toApiConfig(inputReceiver, resultResponder, enableCancellation, syncConfig.toSynchronousResourceConfig(), infoConfig.toJobInfoConfig()),
+            apiConfig.toApiConfig(
+                inputReceiver,
+                resultResponder,
+                enableCancellation,
+                syncConfig.toSynchronousResourceConfig(),
+                infoConfig.toJobInfoConfig(),
+                longPollingConfig.toLongPollingConfig()
+            ),
             jobConfig.toJobConfig(jobType, myInstanceName, persistence)
         )
     }
@@ -439,7 +470,7 @@ class JobBuilder<INPUT, RESULT> internal constructor(
     fun jobConfig(configuration: JobConfigBuilder<INPUT>.() -> Unit) = configuration(jobConfig)
 
     internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> =
-        SpecificExecutor(myInstanceName, persistence, computation, jobConfig.timeoutComputation, jobConfig.maxRestarts)
+        SpecificExecutor(myInstanceName, persistence, computation, { NopLongPollManager }, jobConfig.timeoutComputation, jobConfig.maxRestarts)
 }
 
 /**
@@ -463,7 +494,7 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
      * @param jobType a unique name identifying this type of job
      * @param persistence the persistence/database to use for storing the inputs and results for this dependent job
      * @param computation the actual computation
-     * @param configuration provides more detailed configuration options as described in [ApiBuilder.JobConfigBuilder]
+     * @param configuration provides more detailed configuration options as described in [JobConfigBuilder]
      */
     fun <DEP_INPUT, DEP_RESULT> addDependentJob(
         jobType: String,
@@ -475,7 +506,7 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
             require(jobType !in dependents) { "A dependent job with type $jobType is already defined" }
             dependents[jobType] = Triple(
                 JobConfig(jobType, persistence, myInstanceName, config.tagProvider, config.customInfoProvider, config.priorityProvider),
-                SpecificExecutor(myInstanceName, persistence, computation, config.timeoutComputation, config.maxRestarts),
+                SpecificExecutor(myInstanceName, persistence, computation, { NopLongPollManager }, config.timeoutComputation, config.maxRestarts),
                 persistence
             )
         }
@@ -499,13 +530,14 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
  * a message constructed from the list. Default is an empty list.
  * @param enableDeletion whether a `DELETE` resource should be added which allows the API user to delete a job (usually once the result has been fetched)
  * @param submitRoute replacement for the submit resource, default is `POST submit`
- * @param statusRoute replacement for the status resource, default is `GET status`
- * @param resultRoute replacement for the result resource, default is `GET result`
- * @param failureRoute replacement for the failure resource, default is `GET failure`
- * @param deleteRoute replacement for the delete resource, default is `DELETE delete`, only used if the resource is enabled
- * @param cancelRoute replacement for the cancel resource, default is `POST cancel`, only used if the resource is enabled
+ * @param statusRoute replacement for the status resource, default is `GET status/{uuid}`
+ * @param resultRoute replacement for the result resource, default is `GET result/{uuid}`
+ * @param failureRoute replacement for the failure resource, default is `GET failure/{uuid}`
+ * @param deleteRoute replacement for the delete resource, default is `DELETE delete/{uuid}`, only used if the resource is enabled
+ * @param cancelRoute replacement for the cancel resource, default is `POST cancel/{uuid}`, only used if the resource is enabled
  * @param syncRoute replacement for the sync resource, default is `POST sync`, only used if the resource is enabled
- * @param infoRoute replacement for the info resource, default is `GET info`, only used if the resource is enabled
+ * @param infoRoute replacement for the info resource, default is `GET info/{uuid}`, only used if the resource is enabled
+ * @param longPollingRoute replacement for the long polling resource, default is `GET poll/{uuid}`, only used if the resource is enabled
  */
 @KJobsDsl
 class ApiConfigBuilder<INPUT> internal constructor(
@@ -519,16 +551,18 @@ class ApiConfigBuilder<INPUT> internal constructor(
     var cancelRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> post("cancel/{uuid}") { block() } },
     var syncRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> post("synchronous") { block() } },
     var infoRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("info/{uuid}") { block() } },
+    var longPollingRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("poll/{uuid}") { block() } },
 ) {
     internal fun <RESULT> toApiConfig(
         inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
         resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
         enableCancellation: Boolean,
         syncMockConfig: SynchronousResourceConfig<INPUT>,
-        jobInfoConfig: JobInfoConfig
+        jobInfoConfig: JobInfoConfig,
+        longPollingConfig: LongPollingConfig
     ) = ApiConfig(
-        inputReceiver, resultResponder, inputValidation, enableDeletion, enableCancellation, syncMockConfig, jobInfoConfig,
-        submitRoute, statusRoute, resultRoute, failureRoute, deleteRoute, cancelRoute, syncRoute, infoRoute
+        inputReceiver, resultResponder, inputValidation, enableDeletion, enableCancellation, syncMockConfig, jobInfoConfig, longPollingConfig,
+        submitRoute, statusRoute, resultRoute, failureRoute, deleteRoute, cancelRoute, syncRoute, infoRoute, longPollingRoute
     )
 }
 
@@ -573,7 +607,7 @@ class JobConfigBuilder<INPUT> internal constructor(
  */
 @KJobsDsl
 class SynchronousResourceConfigBuilder<INPUT>(
-    var enabled: Boolean = false,
+    internal var enabled: Boolean = false,
     var checkInterval: Duration = 200.milliseconds,
     var maxWaitingTime: Duration = 1.hours,
     var customPriorityProvider: (INPUT) -> Int = { 0 }
@@ -594,10 +628,32 @@ class SynchronousResourceConfigBuilder<INPUT>(
  */
 @KJobsDsl
 class JobInfoConfigBuilder(
-    var enabled: Boolean = false,
+    internal var enabled: Boolean = false,
     var responder: suspend PipelineContext<Unit, ApplicationCall>.(Job) -> Unit = { call.respond(it) }
 ) {
     internal fun toJobInfoConfig() = JobInfoConfig(enabled, responder)
+}
+
+/**
+ * Configuration for the long polling.
+ *
+ * If [enabled] the KJobs will provide an additional resource (defined in [ApiConfigBuilder.longPollingRoute], default `GET poll/{uuid}`)
+ * which waits at most [maximumConnectionTimeout] for the result of the job with the given UUID. As soon as the result is available, the new
+ * status of the job will be returned. If it is not available after the given connection timeout [PollStatus.TIMEOUT] is returned.
+ *
+ * The user may choose to use a smaller connection timeout in the request.
+ *
+ * @param enabled whether the long polling resource is enabled or not, by default it is not enabled
+ * @param longPollManager the [LongPollManager] to be used for this API
+ * @param maximumConnectionTimeout the maximum connection timeout after which [PollStatus.TIMEOUT] is returned
+ */
+@KJobsDsl
+class LongPollingConfigBuilder(
+    internal var enabled: Boolean = false,
+    internal var longPollManager: () -> LongPollManager = { NopLongPollManager },
+    var maximumConnectionTimeout: Duration = 3.minutes
+) {
+    internal fun toLongPollingConfig() = LongPollingConfig(enabled, longPollManager, maximumConnectionTimeout)
 }
 
 internal const val DEFAULT_MAX_JOB_RESTARTS = 3

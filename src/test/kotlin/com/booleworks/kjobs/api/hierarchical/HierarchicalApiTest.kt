@@ -62,7 +62,6 @@ class HierarchicalApiTest : FunSpec({
         delay(300.milliseconds)
         client.get("test/status/$uuid").bodyAsText() shouldBeEqual "RUNNING"
         delay(3.seconds)
-        println(client.get("test/failure/$uuid").bodyAsText())
         client.get("test/status/$uuid").bodyAsText() shouldBeEqual "SUCCESS"
         client.get("test/result/$uuid").parseTestResult() shouldBeEqual TestResult(1100)
 
@@ -72,7 +71,6 @@ class HierarchicalApiTest : FunSpec({
         delay(300.milliseconds)
         client.get("test/status/$uuid2").bodyAsText() shouldBeEqual "RUNNING"
         delay(3.seconds)
-        println(client.get("test/failure/$uuid2").bodyAsText())
         client.get("test/status/$uuid2").bodyAsText() shouldBeEqual "SUCCESS"
         client.get("test/result/$uuid2").parseTestResult() shouldBeEqual TestResult(-500)
     }
@@ -135,12 +133,12 @@ data class SubTestResult2(val a: Int)
 fun ComputationResult<SubTestResult1>.toTestResult(): ComputationResult<TestResult> = when (this) {
     is ComputationResult.Success -> ComputationResult.Success(TestResult(this.result.a))
     is ComputationResult.Error -> this
-    else -> TODO("Why is this necessary?")
+    else -> error("Why is this necessary?")
 }
 
 @JvmName("toTestResult2")
 fun ComputationResult<SubTestResult2>.toTestResult(): ComputationResult<TestResult> = when (this) {
     is ComputationResult.Success -> ComputationResult.Success(TestResult(-this.result.a))
     is ComputationResult.Error -> this
-    else -> TODO("Why is this necessary?")
+    else -> error("Why is this necessary?")
 }

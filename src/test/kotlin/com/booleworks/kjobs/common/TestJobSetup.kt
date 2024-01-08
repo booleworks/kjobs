@@ -11,6 +11,7 @@ import com.booleworks.kjobs.api.persistence.redis.RedisDataPersistence
 import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.SpecificExecutor
+import com.booleworks.kjobs.control.polling.NopLongPollManager
 import com.booleworks.kjobs.data.DefaultExecutionCapacityProvider
 import com.booleworks.kjobs.data.DefaultJobPrioritizer
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
@@ -34,6 +35,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import redis.clients.jedis.JedisPool
 import java.time.LocalDateTime
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -72,6 +74,7 @@ internal fun defaultExecutor(
     jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
     tagMatcher: TagMatcher = TagMatcher.Any,
     cancellationConfig: JobFrameworkBuilder.CancellationConfig = JobFrameworkBuilder.CancellationConfig(),
+    jobCancellationQueue: AtomicReference<Set<String>> = AtomicReference(setOf()),
     specificExecutors: Map<String, SpecificExecutor<*, *>>? = null
 ) = MainJobExecutor(
     persistence,
@@ -80,7 +83,9 @@ internal fun defaultExecutor(
     jobPrioritizer,
     tagMatcher,
     cancellationConfig,
-    specificExecutors ?: mapOf(defaultJobType to SpecificExecutor(myInstanceName, persistence, defaultComputation, timeout, maxRestarts)),
+    jobCancellationQueue,
+    specificExecutors
+        ?: mapOf(defaultJobType to SpecificExecutor(myInstanceName, persistence, defaultComputation, { NopLongPollManager }, timeout, maxRestarts)),
 )
 
 class TestException(message: String) : Exception(message)

@@ -12,6 +12,7 @@ import com.booleworks.kjobs.data.JobConfig
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.PersistenceAccessResult
+import com.booleworks.kjobs.data.PollStatus
 import com.booleworks.kjobs.data.mapResult
 import com.booleworks.kjobs.data.orQuitWith
 import io.ktor.http.HttpStatusCode.Companion.BadRequest
@@ -23,11 +24,13 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.util.pipeline.PipelineContext
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import java.util.*
+import kotlin.time.Duration.Companion.milliseconds
 
 private val apiLog = LoggerFactory.getLogger("ApiLog")
 
@@ -190,6 +193,37 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
             parseUuid()?.let { uuid ->
                 val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: return@infoRoute
                 with(jobInfoConfig) { this@infoRoute.responder(job) }
+            }
+        }
+    }
+
+    if (longPollingConfig.enabled) {
+        val longPollManager = longPollingConfig.longPollManager()
+        longPollingRoute {
+            parseUuid()?.let { uuid ->
+                val timeout = minOf(
+                    call.request.queryParameters["timeout"]?.toIntOrNull()?.milliseconds ?: longPollingConfig.connectionTimeout,
+                    longPollingConfig.connectionTimeout
+                )
+                // We start to polling before checking the job status to reduce the risk of missing a job update between checking
+                // the job and starting to poll (in the worst case we might still miss an update if setting up the poll is slower than
+                // checking the job).
+                val asyncPoll = with(longPollManager) { subscribe(uuid.toString(), timeout) }
+                apiLog.trace("Async Poll for ID {} initiated with timeout {}", uuid, timeout)
+                val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: run {
+                    asyncPoll.cancelAndJoin()
+                    return@longPollingRoute
+                }
+                val currentStatus = PollStatus.fromJobStatus(job.status)
+                apiLog.trace("Awaiting poll result for ID {}", uuid)
+                val response = if (currentStatus != PollStatus.TIMEOUT) {
+                    apiLog.debug("Status for ID {} already present, cancelling poll", uuid)
+                    asyncPoll.cancelAndJoin()
+                    currentStatus.toString()
+                } else {
+                    asyncPoll.await().toString()
+                }
+                call.respondText(response)
             }
         }
     }

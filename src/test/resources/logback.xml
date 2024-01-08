@@ -11,4 +11,5 @@
 
   <logger name="ktor.application" level="DEBUG"/>
   <logger name="com.github.fppt" level="INFO"/>
+  <logger name="ApiLog" level="WARN"/>
 </configuration>
