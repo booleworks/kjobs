@@ -5,11 +5,14 @@ package com.booleworks.kjobs.api.persistence
 
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapDataPersistence
 import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
+import com.booleworks.kjobs.api.persistence.redis.DefaultRedisConfig
+import com.booleworks.kjobs.api.persistence.redis.RedisConfig
 import com.booleworks.kjobs.api.persistence.redis.RedisDataPersistence
 import com.booleworks.kjobs.api.persistence.redis.RedisJobPersistence
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.expectSuccess
+import com.booleworks.kjobs.common.lettuceClient
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.uuidNotFound
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -17,26 +20,34 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import com.github.fppt.jedismock.RedisServer
 import io.kotest.common.runBlocking
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.equals.shouldBeEqual
-import redis.clients.jedis.JedisPool
+import io.lettuce.core.codec.ByteArrayCodec
+import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPOutputStream
+
+val redisConfigWithCompression = object : DefaultRedisConfig() {
+    override val useCompression = true
+}
 
 class DataPersistenceTest : FunSpec({
 
-    fun testPersistences(testName: String, block: suspend (DataPersistence<MyInput, MyResult>) -> Unit) = runBlocking {
+    fun testPersistences(testName: String, config: RedisConfig = DefaultRedisConfig(), block: suspend (DataPersistence<MyInput, MyResult>) -> Unit) = runBlocking {
         val hashMapJobPersistence = HashMapJobPersistence()
         test("HashMap: $testName") { block(HashMapDataPersistence(hashMapJobPersistence)) }
         val redis = RedisServer.newRedisServer().start()
         test("Redis: $testName") {
             block(
                 RedisDataPersistence(
-                    JedisPool(redis.host, redis.bindPort),
+                    redis.lettuceClient,
                     { jacksonObjectMapper().writeValueAsBytes(it) },
                     { jacksonObjectMapper().writeValueAsBytes(it) },
                     { jacksonObjectMapper().readValue(it) },
-                    { jacksonObjectMapper().readValue(it) })
+                    { jacksonObjectMapper().readValue(it) },
+                    config
+                )
             )
         }
-//        redis.stop()
     }
 
     testPersistences("test persist input") { dataPersistence ->
@@ -177,23 +188,24 @@ class DataPersistenceTest : FunSpec({
 
     test("Redis: test delete") {
         val redis = RedisServer.newRedisServer().start()
-        val jobPersistence = RedisJobPersistence(JedisPool(redis.host, redis.bindPort))
+        val redisClient = redis.lettuceClient
+        val jobPersistence = RedisJobPersistence(redisClient)
         val testInputPersistence = RedisDataPersistence<TestInput, TestResult>(
-            JedisPool(redis.host, redis.bindPort),
+            redisClient,
             { jacksonObjectMapper().writeValueAsBytes(it) },
             { jacksonObjectMapper().writeValueAsBytes(it) },
             { jacksonObjectMapper().readValue(it) },
             { jacksonObjectMapper().readValue(it) }
         )
         val myInputPersistence = RedisDataPersistence<MyInput, MyResult>(
-            JedisPool(redis.host, redis.bindPort),
+            redisClient,
             { jacksonObjectMapper().writeValueAsBytes(it) },
             { jacksonObjectMapper().writeValueAsBytes(it) },
             { jacksonObjectMapper().readValue(it) },
             { jacksonObjectMapper().readValue(it) }
         )
         val anotherInputPersistence = RedisDataPersistence<AnotherInput, AnotherResult>(
-            JedisPool(redis.host, redis.bindPort),
+            redisClient,
             { jacksonObjectMapper().writeValueAsBytes(it) },
             { jacksonObjectMapper().writeValueAsBytes(it) },
             { jacksonObjectMapper().readValue(it) },
@@ -264,6 +276,66 @@ class DataPersistenceTest : FunSpec({
         anotherInputPersistence.fetchInput("47") shouldBeEqual PersistenceAccessResult.uuidNotFound("47")
         anotherInputPersistence.fetchFailure("47") shouldBeEqual PersistenceAccessResult.uuidNotFound("47")
     }
+
+    test("Redis: test persist input with compression") {
+        val redis = RedisServer.newRedisServer().start()
+        val dataPersistence = RedisDataPersistence<MyInput, MyResult>(
+            redis.lettuceClient,
+            { jacksonObjectMapper().writeValueAsBytes(it) },
+            { jacksonObjectMapper().writeValueAsBytes(it) },
+            { jacksonObjectMapper().readValue(it) },
+            { jacksonObjectMapper().readValue(it) },
+            redisConfigWithCompression
+        )
+        val inputs = myInputGenerator()
+        dataPersistence.fetchInput("42") shouldBeEqual PersistenceAccessResult.uuidNotFound("42")
+        dataPersistence.dataTransaction {
+            inputs.forEach { persistInput(newJob(it.first), it.second).expectSuccess() }
+        }
+        redis.lettuceClient.connect(ByteArrayCodec.INSTANCE).sync().get("input:42".toByteArray()).toList() shouldContainExactly compressToByteList(inputs[0].second)
+        dataPersistence.fetchInput("42").expectSuccess() shouldBeEqual inputs[0].second
+        dataPersistence.fetchInput("43").expectSuccess() shouldBeEqual inputs[1].second
+        dataPersistence.fetchInput("44").expectSuccess() shouldBeEqual inputs[2].second
+        dataPersistence.fetchInput("45").expectSuccess() shouldBeEqual inputs[3].second
+        dataPersistence.fetchInput("46").expectSuccess() shouldBeEqual inputs[4].second
+        dataPersistence.fetchInput("47") shouldBeEqual PersistenceAccessResult.uuidNotFound("47")
+    }
+
+    test("Redis: test persist result with compression") {
+        val redis = RedisServer.newRedisServer().start()
+        val dataPersistence = RedisDataPersistence<MyInput, MyResult>(
+            redis.lettuceClient,
+            { jacksonObjectMapper().writeValueAsBytes(it) },
+            { jacksonObjectMapper().writeValueAsBytes(it) },
+            { jacksonObjectMapper().readValue(it) },
+            { jacksonObjectMapper().readValue(it) },
+            redisConfigWithCompression
+        )
+        val results = myResultGenerator()
+        dataPersistence.fetchResult("42") shouldBeEqual PersistenceAccessResult.uuidNotFound("42")
+        dataPersistence.dataTransaction {
+            results.forEach { persistOrUpdateResult(newJob(it.first), it.second).expectSuccess() }
+        }
+        redis.lettuceClient.connect(ByteArrayCodec.INSTANCE).sync().get("result:44".toByteArray()).toList() shouldContainExactly compressToByteList(results[2].second)
+        dataPersistence.fetchResult("42").expectSuccess() shouldBeEqual results[0].second
+        dataPersistence.fetchResult("43").expectSuccess() shouldBeEqual results[1].second
+        dataPersistence.fetchResult("44").expectSuccess() shouldBeEqual results[2].second
+        dataPersistence.fetchResult("45").expectSuccess() shouldBeEqual results[3].second
+        dataPersistence.fetchResult("46").expectSuccess() shouldBeEqual results[4].second
+        dataPersistence.fetchResult("47") shouldBeEqual PersistenceAccessResult.uuidNotFound("47")
+
+        val newResult = MyResult(1, "2", listOf(3.0), setOf(MySubObject(4, "5")))
+        dataPersistence.dataTransaction {
+            persistOrUpdateResult(newJob("44"), newResult)
+            persistOrUpdateResult(newJob("46"), newResult)
+        }
+        redis.lettuceClient.connect(ByteArrayCodec.INSTANCE).sync().get("result:44".toByteArray()).toList() shouldContainExactly compressToByteList(newResult)
+        dataPersistence.fetchResult("42").expectSuccess() shouldBeEqual results[0].second
+        dataPersistence.fetchResult("43").expectSuccess() shouldBeEqual results[1].second
+        dataPersistence.fetchResult("44").expectSuccess() shouldBeEqual newResult
+        dataPersistence.fetchResult("45").expectSuccess() shouldBeEqual results[3].second
+        dataPersistence.fetchResult("46").expectSuccess() shouldBeEqual newResult
+    }
 })
 
 private fun myInputGenerator(): List<Pair<String, MyInput>> = listOf(
@@ -312,3 +384,6 @@ private data class MyResult(
 
 private data class AnotherInput(val a: Int)
 private data class AnotherResult(val a: Int)
+
+private fun compressToByteList(input: Any) =
+    ByteArrayOutputStream().also { GZIPOutputStream(it).use { gz -> gz.write(jacksonObjectMapper().writeValueAsBytes(input)) } }.toByteArray().toList()

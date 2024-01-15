@@ -29,6 +29,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.route
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.cancelAndJoin
 import java.time.LocalDateTime
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -39,11 +40,12 @@ class StatisticsTest : FunSpec({
     test("test overall statistics") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             val client = createClient { install(ContentNegotiation) { jackson { } } }
             routing {
                 route("base") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         enableStatistics(this@route)
                         setupTwoJobApis(this@route, dataPersistence)
                     }
@@ -55,16 +57,18 @@ class StatisticsTest : FunSpec({
             client.get("base/statistics") { accept(ContentType.Application.Json) }.body<JobStatistics>() shouldBeEqual
                     JobStatistics(12, 2, 2, 2, 2, 2, 2, 7.5, 10.0)
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test statistics per type") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             val client = createClient { install(ContentNegotiation) { jackson { } } }
             routing {
                 route("base") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         enableStatistics(this@route) {
                             statisticsGenerator = { JobStatistics.byType(jobPersistence) }
                         }
@@ -80,15 +84,17 @@ class StatisticsTest : FunSpec({
                         "test2" to JobStatistics(6, 1, 1, 1, 1, 1, 1, 25.0 / 3, 15.0),
                     )
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test override route") {
         val jobPersistence = HashMapJobPersistence()
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             val client = createClient { install(ContentNegotiation) { jackson { } } }
             routing {
                 route("base") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         enableStatistics(this@route) {
                             routeDefinition = { get("hello") { call.respondText { "World" } } }
                         }
@@ -97,16 +103,18 @@ class StatisticsTest : FunSpec({
             }
             client.get("base/hello").bodyAsText() shouldBeEqual "World"
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test override route and statistics per type") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             val client = createClient { install(ContentNegotiation) { jackson { } } }
             routing {
                 route("base") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         enableStatistics(this@route) {
                             statisticsGenerator = { JobStatistics.byType(jobPersistence) }
                             routeDefinition = { get("hello") { call.respond(statisticsGenerator()) } }
@@ -123,6 +131,7 @@ class StatisticsTest : FunSpec({
                         "test2" to JobStatistics(6, 1, 1, 1, 1, 1, 1, 25.0 / 3, 15.0),
                     )
         }
+        jobFramework!!.cancelAndJoin()
     }
 })
 

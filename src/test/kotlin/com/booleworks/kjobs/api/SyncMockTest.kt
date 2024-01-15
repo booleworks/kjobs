@@ -26,6 +26,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.routing.route
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -34,10 +35,11 @@ class SyncMockTest : FunSpec({
     test("test simple synchronous api") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt()) },
                             { call.respond(it) }, defaultComputation
@@ -51,15 +53,17 @@ class SyncMockTest : FunSpec({
             client.post("test/synchronous") { setBody("42") }.parseTestResult() shouldBeEqual TestResult(42)
             client.post("test/synchronous") { setBody("43") }.parseTestResult() shouldBeEqual TestResult(43)
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test synchronous config options") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { call.receiveText().toInt().let { TestInput(it, it) } },
                             { call.respond(it) }, defaultComputation
@@ -89,15 +93,17 @@ class SyncMockTest : FunSpec({
             delay(100)
             client.get("test/status/$uuid").bodyAsText() shouldBeEqual "SUCCESS"
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test failure in synchronous api") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), throwException = true) },
                             { call.respond(it) }, defaultComputation
@@ -112,5 +118,6 @@ class SyncMockTest : FunSpec({
             response.status shouldBeEqual HttpStatusCode.InternalServerError
             response.bodyAsText() shouldBeEqual "Computation failed with message: Unexpected exception during computation: Test Exception Message"
         }
+        jobFramework!!.cancelAndJoin()
     }
 })

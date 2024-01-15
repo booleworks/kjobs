@@ -7,6 +7,8 @@ package com.booleworks.kjobs.api.persistence.redis
  * Configuration for the [RedisDataPersistence].
  */
 interface RedisConfig {
+    val useCompression: Boolean get() = false
+
     val jobPattern: String get() = "job:*"
     val heartbeatPattern: String get() = "heartbeat:*"
 

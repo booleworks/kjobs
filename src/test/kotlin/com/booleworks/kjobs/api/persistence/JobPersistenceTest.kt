@@ -7,6 +7,7 @@ import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
 import com.booleworks.kjobs.api.persistence.redis.RedisJobPersistence
 import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.expectSuccess
+import com.booleworks.kjobs.common.lettuceClient
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
@@ -27,7 +28,7 @@ class JobPersistenceTest : FunSpec({
     fun testPersistences(testName: String, block: suspend (JobPersistence) -> Unit) = runBlocking {
         test("HashMap: $testName") { block(HashMapJobPersistence()) }
         val redis = RedisServer.newRedisServer().start()
-        test("Redis: $testName") { block(RedisJobPersistence(JedisPool(redis.host, redis.bindPort))) }
+        test("Redis: $testName") { block(RedisJobPersistence(redis.lettuceClient)) }
 //        redis.stop()
     }
 
@@ -67,7 +68,7 @@ class JobPersistenceTest : FunSpec({
             startedAt = LocalDateTime.of(2022, 7, 23, 0, 0), executingInstance = "You"
         )
     }
-    
+
     testPersistences("test all jobs with status") { persistence ->
         persistence.transaction {
             persistJob(newJob("42", status = JobStatus.RUNNING)).expectSuccess()
@@ -188,7 +189,7 @@ class JobPersistenceTest : FunSpec({
 
     test("Redis: test heartbeats") {
         val redis = RedisServer.newRedisServer().start()
-        val persistence = RedisJobPersistence(JedisPool(redis.host, redis.bindPort))
+        val persistence = RedisJobPersistence(redis.lettuceClient)
         val now = LocalDateTime.now()
         persistence.fetchHeartbeats(now.minusYears(2000)).expectSuccess() shouldHaveSize 0
         persistence.transaction {

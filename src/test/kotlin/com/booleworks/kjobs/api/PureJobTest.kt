@@ -17,6 +17,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.equals.shouldBeEqual
 import io.ktor.client.request.get
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -26,8 +27,9 @@ class PureJobTest : FunSpec({
         testApplication {
             val jobPersistence = HashMapJobPersistence()
             val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+            var jobFramework: kotlinx.coroutines.Job? = null
             routing {
-                JobFramework(defaultInstanceName, jobPersistence) {
+                jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                     addJob(defaultJobType, dataPersistence, defaultComputation)
                     maintenanceConfig { jobCheckInterval = 5.milliseconds }
                 }
@@ -46,6 +48,7 @@ class PureJobTest : FunSpec({
             delay(20.milliseconds)
             dataPersistence.fetchJob("43").expectSuccess().status shouldBeEqual JobStatus.FAILURE
             dataPersistence.fetchFailure("43").expectSuccess() shouldBeEqual "Unexpected exception during computation: Test Exception Message"
+            jobFramework!!.cancelAndJoin()
         }
     }
 

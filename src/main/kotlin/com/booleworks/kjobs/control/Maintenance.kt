@@ -29,7 +29,7 @@ private const val HEARTBEAT_TIMEOUT_FACTOR = 2.1
  * A collection of maintenance jobs.
  */
 object Maintenance {
-    private val logger: Logger = LoggerFactory.getLogger(Maintenance::class.java)
+    private val logger: Logger = LoggerFactory.getLogger("Maintenance")
 
     /**
      * Updates the heartbeat for this instance in the [persistence].
@@ -74,8 +74,7 @@ object Maintenance {
         }
         val jobsWithDeadInstances = runningJobs.filter { it.executingInstance !in liveInstances }
         if (jobsWithDeadInstances.isNotEmpty()) {
-            val deadInstances = jobsWithDeadInstances.map { it.executingInstance }
-            logger.warn("Detected jobs executed by seemingly dead instances. Dead instances are: ${deadInstances.joinToString()}")
+            logger.warn("Detected jobs executed by seemingly dead instances. Dead instances are: ${jobsWithDeadInstances.joinToString { it.executingInstance ?: "" }}")
         }
         restartJobs(jobsWithDeadInstances, persistencesPerType, maxRestartsPerType, "its executing instance seems to be dead")
     }

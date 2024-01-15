@@ -4,7 +4,6 @@
 package com.booleworks.kjobs.api.hierarchical
 
 import com.booleworks.kjobs.api.JobFramework
-import com.booleworks.kjobs.api.persistence.redis.RedisDataPersistence
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultInstanceName
@@ -31,7 +30,7 @@ import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.route
-import io.ktor.server.testing.ApplicationTestBuilder
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
@@ -51,10 +50,25 @@ class HierarchicalApiTest : FunSpec({
 
     testJobFrameworkWithRedis("test multiple jobs") {
         val persistence = newRedisPersistence<TestInput, TestResult>()
-        addTestRoute(persistence, { _, input ->
-            delay(input.a.milliseconds); ComputationResult.Success(SubTestResult1(input.a))
-        }) { _, input ->
-            delay(input.b.milliseconds); ComputationResult.Success(SubTestResult2(input.b - input.a))
+        var jobFramework: kotlinx.coroutines.Job? = null
+        routing {
+            route("test") {
+                jobFramework = JobFramework(defaultInstanceName, persistence) {
+                    maintenanceConfig { jobCheckInterval = 20.milliseconds }
+                    executorConfig { executionCapacityProvider = ExecutionCapacityProvider { AcceptingAnyJob } }
+                    addApiForHierarchicalJob(
+                        defaultJobType, this@route, persistence,
+                        { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, superComputation()
+                    ) {
+                        addDependentJob(subJob1, newRedisPersistence<SubTestInput1, SubTestResult1>(), { _: Job, input: SubTestInput1 ->
+                            delay(input.a.milliseconds); ComputationResult.Success(SubTestResult1(input.a))
+                        }) {}
+                        addDependentJob(subJob2, newRedisPersistence<SubTestInput2, SubTestResult2>(), { _: Job, input: SubTestInput2 ->
+                            delay(input.b.milliseconds); ComputationResult.Success(SubTestResult2(input.b - input.a))
+                        }) {}
+                    }
+                }
+            }
         }
         val submit = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(5000).ser()) }
         submit.status shouldBeEqual HttpStatusCode.OK
@@ -73,30 +87,9 @@ class HierarchicalApiTest : FunSpec({
         delay(3.seconds)
         client.get("test/status/$uuid2").bodyAsText() shouldBeEqual "SUCCESS"
         client.get("test/result/$uuid2").parseTestResult() shouldBeEqual TestResult(-500)
+        jobFramework!!.cancelAndJoin()
     }
 })
-
-private fun ApplicationTestBuilder.addTestRoute(
-    persistence: RedisDataPersistence<TestInput, TestResult>,
-    computation1: suspend (Job, SubTestInput1) -> ComputationResult<SubTestResult1>,
-    computation2: suspend (Job, SubTestInput2) -> ComputationResult<SubTestResult2>
-) {
-    routing {
-        route("test") {
-            JobFramework(defaultInstanceName, persistence) {
-                maintenanceConfig { jobCheckInterval = 20.milliseconds }
-                executorConfig { executionCapacityProvider = ExecutionCapacityProvider { AcceptingAnyJob } }
-                addApiForHierarchicalJob(
-                    defaultJobType, this@route, persistence,
-                    { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, superComputation()
-                ) {
-                    addDependentJob(subJob1, newRedisPersistence<SubTestInput1, SubTestResult1>(), computation1) {}
-                    addDependentJob(subJob2, newRedisPersistence<SubTestInput2, SubTestResult2>(), computation2) {}
-                }
-            }
-        }
-    }
-}
 
 @Suppress("UNCHECKED_CAST")
 internal fun superComputation() = { _: Job, input: TestInput, apis: Map<String, HierarchicalJobApi<*, *>> ->

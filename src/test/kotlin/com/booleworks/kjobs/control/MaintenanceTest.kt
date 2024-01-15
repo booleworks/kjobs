@@ -13,7 +13,12 @@ import com.booleworks.kjobs.common.newRedisPersistence
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
-import com.booleworks.kjobs.data.JobStatus.*
+import com.booleworks.kjobs.data.JobStatus.CANCELLED
+import com.booleworks.kjobs.data.JobStatus.CANCEL_REQUESTED
+import com.booleworks.kjobs.data.JobStatus.CREATED
+import com.booleworks.kjobs.data.JobStatus.FAILURE
+import com.booleworks.kjobs.data.JobStatus.RUNNING
+import com.booleworks.kjobs.data.JobStatus.SUCCESS
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.uuidNotFound
 import com.github.fppt.jedismock.RedisServer
@@ -24,6 +29,8 @@ import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import redis.clients.jedis.JedisPool
 import java.time.LocalDateTime
@@ -74,7 +81,7 @@ class MaintenanceTest : FunSpec({
         val testingCall = suspend { testingMode.checkForCancellations(jobCancellationQueue) }
 
         for (method in listOf(directCall, testingCall)) {
-            jobCancellationQueue.set( setOf())
+            jobCancellationQueue.set(setOf())
             JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
             persistence.transaction {
                 persistJob(newJob("42", status = CANCEL_REQUESTED))
@@ -121,82 +128,84 @@ class MaintenanceTest : FunSpec({
             )
         }
         val testingCall = suspend { testingMode.restartJobsFromDeadInstances() }
+        coroutineScope {
+            for (method in listOf(directCall, testingCall)) {
+                JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
 
-        for (method in listOf(directCall, testingCall)) {
-            JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
-
-            persistence.transaction {
-                persistJob(newJob("42", status = RUNNING, executingInstance = "I2", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
-                persistJob(newJob("43", status = SUCCESS, executingInstance = "I2", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
-                persistJob(newJob("44", status = RUNNING, executingInstance = "I1", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
-                persistJob(newJob("45", status = RUNNING, executingInstance = "I3", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
-                persistJob(
-                    newJob(
-                        "46", status = RUNNING, executingInstance = "I4",
-                        startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1), numRestarts = 2
+                persistence.transaction {
+                    persistJob(newJob("42", status = RUNNING, executingInstance = "I2", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
+                    persistJob(newJob("43", status = SUCCESS, executingInstance = "I2", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
+                    persistJob(newJob("44", status = RUNNING, executingInstance = "I1", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
+                    persistJob(newJob("45", status = RUNNING, executingInstance = "I3", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
+                    persistJob(
+                        newJob(
+                            "46", status = RUNNING, executingInstance = "I4",
+                            startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1), numRestarts = 2
+                        )
                     )
-                )
-                persistJob(
-                    newJob(
-                        "47", status = RUNNING, executingInstance = "I4",
-                        startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1), numRestarts = 3
+                    persistJob(
+                        newJob(
+                            "47", status = RUNNING, executingInstance = "I4",
+                            startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1), numRestarts = 3
+                        )
                     )
-                )
-                persistJob(
-                    newJob(
-                        "48", jobType = "other", status = RUNNING, executingInstance = "I4",
-                        startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1), numRestarts = 2
+                    persistJob(
+                        newJob(
+                            "48", jobType = "other", status = RUNNING, executingInstance = "I4",
+                            startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1), numRestarts = 2
+                        )
                     )
-                )
-                updateHeartbeat(Heartbeat("I1", LocalDateTime.now().minus(interval.times(2.09).toJavaDuration())))
-                updateHeartbeat(Heartbeat("I2", LocalDateTime.now().minus(interval.times(2.11).toJavaDuration())))
-                updateHeartbeat(Heartbeat("I3", LocalDateTime.now().minus(1.seconds.toJavaDuration())))
+                    updateHeartbeat(Heartbeat("I1", LocalDateTime.now().minus(interval.times(2.09).toJavaDuration())))
+                    updateHeartbeat(Heartbeat("I2", LocalDateTime.now().minus(interval.times(2.11).toJavaDuration())))
+                    updateHeartbeat(Heartbeat("I3", LocalDateTime.now().minus(1.seconds.toJavaDuration())))
+                }
+                method()
+                persistence.fetchJob("42").expectSuccess().also {
+                    it.status shouldBe CREATED
+                    it.executingInstance.shouldBeNull()
+                    it.startedAt.shouldBeNull()
+                    it.timeout.shouldBeNull()
+                    it.numRestarts shouldBe 1
+                }
+                persistence.fetchJob("43").expectSuccess().also {
+                    it.status shouldBe SUCCESS
+                    it.executingInstance.shouldNotBeNull() shouldBeEqual "I2"
+                    it.startedAt.shouldNotBeNull()
+                    it.timeout.shouldNotBeNull()
+                    it.numRestarts shouldBe 0
+                }
+                persistence.fetchJob("44").expectSuccess().also {
+                    it.status shouldBe RUNNING
+                    it.executingInstance.shouldNotBeNull() shouldBeEqual "I1"
+                    it.startedAt.shouldNotBeNull()
+                    it.timeout.shouldNotBeNull()
+                    it.numRestarts shouldBe 0
+                }
+                persistence.fetchJob("45").expectSuccess().also {
+                    it.status shouldBe RUNNING
+                    it.executingInstance.shouldNotBeNull() shouldBeEqual "I3"
+                    it.startedAt.shouldNotBeNull()
+                    it.timeout.shouldNotBeNull()
+                    it.numRestarts shouldBe 0
+                }
+                persistence.fetchJob("46").expectSuccess().also {
+                    it.status shouldBe CREATED
+                    it.executingInstance.shouldBeNull()
+                    it.startedAt.shouldBeNull()
+                    it.timeout.shouldBeNull()
+                    it.numRestarts shouldBe 3
+                }
+                persistence.fetchJob("47").expectSuccess().also {
+                    it.status shouldBe FAILURE
+                    it.executingInstance.shouldNotBeNull() shouldBeEqual "I4"
+                    it.startedAt.shouldNotBeNull()
+                    it.timeout.shouldNotBeNull()
+                    it.numRestarts shouldBe 3
+                }
+                persistence.fetchFailure("47").expectSuccess() shouldBeEqual "The job was aborted because it exceeded the maximum number of 3 restarts"
+                persistence.fetchFailure("48").expectSuccess() shouldBeEqual "The job was aborted because it exceeded the maximum number of 2 restarts"
             }
-            method()
-            persistence.fetchJob("42").expectSuccess().also {
-                it.status shouldBe CREATED
-                it.executingInstance.shouldBeNull()
-                it.startedAt.shouldBeNull()
-                it.timeout.shouldBeNull()
-                it.numRestarts shouldBe 1
-            }
-            persistence.fetchJob("43").expectSuccess().also {
-                it.status shouldBe SUCCESS
-                it.executingInstance.shouldNotBeNull() shouldBeEqual "I2"
-                it.startedAt.shouldNotBeNull()
-                it.timeout.shouldNotBeNull()
-                it.numRestarts shouldBe 0
-            }
-            persistence.fetchJob("44").expectSuccess().also {
-                it.status shouldBe RUNNING
-                it.executingInstance.shouldNotBeNull() shouldBeEqual "I1"
-                it.startedAt.shouldNotBeNull()
-                it.timeout.shouldNotBeNull()
-                it.numRestarts shouldBe 0
-            }
-            persistence.fetchJob("45").expectSuccess().also {
-                it.status shouldBe RUNNING
-                it.executingInstance.shouldNotBeNull() shouldBeEqual "I3"
-                it.startedAt.shouldNotBeNull()
-                it.timeout.shouldNotBeNull()
-                it.numRestarts shouldBe 0
-            }
-            persistence.fetchJob("46").expectSuccess().also {
-                it.status shouldBe CREATED
-                it.executingInstance.shouldBeNull()
-                it.startedAt.shouldBeNull()
-                it.timeout.shouldBeNull()
-                it.numRestarts shouldBe 3
-            }
-            persistence.fetchJob("47").expectSuccess().also {
-                it.status shouldBe FAILURE
-                it.executingInstance.shouldNotBeNull() shouldBeEqual "I4"
-                it.startedAt.shouldNotBeNull()
-                it.timeout.shouldNotBeNull()
-                it.numRestarts shouldBe 3
-            }
-            persistence.fetchFailure("47").expectSuccess() shouldBeEqual "The job was aborted because it exceeded the maximum number of 3 restarts"
-            persistence.fetchFailure("48").expectSuccess() shouldBeEqual "The job was aborted because it exceeded the maximum number of 2 restarts"
+            coroutineContext.cancelChildren()
         }
     }
 
@@ -316,6 +325,7 @@ class MaintenanceTest : FunSpec({
                 persistJob(newJob("52", jobType = "other", status = RUNNING, executingInstance = "I1", numRestarts = 1))
                 persistJob(newJob("53", jobType = "other", status = RUNNING, executingInstance = "I1", numRestarts = 2))
             }
+            delay(100.milliseconds) // seems like it takes some time until RedisServer is really done with persisting new stuff
             method()
             persistence.fetchJob("42").expectSuccess().shouldHaveStatusAndRestarts(CREATED, 0)
             persistence.fetchJob("43").expectSuccess().shouldHaveStatusAndRestarts(CREATED, 1)
@@ -328,7 +338,7 @@ class MaintenanceTest : FunSpec({
             persistence.fetchJob("50").expectSuccess().shouldHaveStatusAndRestarts(RUNNING, 0)
             persistence.fetchJob("51").expectSuccess().shouldHaveStatusAndRestarts(FAILURE, 3)
             persistence.fetchJob("52").expectSuccess().shouldHaveStatusAndRestarts(CREATED, 2)
-            persistence.fetchJob("53").expectSuccess().shouldHaveStatusAndRestarts(FAILURE, 2)
+            persistence.fetchJob("53").expectSuccess().also { println(it) }.shouldHaveStatusAndRestarts(FAILURE, 2)
             persistence.fetchFailure("51").expectSuccess() shouldBeEqual "The job was aborted because it exceeded the maximum number of 3 restarts"
             persistence.fetchFailure("53").expectSuccess() shouldBeEqual "The job was aborted because it exceeded the maximum number of 2 restarts"
         }

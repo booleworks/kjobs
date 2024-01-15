@@ -1,6 +1,8 @@
 # KJobs - A Job Framework for Asynchronous Web Services in Kotlin and Ktor
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.booleworks/kjobs.svg?label=Maven%20Central)](https://mvnrepository.com/artifact/com.booleworks/kjobs)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Kotlin](https://img.shields.io/badge/kotlin-1.9.22-blue.svg?logo=kotlin)](http://kotlinlang.org)
 
 ## Introduction
 

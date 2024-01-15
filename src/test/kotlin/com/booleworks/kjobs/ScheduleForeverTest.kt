@@ -7,6 +7,7 @@ import com.booleworks.kjobs.control.scheduleForever
 import io.kotest.assertions.fail
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.ints.shouldBeGreaterThan
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicInteger
@@ -23,7 +24,7 @@ class ScheduleForeverTest : FunSpec({
                 }
                 delay(500.milliseconds)
                 i.get() shouldBeGreaterThan 2
-                job.cancel()
+                job.cancelAndJoin()
             }
         }.onFailure { fail("No exception expected") }
     }

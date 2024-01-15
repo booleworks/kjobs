@@ -30,6 +30,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.route
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.cancelAndJoin
 import kotlin.time.Duration.Companion.milliseconds
 
 class JobInfoTest : FunSpec({
@@ -37,10 +38,11 @@ class JobInfoTest : FunSpec({
     test("test default config") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         maintenanceConfig { jobCheckInterval = 500.milliseconds }
                         addApi(
                             defaultJobType,
@@ -67,15 +69,17 @@ class JobInfoTest : FunSpec({
                 numRestarts shouldBeEqual 0
             }
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test with custom text") {
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         maintenanceConfig { jobCheckInterval = 500.milliseconds }
                         addApi(
                             defaultJobType,
@@ -95,5 +99,6 @@ class JobInfoTest : FunSpec({
             infoResponse.status shouldBeEqual HttpStatusCode.OK
             infoResponse.bodyAsText() shouldBeEqual "Information about UUID $uuid"
         }
+        jobFramework!!.cancelAndJoin()
     }
 })

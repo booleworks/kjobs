@@ -9,6 +9,7 @@ import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultComputation
 import com.booleworks.kjobs.common.defaultInstanceName
+import com.booleworks.kjobs.common.lettuceClient
 import com.booleworks.kjobs.control.polling.RedisLongPollManager
 import com.booleworks.kjobs.data.ExecutionCapacity
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
@@ -29,8 +30,8 @@ import io.ktor.server.routing.route
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
-import redis.clients.jedis.JedisPool
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -39,18 +40,18 @@ import kotlin.time.measureTimedValue
 class LongPollTest : FunSpec({
     test("test long polling") {
         val redis = RedisServer.newRedisServer().start()
-        val jedis = JedisPool(redis.host, redis.bindPort)
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 2_000) },
                             { call.respond(it.inputValue) }, defaultComputation
                         ) {
-                            enableLongPolling({ RedisLongPollManager(jedis) }) {
+                            enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 200.milliseconds
                             }
                         }
@@ -78,22 +79,23 @@ class LongPollTest : FunSpec({
             }
             i shouldBeLessThan 11
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test custom timeouts") {
         val redis = RedisServer.newRedisServer().start()
-        val jedis = JedisPool(redis.host, redis.bindPort)
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 20_000) },
                             { call.respond(it.inputValue) }, defaultComputation
                         ) {
-                            enableLongPolling({ RedisLongPollManager(jedis) }) {
+                            enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 1.seconds
                             }
                         }
@@ -122,22 +124,23 @@ class LongPollTest : FunSpec({
             duration3 shouldBeLessThan 1500.milliseconds
             response3.bodyAsText() shouldBeEqual "TIMEOUT"
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test poll of finished job") {
         val redis = RedisServer.newRedisServer().start()
-        val jedis = JedisPool(redis.host, redis.bindPort)
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { call.receiveText().toInt().let { TestInput(it, 0, it < 0) } },
                             { call.respond(it.inputValue) }, defaultComputation
                         ) {
-                            enableLongPolling({ RedisLongPollManager(jedis) }) {
+                            enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 3.minutes
                             }
                         }
@@ -161,22 +164,23 @@ class LongPollTest : FunSpec({
             failureResponse.status shouldBeEqual HttpStatusCode.OK
             failureResponse.bodyAsText() shouldBeEqual "FAILURE"
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test long poll with cancelled job") {
         val redis = RedisServer.newRedisServer().start()
-        val jedis = JedisPool(redis.host, redis.bindPort)
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 2_000) },
                             { call.respond(it.inputValue) }, defaultComputation
                         ) {
-                            enableLongPolling({ RedisLongPollManager(jedis) })
+                            enableLongPolling({ RedisLongPollManager(redis.lettuceClient) })
                         }
                         enableCancellation {
                             checkInterval = 5.milliseconds
@@ -202,22 +206,23 @@ class LongPollTest : FunSpec({
                 duration shouldBeLessThan 200.milliseconds
             }
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test multiple polls on same uuid") {
         val redis = RedisServer.newRedisServer().start()
-        val jedis = JedisPool(redis.host, redis.bindPort)
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
                 route("test") {
-                    JobFramework(defaultInstanceName, jobPersistence) {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 500) },
                             { call.respond(it.inputValue) }, defaultComputation
                         ) {
-                            enableLongPolling({ RedisLongPollManager(jedis) }) {
+                            enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 3.minutes
                             }
                         }
@@ -237,16 +242,17 @@ class LongPollTest : FunSpec({
             result2.await().bodyAsText() shouldBeEqual "TIMEOUT"
             result3.await().bodyAsText() shouldBeEqual "TIMEOUT"
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test long poll on multiple job types") {
         val redis = RedisServer.newRedisServer().start()
-        val jedis = JedisPool(redis.host, redis.bindPort)
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
-                JobFramework(defaultInstanceName, jobPersistence) {
+                jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                     maintenanceConfig {
                         jobCheckInterval = 5.milliseconds
                     }
@@ -255,7 +261,7 @@ class LongPollTest : FunSpec({
                             "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 500) },
                             { call.respond(it.inputValue) }, defaultComputation
                         ) {
-                            enableLongPolling({ RedisLongPollManager(jedis) }) {
+                            enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 3.minutes
                             }
                         }
@@ -265,7 +271,7 @@ class LongPollTest : FunSpec({
                             "J2", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 1000) },
                             { call.respond(it.inputValue) }, defaultComputation
                         ) {
-                            enableLongPolling({ RedisLongPollManager(jedis) }) {
+                            enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 3.minutes
                             }
                         }
@@ -287,16 +293,17 @@ class LongPollTest : FunSpec({
             result2.await().bodyAsText() shouldBeEqual "SUCCESS"
             result3.await().bodyAsText() shouldBeEqual "SUCCESS"
         }
+        jobFramework!!.cancelAndJoin()
     }
 
     test("test long poll with multiple uuids") {
         val redis = RedisServer.newRedisServer().start()
-        val jedis = JedisPool(redis.host, redis.bindPort)
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
         testApplication {
             routing {
-                JobFramework(defaultInstanceName, jobPersistence) {
+                jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                     maintenanceConfig {
                         jobCheckInterval = 10.milliseconds
                     }
@@ -308,7 +315,7 @@ class LongPollTest : FunSpec({
                             "J1", this@route, dataPersistence, { call.receiveText().toInt().let { TestInput(it, it) } },
                             { call.respond(it.inputValue) }, defaultComputation
                         ) {
-                            enableLongPolling({ RedisLongPollManager(jedis) }) {
+                            enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 3.minutes
                             }
                         }
@@ -334,5 +341,6 @@ class LongPollTest : FunSpec({
             duration3 shouldBeGreaterThan 200.milliseconds
             duration3 shouldBeLessThan 300.milliseconds
         }
+        jobFramework!!.cancelAndJoin()
     }
 })

@@ -31,6 +31,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
@@ -40,9 +41,10 @@ class ApiTest : FunSpec({
 
     testJobFrameworkWithRedis("test API") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        var jobFramework: kotlinx.coroutines.Job? = null
         routing {
             route("test") {
-                JobFramework(defaultInstanceName, persistence) {
+                jobFramework = JobFramework(defaultInstanceName, persistence) {
                     maintenanceConfig { jobCheckInterval = 500.milliseconds }
                     addApi(defaultJobType, this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation)
                 }
@@ -56,12 +58,14 @@ class ApiTest : FunSpec({
         delay(1.seconds)
         client.get("test/status/$uuid").bodyAsText() shouldBeEqual "SUCCESS"
         client.get("test/result/$uuid").parseTestResult() shouldBeEqual TestResult()
+        jobFramework!!.cancelAndJoin()
     }
 
     testJobFrameworkWithRedis("test API calls with wrong job type") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        var jobFramework: kotlinx.coroutines.Job? = null
         routing {
-            JobFramework(defaultInstanceName, persistence) {
+            jobFramework = JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 50.milliseconds }
                 enableCancellation()
                 route("test") {
@@ -103,12 +107,14 @@ class ApiTest : FunSpec({
         client.post("test2/cancel/$uuid2").status shouldBeEqual HttpStatusCode.OK
         client.delete("test/delete/$uuid1").status shouldBeEqual HttpStatusCode.OK
         client.delete("test2/delete/$uuid2").status shouldBeEqual HttpStatusCode.OK
+        jobFramework!!.cancelAndJoin()
     }
 
     testJobFrameworkWithRedis("test API calls with reconfigured resources") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        var jobFramework: kotlinx.coroutines.Job? = null
         routing {
-            JobFramework(defaultInstanceName, persistence) {
+            jobFramework = JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 20.milliseconds }
                 enableCancellation()
                 route("test") {
@@ -156,12 +162,14 @@ class ApiTest : FunSpec({
         client.get("test/info/$uuid").shouldHaveStatus(HttpStatusCode.NotFound)
         client.post("test/synchronous") { contentType(ContentType.Application.Json); setBody(TestInput(throwException = true).ser()) }
             .shouldHaveStatus(HttpStatusCode.NotFound)
+        jobFramework!!.cancelAndJoin()
     }
 
     testJobFrameworkWithRedis("test input validation") {
         val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        var jobFramework: kotlinx.coroutines.Job? = null
         routing {
-            JobFramework(defaultInstanceName, persistence) {
+            jobFramework = JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 20.milliseconds }
                 route("test") {
                     addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
@@ -182,6 +190,7 @@ class ApiTest : FunSpec({
         client.post("test/synchronous") { contentType(ContentType.Application.Json); setBody(TestInput(0).ser()) }
             .shouldHaveStatus(HttpStatusCode.OK).bodyAsText() shouldBeEqual "{\n  \"inputValue\" : 0\n}"
         client.get("test/result/$uuid").shouldHaveStatus(HttpStatusCode.OK).bodyAsText() shouldBeEqual "{\n  \"inputValue\" : 0\n}"
+        jobFramework!!.cancelAndJoin()
     }
 })
 

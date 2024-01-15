@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.booleworks</groupId>
   <artifactId>kjobs</artifactId>
-  <version>1.0.0-RC9</version>
+  <version>1.0.0-RC10</version>
   <packaging>jar</packaging>
 
   <name>Kotlin Job Framework</name>
@@ -43,7 +43,7 @@
     <version.kotlin>1.9.22</version.kotlin>
     <version.ktor>2.3.7</version.ktor>
     <version.slf4j>2.0.9</version.slf4j>
-    <version.redis>5.1.0</version.redis>
+    <version.lettuce>6.3.1.RELEASE</version.lettuce>
 
     <version.kotest>5.8.0</version.kotest>
     <version.mockk>1.13.9</version.mockk>
@@ -53,7 +53,7 @@
 
     <version.maven-compiler>3.12.1</version.maven-compiler>
     <version.maven-resources>3.3.1</version.maven-resources>
-    <version.maven-surefire-plugin>3.2.3</version.maven-surefire-plugin>
+    <version.maven-surefire-plugin>3.2.5</version.maven-surefire-plugin>
     <version.maven-source>3.3.0</version.maven-source>
     <version.jacoco>0.8.11</version.jacoco>
     <version.dokka>1.9.10</version.dokka>
@@ -217,7 +217,7 @@
       <version>${version.kotlin}</version>
     </dependency>
 
-    <!-- KTOR -->
+    <!-- Ktor -->
     <dependency>
       <groupId>io.ktor</groupId>
       <artifactId>ktor-server-core-jvm</artifactId>
@@ -231,11 +231,11 @@
       <version>${version.slf4j}</version>
     </dependency>
 
-    <!-- Redis -->
+    <!-- Redis access -->
     <dependency>
-      <groupId>redis.clients</groupId>
-      <artifactId>jedis</artifactId>
-      <version>${version.redis}</version>
+      <groupId>io.lettuce</groupId>
+      <artifactId>lettuce-core</artifactId>
+      <version>${version.lettuce}</version>
     </dependency>
 
     <!-- Testing Framework -->

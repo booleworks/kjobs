@@ -33,7 +33,6 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import redis.clients.jedis.JedisPool
 import java.time.LocalDateTime
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
@@ -47,7 +46,7 @@ data class TestInput(val value: Int = 0, val expectedDelay: Int = 1, val throwEx
 data class TestResult(val inputValue: Int = 0)
 
 inline fun <reified INPUT, reified RESULT> newRedisPersistence(redis: RedisServer = defaultRedis) = RedisDataPersistence<INPUT, RESULT>(
-    JedisPool(redis.host, redis.bindPort),
+    redis.lettuceClient,
     { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
     { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
     { jacksonObjectMapperWithTime().readValue(it) },
