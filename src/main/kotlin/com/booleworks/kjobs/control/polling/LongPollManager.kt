@@ -5,8 +5,6 @@ import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PollStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlin.time.Duration
 
 /**
@@ -55,7 +53,8 @@ interface LongPollManager {
      *
      * Note that cleanup at the end of the call can be scheduled using [Deferred.invokeOnCompletion].
      *
-     * If the subscription is not required anymore, the returned Deferred object will be [cancelled][Job.cancelAndJoin].
+     * If the subscription is not required anymore, the returned Deferred object will be
+     * [cancelled][kotlinx.coroutines.cancelAndJoin].
      *
      * Returning [PollStatus.ABORTED] is not intended right now, since it is only used if the status of the
      * job is [JobStatus.CANCELLED] or [JobStatus.CANCEL_REQUESTED] at the beginning of the poll.

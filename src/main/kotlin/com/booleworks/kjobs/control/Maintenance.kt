@@ -74,7 +74,8 @@ object Maintenance {
         }
         val jobsWithDeadInstances = runningJobs.filter { it.executingInstance !in liveInstances }
         if (jobsWithDeadInstances.isNotEmpty()) {
-            logger.warn("Detected jobs executed by seemingly dead instances. Dead instances are: ${jobsWithDeadInstances.joinToString { it.executingInstance ?: "" }}")
+            val deadInstances = jobsWithDeadInstances.joinToString { it.executingInstance ?: "" }
+            logger.warn("Detected jobs executed by seemingly dead instances. Dead instances are: $deadInstances")
         }
         restartJobs(jobsWithDeadInstances, persistencesPerType, maxRestartsPerType, "its executing instance seems to be dead")
     }
