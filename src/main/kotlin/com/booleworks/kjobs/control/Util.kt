@@ -31,8 +31,8 @@ fun CoroutineContext.scheduleForever(interval: Duration, taskName: String, dispa
     val supervisor = SupervisorJob(get(Job))
     val coroutineName = CoroutineName("Single execution of '$taskName'")
     CoroutineScope(this + supervisor).launch(CoroutineName("Continuous Scheduler for '$taskName'")) {
+        val context = if (dispatcher != null) dispatcher + supervisor + coroutineName else supervisor + coroutineName
         while (true) {
-            val context = if (dispatcher != null) dispatcher + supervisor + coroutineName else supervisor + coroutineName
             launch(context) { task() }
             delay(interval)
         }

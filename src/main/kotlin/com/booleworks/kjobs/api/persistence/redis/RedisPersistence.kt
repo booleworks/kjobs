@@ -169,14 +169,20 @@ open class RedisDataPersistence<INPUT, RESULT>(
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = dataTransaction(block)
 
     override suspend fun <T> dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> T): PersistenceAccessResult<T> {
-        val commands = newByteArrayCommands()
+        val stringCommandsForTransaction = newStringCommands()
+        val byteArrayCommandsForTransaction = newByteArrayCommands()
         return runCatching {
-            commands.multi().get()
-            RedisDataTransactionalPersistence(redisClient, stringCommands, inputSerializer, resultSerializer, config)
+            stringCommandsForTransaction.multi().get()
+            byteArrayCommandsForTransaction.multi().get()
+            RedisDataTransactionalPersistence(stringCommandsForTransaction, byteArrayCommandsForTransaction, inputSerializer, resultSerializer, config)
                 .run { block() }
-                .also { commands.exec().get() }
+                .also {
+                    stringCommandsForTransaction.exec().get()
+                    byteArrayCommandsForTransaction.exec().get()
+                }
         }.getOrElse { exception ->
-            commands.discard()
+            stringCommandsForTransaction.discard().get()
+            byteArrayCommandsForTransaction.discard().get()
             return handleTransactionException(exception)
         }.let { PersistenceAccessResult.result(it) }
     }
@@ -207,14 +213,12 @@ open class RedisDataPersistence<INPUT, RESULT>(
  * executed, so the only real kind of error would be connection problems which are ok to be caught in [RedisDataPersistence.dataTransaction].
  */
 open class RedisDataTransactionalPersistence<INPUT, RESULT>(
-    redisClient: RedisClient,
     stringCommands: RedisAsyncCommands<String, String>,
+    protected val byteArrayCommands: RedisAsyncCommands<ByteArray, ByteArray>,
     protected val inputSerializer: (INPUT) -> ByteArray,
     protected val resultSerializer: (RESULT) -> ByteArray,
     config: RedisConfig
 ) : RedisJobTransactionalPersistence(stringCommands, config), DataTransactionalPersistence<INPUT, RESULT> {
-    private val byteArrayCodec = if (config.useCompression) CompressionCodec.valueCompressor(ByteArrayCodec.INSTANCE, GZIP) else ByteArrayCodec.INSTANCE
-    protected val byteArrayCommands: RedisAsyncCommands<ByteArray, ByteArray> = redisClient.connect(byteArrayCodec).async()
 
     override suspend fun persistInput(job: Job, input: INPUT): PersistenceAccessResult<Unit> {
         byteArrayCommands.set(config.inputKey(job.uuid).toByteArray(), inputSerializer(input))

@@ -32,14 +32,13 @@ class HeartbeatTest : FunSpec({
             executingInstance = defaultInstanceName
         }
         transaction { persistJob(job) }
-        delay(20.milliseconds)
         coroutineScope {
-            coroutineContext.scheduleForever(5.milliseconds, "test") { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
-            coroutineContext.scheduleForever(5.milliseconds, "test") {
+            coroutineContext.scheduleForever(20.milliseconds, "test") { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
+            coroutineContext.scheduleForever(20.milliseconds, "test") {
                 Maintenance.restartJobsFromDeadInstances(
                     this@testWithRedis,
                     mapOf(defaultJobType to this@testWithRedis),
-                    5.milliseconds,
+                    20.milliseconds,
                     mapOf(defaultJobType to 3)
                 )
             }
@@ -62,18 +61,17 @@ class HeartbeatTest : FunSpec({
             numRestarts = 2
         }
         transaction { persistJob(job) }
-        delay(20.milliseconds)
         coroutineScope {
-            val heartbeat = coroutineContext.scheduleForever(5.milliseconds, "test") { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
-            coroutineContext.scheduleForever(5.milliseconds, "test") {
+            val heartbeat = coroutineContext.scheduleForever(20.milliseconds, "test") { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
+            coroutineContext.scheduleForever(20.milliseconds, "test") {
                 Maintenance.restartJobsFromDeadInstances(
                     this@testWithRedis,
                     mapOf(defaultJobType to this@testWithRedis),
-                    5.milliseconds,
+                    20.milliseconds,
                     mapOf(defaultJobType to 3)
                 )
             }
-            delay(20.milliseconds)
+            delay(100.milliseconds)
             with(fetchJob(job.uuid).right()) {
                 status shouldBeEqual JobStatus.RUNNING
                 numRestarts shouldBeEqual 2
@@ -82,7 +80,7 @@ class HeartbeatTest : FunSpec({
                 timeout.shouldNotBeNull()
             }
             heartbeat.cancelAndJoin()
-            delay(20.milliseconds)
+            delay(100.milliseconds)
             with(fetchJob(job.uuid).right()) {
                 status shouldBeEqual JobStatus.CREATED
                 numRestarts shouldBeEqual 3
@@ -103,18 +101,17 @@ class HeartbeatTest : FunSpec({
             numRestarts = 3
         }
         transaction { persistJob(job) }
-        delay(20.milliseconds)
         coroutineScope {
-            val heartbeat = coroutineContext.scheduleForever(5.milliseconds, "test") { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
-            coroutineContext.scheduleForever(5.milliseconds, "test") {
+            val heartbeat = coroutineContext.scheduleForever(20.milliseconds, "test") { Maintenance.updateHeartbeat(this@testWithRedis, defaultInstanceName) }
+            coroutineContext.scheduleForever(20.milliseconds, "test") {
                 Maintenance.restartJobsFromDeadInstances(
                     this@testWithRedis,
                     mapOf(defaultJobType to this@testWithRedis),
-                    10.milliseconds,
+                    20.milliseconds,
                     mapOf(defaultJobType to 3)
                 )
             }
-            delay(50.milliseconds)
+            delay(100.milliseconds)
             with(fetchJob(job.uuid).right()) {
                 status shouldBeEqual JobStatus.RUNNING
                 numRestarts shouldBeEqual 3
@@ -123,7 +120,7 @@ class HeartbeatTest : FunSpec({
                 timeout.shouldNotBeNull()
             }
             heartbeat.cancelAndJoin()
-            delay(50.milliseconds)
+            delay(100.milliseconds)
             with(fetchJob(job.uuid).right()) {
                 status shouldBeEqual JobStatus.FAILURE
                 numRestarts shouldBeEqual 3
@@ -137,7 +134,6 @@ class HeartbeatTest : FunSpec({
     }
 
     testWithRedis("test with live and dead jobs") {
-        delay(100.milliseconds)
         val deadJob = newJob().apply {
             status = JobStatus.RUNNING
             executingInstance = "Dead instance"
@@ -150,17 +146,18 @@ class HeartbeatTest : FunSpec({
             startedAt = now()
             timeout = now().plusSeconds(10)
         }
+        transaction { persistJob(deadJob); persistJob(liveJob) }
         coroutineScope {
-            coroutineContext.scheduleForever(5.milliseconds, "test") { Maintenance.updateHeartbeat(this@testWithRedis, "Live instance") }
-            coroutineContext.scheduleForever(5.milliseconds, "test") { Maintenance.updateHeartbeat(this@testWithRedis, "Other instance") }
-            transaction { persistJob(deadJob); persistJob(liveJob) }
-            delay(100.milliseconds)
-            Maintenance.restartJobsFromDeadInstances(
-                this@testWithRedis,
-                mapOf(defaultJobType to this@testWithRedis),
-                20.milliseconds,
-                mapOf(defaultJobType to 3)
-            )
+            coroutineContext.scheduleForever(20.milliseconds, "test") { Maintenance.updateHeartbeat(this@testWithRedis, "Live instance") }
+            coroutineContext.scheduleForever(20.milliseconds, "test") { Maintenance.updateHeartbeat(this@testWithRedis, "Other instance") }
+            coroutineContext.scheduleForever(20.milliseconds, "test") {
+                Maintenance.restartJobsFromDeadInstances(
+                    this@testWithRedis,
+                    mapOf(defaultJobType to this@testWithRedis),
+                    20.milliseconds,
+                    mapOf(defaultJobType to 3)
+                )
+            }
             delay(100.milliseconds)
             with(fetchJob(deadJob.uuid).right()) {
                 status shouldBeEqual JobStatus.CREATED

@@ -325,7 +325,6 @@ class MaintenanceTest : FunSpec({
                 persistJob(newJob("52", jobType = "other", status = RUNNING, executingInstance = "I1", numRestarts = 1))
                 persistJob(newJob("53", jobType = "other", status = RUNNING, executingInstance = "I1", numRestarts = 2))
             }
-            delay(100.milliseconds) // seems like it takes some time until RedisServer is really done with persisting new stuff
             method()
             persistence.fetchJob("42").expectSuccess().shouldHaveStatusAndRestarts(CREATED, 0)
             persistence.fetchJob("43").expectSuccess().shouldHaveStatusAndRestarts(CREATED, 1)
@@ -338,7 +337,7 @@ class MaintenanceTest : FunSpec({
             persistence.fetchJob("50").expectSuccess().shouldHaveStatusAndRestarts(RUNNING, 0)
             persistence.fetchJob("51").expectSuccess().shouldHaveStatusAndRestarts(FAILURE, 3)
             persistence.fetchJob("52").expectSuccess().shouldHaveStatusAndRestarts(CREATED, 2)
-            persistence.fetchJob("53").expectSuccess().also { println(it) }.shouldHaveStatusAndRestarts(FAILURE, 2)
+            persistence.fetchJob("53").expectSuccess().shouldHaveStatusAndRestarts(FAILURE, 2)
             persistence.fetchFailure("51").expectSuccess() shouldBeEqual "The job was aborted because it exceeded the maximum number of 3 restarts"
             persistence.fetchFailure("53").expectSuccess() shouldBeEqual "The job was aborted because it exceeded the maximum number of 2 restarts"
         }
