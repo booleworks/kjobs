@@ -177,10 +177,13 @@ open class RedisDataPersistence<INPUT, RESULT>(
             RedisDataTransactionalPersistence(stringCommandsForTransaction, byteArrayCommandsForTransaction, inputSerializer, resultSerializer, config)
                 .run { block() }
                 .also {
-                    stringCommandsForTransaction.exec().get()
+                    // The order here is relevant for storing new jobs. If we finish the string commands transaction first,
+                    // other instances/threads may find the new job but not its input (especially since inputs may be quite large).
                     byteArrayCommandsForTransaction.exec().get()
+                    stringCommandsForTransaction.exec().get()
                 }
         }.getOrElse { exception ->
+            // TODO this may fail if one transaction already succeeded
             stringCommandsForTransaction.discard().get()
             byteArrayCommandsForTransaction.discard().get()
             return handleTransactionException(exception)

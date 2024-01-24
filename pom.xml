@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.booleworks</groupId>
   <artifactId>kjobs</artifactId>
-  <version>1.0.0-RC11</version>
+  <version>1.0.0-RC12</version>
   <packaging>jar</packaging>
 
   <name>Kotlin Job Framework</name>
@@ -47,7 +47,7 @@
 
     <version.kotest>5.8.0</version.kotest>
     <version.mockk>1.13.9</version.mockk>
-    <version.jedis-mock>1.0.13</version.jedis-mock>
+    <version.jedis-mock>1.1.0</version.jedis-mock>
     <version.jackson>2.16.1</version.jackson>
     <version.logback>1.4.14</version.logback>
 

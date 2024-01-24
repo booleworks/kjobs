@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC12] - 2024-01-24
+
+### Changed
+- Workaround for Redis Persistence until [this Lettuce issue](https://github.com/lettuce-io/lettuce-core/issues/2608) is answered or solved. Problem is that we cannot store the job and its input in Redis within one transaction using Lettuce. Until now, the input was stored after the job itself, s.t. other instances/threads found the job but no input. The workaround is that we store it the other way round (the input will not be discovered by other instances/threads without the job).
+
+
 ## [1.0.0-RC11] - 2024-01-17
 
 ### Changed
