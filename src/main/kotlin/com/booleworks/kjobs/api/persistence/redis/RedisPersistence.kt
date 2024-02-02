@@ -41,17 +41,21 @@ open class RedisJobPersistence(
     val redisClient: RedisClient,
     protected val config: RedisConfig = DefaultRedisConfig(),
 ) : JobPersistence {
-    protected val stringCommands = newStringCommands()
-    protected fun newStringCommands() = redisClient.connect().async()!!
+    protected val stringCommands = redisClient.connect().async()
 
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> {
-        runCatching {
-            val commands = newStringCommands()
+        val connection = redisClient.connect()
+        val commands = connection.async()
+        return try {
             commands.multi().get()
             RedisJobTransactionalPersistence(commands, config).run { block() }
             commands.exec().get()
-        }.onFailure { exception -> return handleTransactionException(exception) }
-        return PersistenceAccessResult.success
+            PersistenceAccessResult.success
+        } catch (exception: Exception) {
+            return handleTransactionException(exception)
+        } finally {
+            connection.close()
+        }
     }
 
     override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = getAllJobsBy<Unit>()
@@ -161,17 +165,18 @@ open class RedisDataPersistence<INPUT, RESULT>(
     protected val resultDeserializer: (ByteArray) -> RESULT,
     config: RedisConfig = DefaultRedisConfig(),
 ) : RedisJobPersistence(redisClient, config), DataPersistence<INPUT, RESULT> {
-    protected val byteArrayCommands: RedisAsyncCommands<ByteArray, ByteArray> = newByteArrayCommands()
-    protected fun newByteArrayCommands(): RedisAsyncCommands<ByteArray, ByteArray> = redisClient
+    protected val byteArrayCommands: RedisAsyncCommands<ByteArray, ByteArray> = newByteArrayConnection().async()
+    protected fun newByteArrayConnection() = redisClient
         .connect(if (config.useCompression) CompressionCodec.valueCompressor(ByteArrayCodec.INSTANCE, GZIP) else ByteArrayCodec.INSTANCE)
-        .async()
 
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = dataTransaction(block)
 
     override suspend fun <T> dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> T): PersistenceAccessResult<T> {
-        val stringCommandsForTransaction = newStringCommands()
-        val byteArrayCommandsForTransaction = newByteArrayCommands()
-        return runCatching {
+        val stringConnection = redisClient.connect()
+        val stringCommandsForTransaction = stringConnection.async()
+        val byteArrayConnection = newByteArrayConnection()
+        val byteArrayCommandsForTransaction = byteArrayConnection.async()
+        return try {
             stringCommandsForTransaction.multi().get()
             byteArrayCommandsForTransaction.multi().get()
             RedisDataTransactionalPersistence(stringCommandsForTransaction, byteArrayCommandsForTransaction, inputSerializer, resultSerializer, config)
@@ -181,13 +186,16 @@ open class RedisDataPersistence<INPUT, RESULT>(
                     // other instances/threads may find the new job but not its input (especially since inputs may be quite large).
                     byteArrayCommandsForTransaction.exec().get()
                     stringCommandsForTransaction.exec().get()
-                }
-        }.getOrElse { exception ->
+                }.let { PersistenceAccessResult.result(it) }
+        } catch (exception: Exception) {
             // TODO this may fail if one transaction already succeeded
             stringCommandsForTransaction.discard().get()
             byteArrayCommandsForTransaction.discard().get()
             return handleTransactionException(exception)
-        }.let { PersistenceAccessResult.result(it) }
+        } finally {
+            stringConnection.close()
+            byteArrayConnection.close()
+        }
     }
 
     override suspend fun fetchInput(uuid: String): PersistenceAccessResult<INPUT> = withContext(Dispatchers.IO) {

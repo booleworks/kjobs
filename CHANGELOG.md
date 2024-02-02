@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC13] - 2024-02-02
+
+### Changed
+- Fixed a connection leak in the Redis persistence implementation caused by the transition to Lettuce.
+
+
 ## [1.0.0-RC12] - 2024-01-24
 
 ### Changed

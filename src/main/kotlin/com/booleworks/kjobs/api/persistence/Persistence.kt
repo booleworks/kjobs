@@ -98,8 +98,8 @@ interface JobTransactionalPersistence {
      *
      * Implementation note: The [persistencesPerType] may only be required in certain situations where
      * jobs of different job types are stored in different locations. The
-     * [standard redis implementation][com.booleworks.kjobs.api.impl.RedisJobTransactionalPersistence] for
-     * instance does not use it.
+     * [standard redis implementation][com.booleworks.kjobs.api.persistence.redis.RedisJobTransactionalPersistence]
+     * for instance does not use it.
      */
     suspend fun deleteForUuid(uuid: String, persistencesPerType: Map<String, DataPersistence<*, *>>): PersistenceAccessResult<Unit>
 

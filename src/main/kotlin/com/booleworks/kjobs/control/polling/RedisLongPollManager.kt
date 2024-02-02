@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import kotlin.concurrent.thread
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
@@ -20,8 +21,9 @@ private const val DEFAULT_REDIS_CHANNEL = "job_finished"
 private const val SUCCESS_INDICATOR = "||SUCCESS"
 private const val FAILURE_INDICATOR = "||FAILURE"
 
+private const val CONNECTION_CLOSE_DELAY = 50L
+
 class RedisLongPollManager(protected val redisClient: RedisClient, protected val channelName: String = DEFAULT_REDIS_CHANNEL) : LongPollManager {
-    val syncCommands = redisClient.connect().sync()
 
     override fun publishSuccess(uuid: String) = publish("$uuid$SUCCESS_INDICATOR")
 
@@ -29,18 +31,22 @@ class RedisLongPollManager(protected val redisClient: RedisClient, protected val
 
     private fun publish(message: String) {
         log.debug("Publishing $message")
-        syncCommands.publish(channelName, message)
+        redisClient.connect().use { it.sync().publish(channelName, message) }
     }
 
     override fun CoroutineScope.subscribe(uuid: String, timeout: Duration): Deferred<PollStatus> {
         val deferred = CompletableDeferred<PollStatus>()
-        val subscription = redisClient.connectPubSub().reactive()
+        val subscribeConnection = redisClient.connectPubSub()
+        val subscription = subscribeConnection.reactive()
         subscription.subscribe(channelName).subscribe()
         // Deferred can be completed/cancelled in two ways:
         // - Completion on matching message or on timeout
         // - Cancellation from outside (e.g. since the job was already finished)
         deferred.invokeOnCompletion {
             subscription.unsubscribe().subscribe()
+            // for some reason we have to delay closing the connection, otherwise we're getting errors like this:
+            // ERROR reactor.core.publisher.Operators - Operator called default onErrorDropped
+            thread { Thread.sleep(CONNECTION_CLOSE_DELAY); subscribeConnection.close() }
         }
         subscription.observeChannels().doOnNext {
             val message = it.message

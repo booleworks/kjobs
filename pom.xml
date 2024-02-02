@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.booleworks</groupId>
   <artifactId>kjobs</artifactId>
-  <version>1.0.0-RC12</version>
+  <version>1.0.0-RC13</version>
   <packaging>jar</packaging>
 
   <name>Kotlin Job Framework</name>
@@ -41,7 +41,7 @@
     <maven.compiler.target>11</maven.compiler.target>
 
     <version.kotlin>1.9.22</version.kotlin>
-    <version.ktor>2.3.7</version.ktor>
+    <version.ktor>2.3.8</version.ktor>
     <version.slf4j>2.0.9</version.slf4j>
     <version.lettuce>6.3.1.RELEASE</version.lettuce>
 
@@ -57,7 +57,7 @@
     <version.maven-source>3.3.0</version.maven-source>
     <version.jacoco>0.8.11</version.jacoco>
     <version.dokka>1.9.10</version.dokka>
-    <version.detekt>1.23.4</version.detekt>
+    <version.detekt>1.23.5</version.detekt>
     <version.maven-gpg>1.6</version.maven-gpg>
     <version.nexus-staging>1.6.13</version.nexus-staging>
   </properties>
