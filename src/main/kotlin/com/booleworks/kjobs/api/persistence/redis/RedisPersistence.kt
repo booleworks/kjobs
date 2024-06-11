@@ -63,17 +63,17 @@ open class RedisJobPersistence(
         preconditions: Map<String, (Job) -> Boolean>,
         block: suspend JobTransactionalPersistence.() -> Unit
     ): PersistenceAccessResult<Unit> {
+        val connection = redisClient.connect()
+        val commands = connection.async()
         preconditions.forEach { (uuid, condition) ->
-            stringCommands.watch(uuid)
-            val job = stringCommands.hgetall(config.jobKey(uuid)).get()
+            commands.watch(uuid)
+            val job = commands.hgetall(config.jobKey(uuid)).get()
                 .ifEmpty { return PersistenceAccessResult.uuidNotFound(uuid) }
                 .redisMapToJob(uuid).rightOr { return PersistenceAccessResult.internalError("Failed to convert internal job") }
             if (!condition(job)) {
                 return PersistenceAccessResult.modified()
             }
         }
-        val connection = redisClient.connect()
-        val commands = connection.async()
         return try {
             commands.multi().get()
             RedisJobTransactionalPersistence(commands, config).run { block() }

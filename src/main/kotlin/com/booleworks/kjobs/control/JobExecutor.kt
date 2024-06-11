@@ -98,7 +98,7 @@ class MainJobExecutor(
             val jobInCreatedStatus: Map<String, (Job) -> Boolean> = mapOf(job.uuid to { it.status == JobStatus.CREATED })
             jobPersistence.transactionWithPreconditions(jobInCreatedStatus) { updateJob(job) }.orQuitWith {
                 if (it == PersistenceAccessError.Modified) {
-                    log.warn("Job with ID ${job.uuid} was modified before it could be reserved.")
+                    log.info("Job with ID ${job.uuid} was modified before it could be reserved. Another instance was probably faster.")
                 } else {
                     log.error("Failed to update job with ID ${job.uuid}: $it")
                 }
