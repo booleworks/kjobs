@@ -65,20 +65,27 @@ open class RedisJobPersistence(
     ): PersistenceAccessResult<Unit> {
         val connection = redisClient.connect()
         val commands = connection.async()
-        preconditions.forEach { (uuid, condition) ->
-            commands.watch(uuid)
-            val job = commands.hgetall(config.jobKey(uuid)).get()
-                .ifEmpty { return PersistenceAccessResult.uuidNotFound(uuid) }
-                .redisMapToJob(uuid).rightOr { return PersistenceAccessResult.internalError("Failed to convert internal job") }
-            if (!condition(job)) {
-                return PersistenceAccessResult.modified()
-            }
-        }
         return try {
+            preconditions.forEach { (uuid, condition) ->
+                commands.watch(uuid)
+                val job = commands.hgetall(config.jobKey(uuid)).get()
+                    .ifEmpty { return PersistenceAccessResult.uuidNotFound(uuid) }
+                    .redisMapToJob(uuid).rightOr { return PersistenceAccessResult.internalError("Failed to convert internal job") }
+                if (!condition(job)) {
+                    logger.debug("Precondition for updating job with UUID $uuid failed.")
+                    return PersistenceAccessResult.modified()
+                }
+            }
             commands.multi().get()
             RedisJobTransactionalPersistence(commands, config).run { block() }
             val transactionResult = commands.exec().get()
-            if (transactionResult == null || transactionResult.wasDiscarded()) PersistenceAccessResult.modified() else PersistenceAccessResult.success
+            if (transactionResult == null || transactionResult.wasDiscarded()) {
+                logger.debug("Transaction with precondition was not executed ({})",
+                    transactionResult?.let { "Transaction was discarded" } ?: "Transaction was null")
+                PersistenceAccessResult.modified()
+            } else {
+                PersistenceAccessResult.success
+            }
         } catch (exception: Exception) {
             return handleTransactionException(exception)
         } finally {

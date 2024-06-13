@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC17] - 2024-06-13
+
+### Added
+- New configuration parameter `MaintenanceConfig.preventParallelExecutionOfBackgroundJobs`: By default, background jobs (especially the check for new jobs) are started independently of the last run of the job. So e.g. if the `jobCheckInterval` is 1 second and the actual check takes 2 seconds, there will always be two checks running at the same time. Usually the job check should be fast, but depending on the job load and persistence implementation it may be useful to prevent parallel executions. So if this parameter is set to `true`, the next run will not be triggered when the previous run was not finished. This setting applies to all *background* jobs *except* for the heartbeat update.
+
+### Changed
+- Another bugfix in `transactionWithPreconditions` implementation for Redis
+
+
 ## [1.0.0-RC16] - 2024-06-11
 
 ### Changed

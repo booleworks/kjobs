@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.booleworks</groupId>
   <artifactId>kjobs</artifactId>
-  <version>1.0.0-RC16</version>
+  <version>1.0.0-RC17</version>
   <packaging>jar</packaging>
 
   <name>Kotlin Job Framework</name>
@@ -59,7 +59,7 @@
     <version.dokka>1.9.20</version.dokka>
     <version.detekt>1.23.5</version.detekt>
     <version.maven-gpg>1.6</version.maven-gpg>
-    <version.nexus-staging>1.6.13</version.nexus-staging>
+    <version.nexus-staging>1.7.0</version.nexus-staging>
   </properties>
 
   <build>
