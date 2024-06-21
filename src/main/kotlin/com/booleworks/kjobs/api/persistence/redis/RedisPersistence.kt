@@ -21,6 +21,8 @@ import com.booleworks.kjobs.data.uuidNotFound
 import io.lettuce.core.KeyValue
 import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisFuture
+import io.lettuce.core.ScanArgs
+import io.lettuce.core.ScanIterator
 import io.lettuce.core.api.async.RedisAsyncCommands
 import io.lettuce.core.codec.ByteArrayCodec
 import io.lettuce.core.codec.CompressionCodec
@@ -32,6 +34,8 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 private val logger = LoggerFactory.getLogger("RedisDataPersistence")
+
+private const val SCAN_LIMIT = 1000L
 
 /**
  * [JobPersistence] implementation for Redis based on [Lettuce](https://lettuce.io).
@@ -102,7 +106,7 @@ open class RedisJobPersistence(
     }
 
     override suspend fun fetchHeartbeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> = withContext(Dispatchers.IO) {
-        val heartbeatKeys = stringCommands.keys(config.heartbeatPattern).get().toTypedArray()
+        val heartbeatKeys = scanKeys(config.heartbeatPattern).toTypedArray()
             .ifEmpty { return@withContext PersistenceAccessResult.result(emptyList()) }
         val plainHeartbeats = stringCommands.mget(*heartbeatKeys).get() ?: run { return@withContext PersistenceAccessResult.notFound() }
         val filteredHeartbeats = plainHeartbeats
@@ -139,7 +143,7 @@ open class RedisJobPersistence(
         condition: ((T) -> Boolean)? = null
     ): PersistenceAccessResult<List<Job>> = redisClient.connect().use { redisConnection ->
         val stringCommands = redisConnection.async()
-        val allJobKeys = stringCommands.keys(config.jobPattern).get()
+        val allJobKeys = scanKeys(config.jobPattern)
         redisConnection.setAutoFlushCommands(false)
         val relevantKeys = if (query != null && condition != null) {
             val keyQueries = allJobKeys.map { it to query(stringCommands, it) }
@@ -152,6 +156,10 @@ open class RedisJobPersistence(
         redisConnection.flushCommands()
         jobFutures.map { it.second.get().redisMapToJob(config.extractUuid(it.first)) }
             .unwrapOrReturnFirstError { return@getAllJobsBy it }
+    }
+
+    private fun scanKeys(keyPattern: String): List<String> = redisClient.connect().use { redisConnection ->
+        ScanIterator.scan(redisConnection.sync(), ScanArgs().match(keyPattern).limit(SCAN_LIMIT)).asSequence().toList()
     }
 }
 
