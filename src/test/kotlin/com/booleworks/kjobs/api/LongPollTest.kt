@@ -335,7 +335,7 @@ class LongPollTest : FunSpec({
             response1.bodyAsText() shouldBeEqual "SUCCESS"
             response2.bodyAsText() shouldBeEqual "SUCCESS"
             response3.bodyAsText() shouldBeEqual "SUCCESS"
-            duration1 shouldBeGreaterThan 100.milliseconds
+            duration1 shouldBeGreaterThan 90.milliseconds // should be 100, but some time is passing between submission of the job and polling
             duration1 shouldBeLessThan 200.milliseconds
             duration2 shouldBeGreaterThan 500.milliseconds
             duration2 shouldBeLessThan 700.milliseconds
