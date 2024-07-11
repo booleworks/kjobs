@@ -273,11 +273,6 @@ class JobFrameworkBuilder internal constructor(
      * usually be a very short amount of time.*
      * @param threadPoolSize the number of threads used by the maintenance scheduler. All maintenance scheduling tasks are running in their own thread pool
      * to ensure that especially the update of heartbeats is not blocked by long-running computations.
-     * @param preventParallelExecutionOfBackgroundJobs by default, background jobs (especially the check for new jobs) are started independently of the last
-     * run of the job. So e.g. if the `jobCheckInterval` is 1 second and the actual check takes 2 seconds, there will always be two checks running at the same
-     * time. Usually the job check should be fast, but depending on the job load and persistence implementation it may be useful to prevent parallel executions.
-     * So if this parameter is set to `true`, the next run will not be triggered when the previous run was not finished. This setting applies to all
-     * *background* jobs *except* for the heartbeat update.
      */
     @KJobsDsl
     class MaintenanceConfig internal constructor(
@@ -287,7 +282,6 @@ class JobFrameworkBuilder internal constructor(
         var deleteOldJobsAfter: Duration = 365.days,
         var restartRunningJobsOnStartup: Boolean = true,
         var threadPoolSize: Int = 2,
-        var preventParallelExecutionOfBackgroundJobs: Boolean = false,
     )
 
     /**
@@ -344,21 +338,20 @@ class JobFrameworkBuilder internal constructor(
             val jobCancellationQueue = AtomicReference(setOf<String>())
             val executor = generateJobExecutor(jobCancellationQueue)
             val dispatcher = Executors.newFixedThreadPool(maintenanceConfig.threadPoolSize).asCoroutineDispatcher() + supervisor
-            val preventParallelism = maintenanceConfig.preventParallelExecutionOfBackgroundJobs
             dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, "Update heartbeat for $myInstanceName", false, Dispatchers.IO) {
                 Maintenance.updateHeartbeat(jobPersistence, myInstanceName)
             }
-            dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, "Main executor run", preventParallelism, executorConfig.dispatcher) {
+            dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, "Main executor run", true, executorConfig.dispatcher) {
                 executor.execute()
             }
-            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, "Restart jobs of dead instances", preventParallelism, Dispatchers.IO) {
+            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, "Restart jobs of dead instances", true, Dispatchers.IO) {
                 Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, restartsPerType)
             }
-            dispatcher.scheduleForever(maintenanceConfig.oldJobDeletionInterval, "Delete old jobs", preventParallelism, Dispatchers.IO) {
+            dispatcher.scheduleForever(maintenanceConfig.oldJobDeletionInterval, "Delete old jobs", true, Dispatchers.IO) {
                 Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType)
             }
             if (cancellationConfig.enabled) {
-                dispatcher.scheduleForever(cancellationConfig.checkInterval, "Check for cancellations", preventParallelism, Dispatchers.IO) {
+                dispatcher.scheduleForever(cancellationConfig.checkInterval, "Check for cancellations", true, Dispatchers.IO) {
                     Maintenance.checkForCancellations(jobPersistence, jobCancellationQueue)
                 }
             }

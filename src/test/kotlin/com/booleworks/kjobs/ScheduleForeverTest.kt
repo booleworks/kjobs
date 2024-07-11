@@ -19,7 +19,7 @@ class ScheduleForeverTest : FunSpec({
         runCatching {
             runBlocking {
                 val i = AtomicInteger(0)
-                val job = coroutineContext.scheduleForever(100.milliseconds, "test") {
+                val job = coroutineContext.scheduleForever(100.milliseconds, "test", true) {
                     i.incrementAndGet()
                     error("Test -- should not be propagated")
                 }

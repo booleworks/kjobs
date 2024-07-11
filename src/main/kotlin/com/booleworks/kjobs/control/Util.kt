@@ -33,7 +33,7 @@ import kotlin.time.TimeSource.Monotonic.markNow
 fun CoroutineContext.scheduleForever(
     interval: Duration,
     taskName: String,
-    preventParallelExecutions: Boolean = false,
+    preventParallelExecutions: Boolean,
     dispatcher: CoroutineDispatcher? = null,
     task: suspend () -> Unit
 ): Job {
@@ -45,7 +45,7 @@ fun CoroutineContext.scheduleForever(
         while (true) {
             if (preventParallelExecutions) {
                 val taskStart = markNow()
-                task()
+                launch(context) { task() }.join()
                 delay(interval - taskStart.elapsedNow())
             } else {
                 launch(context) { task() }

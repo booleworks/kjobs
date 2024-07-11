@@ -81,7 +81,7 @@ class JobFrameworkTestingApi internal constructor(
             cancellationConfig,
             jobCancellationQueue,
             executorsPerType
-        ).execute()
+        ).execute()?.join()
     }
 
     /**

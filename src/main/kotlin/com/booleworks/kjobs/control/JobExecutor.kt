@@ -63,18 +63,24 @@ class MainJobExecutor(
 ) {
     /**
      * The main execution routine of the job executor.
+     *
+     * Note that the actual computation is started in a separate coroutine
+     * job (i.e. not a child job of the outer context). This computation job
+     * is returned if the computation was started.
+     * @return the coroutine job of the actual computation
      */
-    suspend fun execute() = coroutineScope {
-        val myCapacity = getExecutionCapacity() ?: return@coroutineScope
+    suspend fun execute(): kotlinx.coroutines.Job? = coroutineScope {
+        val myCapacity = getExecutionCapacity() ?: return@coroutineScope null
         if (!myCapacity.mayTakeJobs) {
             log.trace("No capacity for further jobs.")
-            return@coroutineScope
+            return@coroutineScope null
         }
-        val job = getAndReserveJob(myCapacity) ?: return@coroutineScope
-        val coroutineJob = with(specificExecutors[job.type]!!) { launchComputationJob(job) }
+        val job = getAndReserveJob(myCapacity) ?: return@coroutineScope null
+        val computationJob = with(specificExecutors[job.type]!!) { launchComputationJob(job) }
         if (cancellationConfig.enabled) {
-            launchCancellationCheck(coroutineJob, jobCancellationQueue, job.uuid)
+            launchCancellationCheck(computationJob, jobCancellationQueue, job.uuid)
         }
+        return@coroutineScope computationJob
     }
 
     private suspend inline fun getExecutionCapacity(): ExecutionCapacity? {
@@ -120,8 +126,8 @@ class MainJobExecutor(
         return result.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.let(jobPrioritizer::invoke)
     }
 
-    private fun CoroutineScope.launchCancellationCheck(coroutineJob: CoroutineJob, jobCancellationQueue: AtomicReference<Set<String>>, uuid: String) {
-        launch(Dispatchers.IO + CoroutineName("Cancellation check for job $uuid")) {
+    private fun launchCancellationCheck(coroutineJob: CoroutineJob, jobCancellationQueue: AtomicReference<Set<String>>, uuid: String) {
+        CoroutineScope(Dispatchers.IO + CoroutineName("Cancellation check for job $uuid")).launch {
             while (coroutineJob.isActive) {
                 if (jobCancellationQueue.get().contains(uuid)) {
                     coroutineJob.cancelAndJoin()
@@ -157,7 +163,7 @@ class SpecificExecutor<INPUT, RESULT>(
     private val timeoutComputation: (Job, INPUT) -> Duration,
     private val maxRestarts: Int
 ) {
-    internal fun CoroutineScope.launchComputationJob(job: Job) = launch(Dispatchers.Default + CoroutineName("Computation of Job ${job.uuid}")) {
+    internal fun launchComputationJob(job: Job) = CoroutineScope(Dispatchers.Default + CoroutineName("Computation of Job ${job.uuid}")).launch {
         val uuid = job.uuid
         val jobInput = withContext(Dispatchers.IO) { // input may be large
             persistence.fetchInput(uuid)

@@ -5,10 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0-RC19] - 2024-07-??
+## [1.0.0-RC19] - 2024-07-11
 
 ### Changed
 - Prefixed all logger names with `com.booleworks.kjobs.`
+- Internal API: `JobExecutor.execute()` now starts the computation independently (not as a child coroutine) and returns the coroutine job of the computation
+- Minor dependency updates
+
+### Removed
+- Parameter `MaintenanceConfig.preventParallelExecutionOfBackgroundJobs`: From now on, background jobs (except for the update of heartbeats) will never be executed in parallel, since this may lead to inconsistencies
 
 
 ## [1.0.0-RC18] - 2024-06-21
