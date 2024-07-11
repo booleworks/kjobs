@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.booleworks</groupId>
   <artifactId>kjobs</artifactId>
-  <version>1.0.0-RC19-SNAPSHOT</version>
+  <version>1.0.0-RC19</version>
   <packaging>jar</packaging>
 
   <name>Kotlin Job Framework</name>
