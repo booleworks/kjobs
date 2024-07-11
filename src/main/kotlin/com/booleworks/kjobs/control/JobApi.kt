@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright 2023 BooleWorks GmbH
+// Copyright 2023-2024 BooleWorks GmbH
 
 package com.booleworks.kjobs.control
 
@@ -35,7 +35,7 @@ import java.time.temporal.ChronoUnit
 import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 
-private val apiLog = LoggerFactory.getLogger("ApiLog")
+private val apiLog = LoggerFactory.getLogger("com.booleworks.kjobs.ApiLog")
 
 /**
  * Setup all routings according to a given [ApiConfig] and [JobConfig].

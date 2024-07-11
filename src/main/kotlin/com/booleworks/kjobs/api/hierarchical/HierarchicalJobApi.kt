@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright 2023 BooleWorks GmbH
+// Copyright 2023-2024 BooleWorks GmbH
 
 package com.booleworks.kjobs.api.hierarchical
 
@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
-internal val logger = LoggerFactory.getLogger("HierarchicalJobs")
+internal val logger = LoggerFactory.getLogger("com.booleworks.kjobs.HierarchicalJobs")
 
 class DependentJobException(error: PersistenceAccessError) : Exception(error.message)
 

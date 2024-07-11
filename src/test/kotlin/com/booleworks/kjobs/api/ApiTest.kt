@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright 2023 BooleWorks GmbH
+// Copyright 2023-2024 BooleWorks GmbH
 
 package com.booleworks.kjobs.api
 
@@ -33,7 +33,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
-import java.util.*
+import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 

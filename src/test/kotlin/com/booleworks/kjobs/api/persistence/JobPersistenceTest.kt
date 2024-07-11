@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright 2023 BooleWorks GmbH
+// Copyright 2023-2024 BooleWorks GmbH
 
 package com.booleworks.kjobs.api.persistence
 
@@ -20,7 +20,6 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.equals.shouldBeEqual
-import redis.clients.jedis.JedisPool
 import java.time.LocalDateTime
 
 class JobPersistenceTest : FunSpec({

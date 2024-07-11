@@ -11,7 +11,7 @@
 
   <logger name="ktor.application" level="DEBUG"/>
   <logger name="com.github.fppt" level="INFO"/>
-  <logger name="ApiLog" level="ERROR"/>
-  <logger name="Maintenance" level="ERROR"/>
+  <logger name="com.booleworks.kjobs.ApiLog" level="ERROR"/>
+  <logger name="com.booleworks.kjobs.Maintenance" level="ERROR"/>
   <logger name="io.lettuce.core.protocol.ConnectionWatchdog" level="ERROR"/>
 </configuration>

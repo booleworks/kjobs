@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright 2023 BooleWorks GmbH
+// Copyright 2023-2024 BooleWorks GmbH
 
 package com.booleworks.kjobs.control.polling
 
@@ -14,7 +14,7 @@ import kotlin.concurrent.thread
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
-private val log: Logger = LoggerFactory.getLogger("RedisLongPollManager")
+private val log: Logger = LoggerFactory.getLogger("com.booleworks.kjobs.RedisLongPollManager")
 
 private const val DEFAULT_REDIS_CHANNEL = "job_finished"
 

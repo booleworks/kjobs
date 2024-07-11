@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright 2023 BooleWorks GmbH
+// Copyright 2023-2024 BooleWorks GmbH
 
 package com.booleworks.kjobs.api.persistence.redis
 
@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-private val logger = LoggerFactory.getLogger("RedisDataPersistence")
+private val logger = LoggerFactory.getLogger("com.booleworks.kjobs.RedisDataPersistence")
 
 private const val SCAN_LIMIT = 1000L
 

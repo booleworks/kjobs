@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright 2023 BooleWorks GmbH
+// Copyright 2023-2024 BooleWorks GmbH
 
 package com.booleworks.kjobs.control
 
@@ -37,7 +37,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
-private val log: Logger = LoggerFactory.getLogger("JobExecutor")
+private val log: Logger = LoggerFactory.getLogger("com.booleworks.kjobs.JobExecutor")
 
 private typealias CoroutineJob = kotlinx.coroutines.Job
 

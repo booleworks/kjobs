@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright 2023 BooleWorks GmbH
+// Copyright 2023-2024 BooleWorks GmbH
 
 @file:Suppress("LateinitUsage") // this is an internal API and we (hopefully) know what we're doing
 

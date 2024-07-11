@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright 2023 BooleWorks GmbH
+// Copyright 2023-2024 BooleWorks GmbH
 
 package com.booleworks.kjobs.control
 
@@ -29,7 +29,7 @@ private const val HEARTBEAT_TIMEOUT_FACTOR = 2.1
  * A collection of maintenance jobs.
  */
 object Maintenance {
-    private val logger: Logger = LoggerFactory.getLogger("Maintenance")
+    private val logger: Logger = LoggerFactory.getLogger("com.booleworks.kjobs.Maintenance")
 
     /**
      * Updates the heartbeat for this instance in the [persistence].
