@@ -30,9 +30,9 @@ fun Application.module() {
 lateinit var defaultRedis: RedisServer
 
 fun FunSpec.testJobFrameworkWithRedis(testName: String, block: suspend ApplicationTestBuilder.() -> Unit) = test(testName) {
+    defaultRedis = RedisServer.newRedisServer().start()
     testApplication {
-        defaultRedis = RedisServer.newRedisServer().start()
         block()
-//    defaultRedis.stop()
     }
+    defaultRedis.stop()
 }

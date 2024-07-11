@@ -27,8 +27,12 @@ class JobPersistenceTest : FunSpec({
     fun testPersistences(testName: String, block: suspend (JobPersistence) -> Unit) = runBlocking {
         test("HashMap: $testName") { block(HashMapJobPersistence()) }
         val redis = RedisServer.newRedisServer().start()
-        test("Redis: $testName") { block(RedisJobPersistence(redis.lettuceClient)) }
-//        redis.stop()
+        test("Redis: $testName") {
+            val redisClient = redis.lettuceClient
+            block(RedisJobPersistence(redisClient))
+            redisClient.close()
+            redis.stop()
+        }
     }
 
     testPersistences("test persist and fetch") { persistence ->

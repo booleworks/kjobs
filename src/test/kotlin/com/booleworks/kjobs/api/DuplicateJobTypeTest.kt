@@ -22,11 +22,13 @@ import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.ExecutionCapacity
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import io.kotest.assertions.throwables.shouldThrowWithMessage
+import io.kotest.common.runBlocking
 import io.kotest.core.spec.style.FunSpec
 import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.route
+import kotlinx.coroutines.cancelAndJoin
 import kotlin.time.Duration.Companion.milliseconds
 
 class DuplicateJobTypeTest : FunSpec({
@@ -123,7 +125,7 @@ class DuplicateJobTypeTest : FunSpec({
                         }
                     }
                 }
-            }
+            }?.let { runBlocking { it.cancelAndJoin() } }
         }
     }
 
@@ -153,7 +155,7 @@ class DuplicateJobTypeTest : FunSpec({
                         addJob(subJob1, newRedisPersistence<SubTestInput1, SubTestResult1>(), { _, _ -> ComputationResult.Success(SubTestResult1(1)) })
                     }
                 }
-            }
+            }?.let { runBlocking { it.cancelAndJoin() } }
         }
     }
 })

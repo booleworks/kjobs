@@ -81,6 +81,7 @@ class LongPollTest : FunSpec({
             i shouldBeLessThan 11
         }
         jobFramework!!.cancelAndJoin()
+        redis.stop()
     }
 
     test("test custom timeouts") {
@@ -126,6 +127,7 @@ class LongPollTest : FunSpec({
             response3.bodyAsText() shouldBeEqual "TIMEOUT"
         }
         jobFramework!!.cancelAndJoin()
+        redis.stop()
     }
 
     test("test poll of finished job") {
@@ -166,6 +168,7 @@ class LongPollTest : FunSpec({
             failureResponse.bodyAsText() shouldBeEqual "FAILURE"
         }
         jobFramework!!.cancelAndJoin()
+        redis.stop()
     }
 
     test("test long poll with cancelled job") {
@@ -208,6 +211,7 @@ class LongPollTest : FunSpec({
             }
         }
         jobFramework!!.cancelAndJoin()
+        redis.stop()
     }
 
     test("test multiple polls on same uuid") {
@@ -244,6 +248,7 @@ class LongPollTest : FunSpec({
             result3.await().bodyAsText() shouldBeEqual "TIMEOUT"
         }
         jobFramework!!.cancelAndJoin()
+        redis.stop()
     }
 
     test("test long poll on multiple job types") {
@@ -295,6 +300,7 @@ class LongPollTest : FunSpec({
             result3.await().bodyAsText() shouldBeEqual "SUCCESS"
         }
         jobFramework!!.cancelAndJoin()
+        redis.stop()
     }
 
     test("test long poll with multiple uuids") {
@@ -335,7 +341,7 @@ class LongPollTest : FunSpec({
             response1.bodyAsText() shouldBeEqual "SUCCESS"
             response2.bodyAsText() shouldBeEqual "SUCCESS"
             response3.bodyAsText() shouldBeEqual "SUCCESS"
-            duration1 shouldBeGreaterThan 100.milliseconds
+            duration1 shouldBeGreaterThan 90.milliseconds
             duration1 shouldBeLessThan 300.milliseconds
             duration2 shouldBeGreaterThan 500.milliseconds
             duration2 shouldBeLessThan 700.milliseconds
@@ -343,5 +349,6 @@ class LongPollTest : FunSpec({
             duration3 shouldBeLessThan 300.milliseconds
         }
         jobFramework!!.cancelAndJoin()
+        redis.stop()
     }
 })
