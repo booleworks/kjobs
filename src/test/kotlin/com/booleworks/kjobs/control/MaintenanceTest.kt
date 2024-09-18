@@ -33,7 +33,7 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import redis.clients.jedis.JedisPool
-import java.time.LocalDateTime
+import java.time.LocalDateTime.now
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -54,19 +54,31 @@ class MaintenanceTest : FunSpec({
 
         for (method in listOf(directCall, testingCall)) {
             JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
-            persistence.fetchHeartbeats(LocalDateTime.now().minusDays(10)).expectSuccess() shouldHaveSize 0
-            val since = LocalDateTime.now()
+            persistence.fetchHeartbeats(now().minusDays(10)).expectSuccess() shouldHaveSize 0
+            val since = now()
             method("I1")()
             method("I2")()
             method("I3")()
             persistence.fetchHeartbeats(since).expectSuccess().map { it.instanceName } shouldContainExactlyInAnyOrder listOf("I1", "I2", "I3")
             method("I1")()
             delay(5.milliseconds)
-            val since2 = LocalDateTime.now()
+            val since2 = now()
             method("I2")()
             method("I3")()
             persistence.fetchHeartbeats(since2).expectSuccess().map { it.instanceName } shouldContainExactlyInAnyOrder listOf("I2", "I3")
         }
+    }
+
+    test("test liveness check") {
+        val redis = RedisServer.newRedisServer().start()
+        val persistence = newRedisPersistence<TestInput, TestResult>(redis)
+        persistence.transaction {
+            updateHeartbeat(Heartbeat("I1", now().minusSeconds(10)))
+        }
+        Maintenance.livenessCheck(persistence, "I1", 1.seconds) shouldBeEqual false
+        Maintenance.livenessCheck(persistence, "I1", 11.seconds) shouldBeEqual true
+        Maintenance.livenessCheck(persistence, "I1", 10.seconds) shouldBeEqual false
+        Maintenance.livenessCheck(persistence, "unknown", 0.seconds) shouldBeEqual false
     }
 
     test("test check for cancellation") {
@@ -111,19 +123,19 @@ class MaintenanceTest : FunSpec({
 
     test("test restart jobs from dead instances") {
         val redis = RedisServer.newRedisServer().start()
-        val interval = 300.minutes
+        val timeout = 300.minutes
         val persistence = newRedisPersistence<TestInput, TestResult>(redis)
         val testingMode = JobFrameworkTestingMode("I1", persistence, false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
             addJob("other", persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) { jobConfig { maxRestarts = 2 } }
-            maintenanceConfig { heartbeatInterval = interval }
+            maintenanceConfig { heartbeatTimeout = timeout }
         }
 
         val directCall = suspend {
             Maintenance.restartJobsFromDeadInstances(
                 persistence,
                 mapOf(defaultJobType to persistence, "other" to persistence),
-                interval,
+                timeout,
                 mapOf(defaultJobType to 3, "other" to 2)
             )
         }
@@ -133,31 +145,31 @@ class MaintenanceTest : FunSpec({
                 JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
 
                 persistence.transaction {
-                    persistJob(newJob("42", status = RUNNING, executingInstance = "I2", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
-                    persistJob(newJob("43", status = SUCCESS, executingInstance = "I2", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
-                    persistJob(newJob("44", status = RUNNING, executingInstance = "I1", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
-                    persistJob(newJob("45", status = RUNNING, executingInstance = "I3", startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1)))
+                    persistJob(newJob("42", status = RUNNING, executingInstance = "I2", startedAt = now(), timeout = now().plusDays(1)))
+                    persistJob(newJob("43", status = SUCCESS, executingInstance = "I2", startedAt = now(), timeout = now().plusDays(1)))
+                    persistJob(newJob("44", status = RUNNING, executingInstance = "I1", startedAt = now(), timeout = now().plusDays(1)))
+                    persistJob(newJob("45", status = RUNNING, executingInstance = "I3", startedAt = now(), timeout = now().plusDays(1)))
                     persistJob(
                         newJob(
                             "46", status = RUNNING, executingInstance = "I4",
-                            startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1), numRestarts = 2
+                            startedAt = now(), timeout = now().plusDays(1), numRestarts = 2
                         )
                     )
                     persistJob(
                         newJob(
                             "47", status = RUNNING, executingInstance = "I4",
-                            startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1), numRestarts = 3
+                            startedAt = now(), timeout = now().plusDays(1), numRestarts = 3
                         )
                     )
                     persistJob(
                         newJob(
                             "48", jobType = "other", status = RUNNING, executingInstance = "I4",
-                            startedAt = LocalDateTime.now(), timeout = LocalDateTime.now().plusDays(1), numRestarts = 2
+                            startedAt = now(), timeout = now().plusDays(1), numRestarts = 2
                         )
                     )
-                    updateHeartbeat(Heartbeat("I1", LocalDateTime.now().minus(interval.times(2.09).toJavaDuration())))
-                    updateHeartbeat(Heartbeat("I2", LocalDateTime.now().minus(interval.times(2.11).toJavaDuration())))
-                    updateHeartbeat(Heartbeat("I3", LocalDateTime.now().minus(1.seconds.toJavaDuration())))
+                    updateHeartbeat(Heartbeat("I1", now().minus((timeout - 1.seconds).toJavaDuration())))
+                    updateHeartbeat(Heartbeat("I2", now().minus((timeout + 1.seconds).toJavaDuration())))
+                    updateHeartbeat(Heartbeat("I3", now().minus(1.seconds.toJavaDuration())))
                 }
                 method()
                 persistence.fetchJob("42").expectSuccess().also {
@@ -225,16 +237,16 @@ class MaintenanceTest : FunSpec({
             JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
 
             persistence.dataTransaction {
-                persistJob(newJob("42", status = RUNNING, finishedAt = LocalDateTime.now().minus(interval.toJavaDuration())))
-                persistJob(newJob("43", status = CREATED, finishedAt = LocalDateTime.now().minus(interval.toJavaDuration())))
-                persistJob(newJob("44", status = CANCEL_REQUESTED, finishedAt = LocalDateTime.now().minus(interval.toJavaDuration())))
-                persistJob(newJob("45", status = CANCELLED, finishedAt = LocalDateTime.now().minus(interval.toJavaDuration())))
-                persistJob(newJob("46", status = SUCCESS, finishedAt = LocalDateTime.now().minus(interval.toJavaDuration())))
-                persistJob(newJob("47", status = FAILURE, finishedAt = LocalDateTime.now().minus(interval.toJavaDuration())))
-                persistJob(newJob("48", status = SUCCESS, finishedAt = LocalDateTime.now().minus(interval.toJavaDuration()).plusSeconds(10)))
-                persistJob(newJob("49", status = SUCCESS, finishedAt = LocalDateTime.now().minus(interval.toJavaDuration()).minusSeconds(10)))
-                persistJob(newJob("50", status = SUCCESS, finishedAt = LocalDateTime.now().minus(interval.toJavaDuration()).plusSeconds(10)))
-                persistJob(newJob("51", status = SUCCESS, finishedAt = LocalDateTime.now().minus(interval.toJavaDuration()).minusSeconds(10)))
+                persistJob(newJob("42", status = RUNNING, finishedAt = now().minus(interval.toJavaDuration())))
+                persistJob(newJob("43", status = CREATED, finishedAt = now().minus(interval.toJavaDuration())))
+                persistJob(newJob("44", status = CANCEL_REQUESTED, finishedAt = now().minus(interval.toJavaDuration())))
+                persistJob(newJob("45", status = CANCELLED, finishedAt = now().minus(interval.toJavaDuration())))
+                persistJob(newJob("46", status = SUCCESS, finishedAt = now().minus(interval.toJavaDuration())))
+                persistJob(newJob("47", status = FAILURE, finishedAt = now().minus(interval.toJavaDuration())))
+                persistJob(newJob("48", status = SUCCESS, finishedAt = now().minus(interval.toJavaDuration()).plusSeconds(10)))
+                persistJob(newJob("49", status = SUCCESS, finishedAt = now().minus(interval.toJavaDuration()).minusSeconds(10)))
+                persistJob(newJob("50", status = SUCCESS, finishedAt = now().minus(interval.toJavaDuration()).plusSeconds(10)))
+                persistJob(newJob("51", status = SUCCESS, finishedAt = now().minus(interval.toJavaDuration()).minusSeconds(10)))
                 persistInput(newJob("42"), TestInput(42))
                 persistInput(newJob("43"), TestInput(43))
                 persistInput(newJob("44"), TestInput(44))

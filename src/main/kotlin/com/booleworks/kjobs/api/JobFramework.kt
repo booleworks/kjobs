@@ -31,7 +31,6 @@ import com.booleworks.kjobs.data.LongPollingConfig
 import com.booleworks.kjobs.data.PollStatus
 import com.booleworks.kjobs.data.SynchronousResourceConfig
 import com.booleworks.kjobs.data.TagMatcher
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.response.respond
@@ -260,8 +259,11 @@ class JobFrameworkBuilder internal constructor(
     /**
      * Further configuration options about maintenance routines.
      *
-     * @param jobCheckInterval the interval with which the instance should check for new jobs to compute
-     * @param heartbeatInterval the interval with which the instance should update its heartbeat and check for dead instances
+     * @param jobCheckInterval the interval with which the instance should check for new jobs to compute. *If the check takes longer than the given interval,
+     * the next execution will be delayed until the previous check has finished.* So there will not be multiple job checks be executed in parallel on the same
+     * instance (because it may e.g. lead to inconsistencies if the same job is reserved twice by the same instance).
+     * @param heartbeatTimeout the interval since the latest heartbeat after which the instance is considered to be broken or dead. This interval should be
+     * (significantly) longer than the [jobCheckInterval] to ensure that there is enough time for the heartbeat to be updated.
      * @param oldJobDeletionInterval the interval with which the instance should check for old jobs to be deleted
      * @param deleteOldJobsAfter the time after which finished jobs should be deleted. Default is 365 days. Usually, this value can be set much lower (e.g.
      * to one day or even less). Note that, depending on the number of requests and the size of the input and result, the job database may become very large if
@@ -277,7 +279,7 @@ class JobFrameworkBuilder internal constructor(
     @KJobsDsl
     class MaintenanceConfig internal constructor(
         var jobCheckInterval: Duration = 5.seconds,
-        var heartbeatInterval: Duration = 10.seconds,
+        var heartbeatTimeout: Duration = 1.minutes,
         var oldJobDeletionInterval: Duration = 1.days,
         var deleteOldJobsAfter: Duration = 365.days,
         var restartRunningJobsOnStartup: Boolean = true,
@@ -338,14 +340,11 @@ class JobFrameworkBuilder internal constructor(
             val jobCancellationQueue = AtomicReference(setOf<String>())
             val executor = generateJobExecutor(jobCancellationQueue)
             val dispatcher = Executors.newFixedThreadPool(maintenanceConfig.threadPoolSize).asCoroutineDispatcher() + supervisor
-            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, "Update heartbeat for $myInstanceName", false, Dispatchers.IO) {
-                Maintenance.updateHeartbeat(jobPersistence, myInstanceName)
-            }
             dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, "Main executor run", true, executorConfig.dispatcher) {
                 executor.execute()
             }
-            dispatcher.scheduleForever(maintenanceConfig.heartbeatInterval, "Restart jobs of dead instances", true, Dispatchers.IO) {
-                Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, restartsPerType)
+            dispatcher.scheduleForever(maintenanceConfig.heartbeatTimeout, "Restart jobs of dead instances", true, Dispatchers.IO) {
+                Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatTimeout, restartsPerType)
             }
             dispatcher.scheduleForever(maintenanceConfig.oldJobDeletionInterval, "Delete old jobs", true, Dispatchers.IO) {
                 Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType)

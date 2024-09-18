@@ -70,6 +70,7 @@ class MainJobExecutor(
      * @return the coroutine job of the actual computation
      */
     suspend fun execute(): kotlinx.coroutines.Job? = coroutineScope {
+        launch { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
         val myCapacity = getExecutionCapacity() ?: return@coroutineScope null
         if (!myCapacity.mayTakeJobs) {
             log.trace("No capacity for further jobs.")

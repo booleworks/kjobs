@@ -13,17 +13,10 @@ import com.booleworks.kjobs.data.ifError
 import com.booleworks.kjobs.data.orQuitWith
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.time.LocalDateTime
+import java.time.LocalDateTime.now
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
-
-/**
- * This factor multiplied by the `heartbeatInterval` denotes the acceptable time in which a heartbeat
- * may be delayed. The intention is that we allow no more than one missed heartbeat (which would be
- * factor 2) and wait some more time for the job to write the heartbeat in the database.
- */
-private const val HEARTBEAT_TIMEOUT_FACTOR = 2.1
 
 /**
  * A collection of maintenance jobs.
@@ -35,8 +28,18 @@ object Maintenance {
      * Updates the heartbeat for this instance in the [persistence].
      */
     suspend fun updateHeartbeat(persistence: JobPersistence, myInstanceName: String) {
-        persistence.transaction { updateHeartbeat(Heartbeat(myInstanceName, LocalDateTime.now())) }
+        persistence.transaction { updateHeartbeat(Heartbeat(myInstanceName, now())) }
     }
+
+    /**
+     * Checks if the instance with the given name is still alive. The instance is considered alive if the duration since
+     * its last heartbeat is not more than [heartbeatTimeout].
+     */
+    suspend fun livenessCheck(persistence: JobPersistence, instanceName: String, heartbeatTimeout: Duration): Boolean =
+        persistence.fetchHeartbeats(now().minus(heartbeatTimeout.toJavaDuration())).orQuitWith {
+            logger.error("Liveness check failed to fetch heartbeats: $it")
+            return false
+        }.any { it.instanceName == instanceName }
 
     /**
      * Retrieves all jobs from the [persistence] in status [JobStatus.CANCEL_REQUESTED] and writes their
@@ -52,7 +55,7 @@ object Maintenance {
 
     /**
      * Checks for jobs in status [JobStatus.RUNNING] belonging to instances which seem to be dead. An instance
-     * is assumed to be dead *if it missed to update its heartbeat at least twice*.
+     * is assumed to be dead if the duration since its last heartbeat is more than [heartbeatTimeout].
      * If such a job has had less than [maxRestartsPerType] restarts, the job is reset to [JobStatus.CREATED],
      * otherwise the job is set to failure. (The assumption is multiple restarts of the same job may indicate
      * that the job's computation is responsible for the death of the instance.)
@@ -60,11 +63,11 @@ object Maintenance {
     suspend fun restartJobsFromDeadInstances(
         jobPersistence: JobPersistence,
         persistencesPerType: Map<String, DataPersistence<*, *>>,
-        heartbeatInterval: Duration,
+        heartbeatTimeout: Duration,
         maxRestartsPerType: Map<String, Int>,
     ) {
         val liveInstances =
-            jobPersistence.fetchHeartbeats(LocalDateTime.now().minus((heartbeatInterval * HEARTBEAT_TIMEOUT_FACTOR).toJavaDuration())).orQuitWith {
+            jobPersistence.fetchHeartbeats(now().minus(heartbeatTimeout.toJavaDuration())).orQuitWith {
                 logger.error("Failed to fetch heartbeats: $it")
                 return
             }.map { it.instanceName }.toSet()
@@ -84,7 +87,7 @@ object Maintenance {
      * Deletes all jobs, including their inputs and results, which have finished for longer than the given duration.
      */
     suspend fun deleteOldJobs(persistence: JobPersistence, after: Duration, persistencesPerType: Map<String, DataPersistence<*, *>>) {
-        persistence.allJobsFinishedBefore(LocalDateTime.now().minus(after.toJavaDuration())).orQuitWith {
+        persistence.allJobsFinishedBefore(now().minus(after.toJavaDuration())).orQuitWith {
             logger.error("Failed to fetch jobs: $it")
             return
         }.let { jobs ->
@@ -124,7 +127,7 @@ object Maintenance {
             if (job.numRestarts >= maxRestarts) {
                 logger.debug("Setting job with ID ${job.uuid} to failure because $hint and the maximum number of restarts has been reached")
                 job.status = JobStatus.FAILURE
-                job.finishedAt = LocalDateTime.now()
+                job.finishedAt = now()
                 persistOrUpdateFailure(job, "The job was aborted because it exceeded the maximum number of $maxRestarts restarts")
             } else {
                 logger.debug("Restarting job with ID ${job.uuid} because $hint")

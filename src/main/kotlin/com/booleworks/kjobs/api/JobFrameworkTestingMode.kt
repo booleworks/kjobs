@@ -122,7 +122,7 @@ class JobFrameworkTestingApi internal constructor(
      * @see Maintenance.restartJobsFromDeadInstances
      */
     fun restartJobsFromDeadInstances() =
-        runBlocking { Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatInterval, maxRestartsPerType) }
+        runBlocking { Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatTimeout, maxRestartsPerType) }
 
     /**
      * Deletes old jobs.

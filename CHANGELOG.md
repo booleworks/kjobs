@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC20] - 2024-09-18
+
+### Changed
+- The heartbeat is now updated during the main run of the `JobExecutor`, i.e. every time the instance checks if new jobs are available. This makes the heartbeat more "reliable", because if the `JobExecutor` has crashed (which should usually never happen, but does nevertheless in unfortunate circumstances) the instance is effectively useless. For this reason, the parameter `MaintenanceConfig.heartbeatInterval` was removed (since it is now the same as `jobCheckInterval`) and the new parameter `MaintenanceConfig.heartbeatTimeout` was added, which describes after which time after the last heartbeat update the instance should be considered broken/dead.
+- Minor dependency updates
+
+### Added
+- Parameter `MaintenanceConfig.heartbeatTimeout` as described above
+- New method `Maintenance.livenessCheck` which checks if a given instance is alive. This can be useful for liveness probes in cloud environments.
+
+### Removed
+- Parameter `MaintenanceConfig.heartbeatInterval` as described above
+
+
 ## [1.0.0-RC19] - 2024-07-11
 
 ### Changed

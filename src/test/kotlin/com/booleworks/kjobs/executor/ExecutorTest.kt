@@ -11,6 +11,7 @@ import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultExecutor
 import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.defaultJobType
+import com.booleworks.kjobs.common.expectSuccess
 import com.booleworks.kjobs.common.right
 import com.booleworks.kjobs.common.testWithRedis
 import com.booleworks.kjobs.control.ComputationResult
@@ -19,6 +20,8 @@ import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.orQuitWith
 import io.kotest.assertions.fail
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldHaveSingleElement
 import io.kotest.matchers.date.shouldBeAfter
 import io.kotest.matchers.date.shouldBeBefore
 import io.kotest.matchers.date.shouldBeBetween
@@ -28,6 +31,8 @@ import io.kotest.matchers.nulls.shouldBeNull
 import java.time.LocalDateTime.now
 import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 
 class ExecutorTest : FunSpec({
 
@@ -68,6 +73,13 @@ class ExecutorTest : FunSpec({
         jobAfterComputation.timeout!! shouldBeAfter jobAfterComputation.finishedAt!!
         jobAfterComputation.numRestarts.shouldBeZero()
         dataPersistence.fetchResult(job.uuid).orQuitWith { fail("Expected persistence access to succeed") } shouldBeEqual TestResult(42)
+    }
+
+    testWithRedis("test main executor updates heartbeat") {
+        fetchHeartbeats(now() - 10.seconds.toJavaDuration()).expectSuccess().shouldBeEmpty()
+        defaultExecutor(this).execute()?.join()
+        fetchHeartbeats(now() - 1.seconds.toJavaDuration()).expectSuccess()
+            .shouldHaveSingleElement { it.instanceName == defaultInstanceName && it.lastBeat > now().minusSeconds(1) }
     }
 
     testWithRedis("test simple computation with redis") {
