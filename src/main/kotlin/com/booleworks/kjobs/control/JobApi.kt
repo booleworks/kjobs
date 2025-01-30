@@ -21,13 +21,12 @@ import com.booleworks.kjobs.data.orQuitWith
 import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.InternalServerError
 import io.ktor.http.HttpStatusCode.Companion.NotFound
-import io.ktor.server.application.ApplicationCall
-import io.ktor.server.application.call
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
-import io.ktor.util.pipeline.PipelineContext
+import io.ktor.server.routing.RoutingContext
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
@@ -213,7 +212,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
                 // We start to polling before checking the job status to reduce the risk of missing a job update between checking
                 // the job and starting to poll (in the worst case we might still miss an update if setting up the poll is slower than
                 // checking the job).
-                val asyncPoll = with(longPollManager) { subscribe(uuid.toString(), timeout) }
+                val asyncPoll = with(longPollManager) { coroutineScope { subscribe(uuid.toString(), timeout) } }
                 apiLog.trace("Async Poll for ID {} initiated with timeout {}", uuid, timeout)
                 val job = fetchJobAndCheckType(uuid, jobConfig.jobType, jobConfig.persistence) ?: run {
                     asyncPoll.cancelAndJoin()
@@ -299,13 +298,13 @@ internal suspend inline fun <INPUT> submit(
     return persistence.dataTransaction { persistJob(job); persistInput(job, input) }.mapResult { job }
 }
 
-private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.validateAndSubmit(
+private suspend inline fun <INPUT> RoutingContext.validateAndSubmit(
     apiConfig: ApiConfig<INPUT, *>,
     jobConfig: JobConfig<INPUT, *>,
     input: INPUT
 ): String? {
     val inputValidation = apiConfig.inputValidation(input)
-    if (!inputValidation.success)  {
+    if (!inputValidation.success) {
         call.respond(inputValidation.responseCode, inputValidation.message)
         return null
     }
@@ -315,7 +314,7 @@ private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.valida
     }.uuid
 }
 
-private suspend inline fun PipelineContext<Unit, ApplicationCall>.fetchJobAndCheckType(
+private suspend inline fun RoutingContext.fetchJobAndCheckType(
     uuid: UUID?,
     requestedJobType: String,
     persistence: DataPersistence<*, *>
@@ -337,23 +336,23 @@ private suspend inline fun PipelineContext<Unit, ApplicationCall>.fetchJobAndChe
     return job
 }
 
-private suspend inline fun PipelineContext<Unit, ApplicationCall>.resultStatus(uuid: UUID, requestedJobType: String, persistence: DataPersistence<*, *>) {
+private suspend inline fun RoutingContext.resultStatus(uuid: UUID, requestedJobType: String, persistence: DataPersistence<*, *>) {
     fetchJobAndCheckType(uuid, requestedJobType, persistence)?.let { call.respondText(it.status.toString()) }
 }
 
-private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(job: Job, persistence: DataPersistence<*, RESULT>): RESULT? =
+private suspend inline fun <RESULT> RoutingContext.result(job: Job, persistence: DataPersistence<*, RESULT>): RESULT? =
     persistence.fetchResult(job.uuid).orQuitWith {
         call.respondText("Failed to retrieve job result for ID ${job.uuid}: $it", status = InternalServerError)
         return null
     }
 
-private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.failure(job: Job, persistence: DataPersistence<*, RESULT>): String? =
+private suspend inline fun <RESULT> RoutingContext.failure(job: Job, persistence: DataPersistence<*, RESULT>): String? =
     persistence.fetchFailure(job.uuid).orQuitWith {
         call.respondText("Failed to retrieve job failure for ID ${job.uuid}: $it", status = InternalServerError)
         return null
     }
 
-private suspend inline fun PipelineContext<Unit, ApplicationCall>.parseUuid(): UUID? = call.parameters["uuid"]?.let {
+private suspend inline fun RoutingContext.parseUuid(): UUID? = call.parameters["uuid"]?.let {
     runCatching { UUID.fromString(it) }.getOrNull()
 } ?: run {
     call.respondText("The given uuid ${call.parameters["uuid"]} has a wrong format.", status = BadRequest)
