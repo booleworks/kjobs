@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.booleworks</groupId>
   <artifactId>kjobs</artifactId>
-  <version>1.0.0-RC20</version>
+  <version>1.0.0-RC21</version>
   <packaging>jar</packaging>
 
   <name>Kotlin Job Framework</name>
@@ -40,23 +40,24 @@
     <maven.compiler.source>17</maven.compiler.source>
     <maven.compiler.target>17</maven.compiler.target>
 
-    <version.kotlin>2.0.20</version.kotlin>
+    <version.kotlin>2.1.10</version.kotlin>
     <version.ktor>2.3.12</version.ktor>
-    <version.slf4j>2.0.9</version.slf4j>
-    <version.lettuce>6.4.0.RELEASE</version.lettuce>
+    <version.slf4j>2.0.16</version.slf4j>
+    <version.lettuce>6.5.3.RELEASE</version.lettuce>
 
+    <version.junit>5.7.0</version.junit>
     <version.kotest>5.9.1</version.kotest>
-    <version.mockk>1.13.12</version.mockk>
-    <version.jedis-mock>1.1.4</version.jedis-mock>
-    <version.jackson>2.17.2</version.jackson>
-    <version.logback>1.5.8</version.logback>
+    <version.mockk>1.13.16</version.mockk>
+    <version.jedis-mock>1.1.8</version.jedis-mock>
+    <version.jackson>2.18.2</version.jackson>
+    <version.logback>1.5.16</version.logback>
 
     <version.maven-compiler>3.13.0</version.maven-compiler>
     <version.maven-resources>3.3.1</version.maven-resources>
-    <version.maven-surefire>3.5.0</version.maven-surefire>
+    <version.maven-surefire>3.5.2</version.maven-surefire>
     <version.maven-source>3.3.1</version.maven-source>
     <version.jacoco>0.8.12</version.jacoco>
-    <version.dokka>1.9.20</version.dokka>
+    <version.dokka>2.0.0</version.dokka>
     <version.detekt>1.23.7</version.detekt>
     <version.maven-gpg>1.6</version.maven-gpg>
     <version.nexus-staging>1.7.0</version.nexus-staging>
