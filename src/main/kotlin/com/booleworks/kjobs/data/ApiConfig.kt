@@ -3,6 +3,7 @@
 
 package com.booleworks.kjobs.data
 
+import com.booleworks.kjobs.api.InputValidationResult
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.control.polling.LongPollManager
 import io.ktor.server.application.ApplicationCall
@@ -13,7 +14,7 @@ import kotlin.time.Duration
 internal class ApiConfig<INPUT, RESULT>(
     val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
     val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
-    val inputValidation: (INPUT) -> List<String>,
+    val inputValidation: (INPUT) -> InputValidationResult,
     val enableDeletion: Boolean,
     val enableCancellation: Boolean,
     val syncMockConfig: SynchronousResourceConfig<INPUT>,

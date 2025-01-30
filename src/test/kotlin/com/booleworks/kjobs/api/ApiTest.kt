@@ -175,16 +175,46 @@ class ApiTest : FunSpec({
                     addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
                         enableSynchronousResource()
                         apiConfig {
-                            inputValidation = { if (it.value >= 0) emptyList() else listOf("Value must not be negative", "Some second message") }
+                            inputValidation = { if (it.value >= 0) InputValidationResult.success() else InputValidationResult.failure("Value must not be negative") }
                         }
                     }
                 }
             }
         }
         client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(-1).ser()) }
-            .shouldHaveStatus(HttpStatusCode.BadRequest).bodyAsText() shouldBeEqual "Value must not be negative, Some second message"
+            .shouldHaveStatus(HttpStatusCode.BadRequest).bodyAsText() shouldBeEqual "Value must not be negative"
         client.post("test/synchronous") { contentType(ContentType.Application.Json); setBody(TestInput(-1).ser()) }
-            .shouldHaveStatus(HttpStatusCode.BadRequest).bodyAsText() shouldBeEqual "Value must not be negative, Some second message"
+            .shouldHaveStatus(HttpStatusCode.BadRequest).bodyAsText() shouldBeEqual "Value must not be negative"
+        val uuid = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(0).ser()) }
+            .shouldHaveStatus(HttpStatusCode.OK).bodyAsText().shouldNotBeNull()
+        client.post("test/synchronous") { contentType(ContentType.Application.Json); setBody(TestInput(0).ser()) }
+            .shouldHaveStatus(HttpStatusCode.OK).bodyAsText() shouldBeEqual "{\n  \"inputValue\" : 0\n}"
+        client.get("test/result/$uuid").shouldHaveStatus(HttpStatusCode.OK).bodyAsText() shouldBeEqual "{\n  \"inputValue\" : 0\n}"
+        jobFramework!!.cancelAndJoin()
+    }
+
+    testJobFrameworkWithRedis("test input validation with custom status code") {
+        val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        var jobFramework: kotlinx.coroutines.Job? = null
+        routing {
+            jobFramework = JobFramework(defaultInstanceName, persistence) {
+                maintenanceConfig { jobCheckInterval = 20.milliseconds }
+                route("test") {
+                    addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                        enableSynchronousResource()
+                        apiConfig {
+                            inputValidation = {
+                                if (it.value >= 0) InputValidationResult.success() else InputValidationResult.failure("You are not allowed to enter", HttpStatusCode.Forbidden)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(-1).ser()) }
+            .shouldHaveStatus(HttpStatusCode.Forbidden).bodyAsText() shouldBeEqual "You are not allowed to enter"
+        client.post("test/synchronous") { contentType(ContentType.Application.Json); setBody(TestInput(-1).ser()) }
+            .shouldHaveStatus(HttpStatusCode.Forbidden).bodyAsText() shouldBeEqual "You are not allowed to enter"
         val uuid = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(0).ser()) }
             .shouldHaveStatus(HttpStatusCode.OK).bodyAsText().shouldNotBeNull()
         client.post("test/synchronous") { contentType(ContentType.Application.Json); setBody(TestInput(0).ser()) }

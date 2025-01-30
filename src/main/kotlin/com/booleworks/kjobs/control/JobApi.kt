@@ -304,8 +304,9 @@ private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.valida
     jobConfig: JobConfig<INPUT, *>,
     input: INPUT
 ): String? {
-    apiConfig.inputValidation(input).takeIf { it.isNotEmpty() }?.let {
-        call.respond(BadRequest, it.joinToString(", "))
+    val inputValidation = apiConfig.inputValidation(input)
+    if (!inputValidation.success)  {
+        call.respond(inputValidation.responseCode, inputValidation.message)
         return null
     }
     return submit(input, jobConfig).orQuitWith {

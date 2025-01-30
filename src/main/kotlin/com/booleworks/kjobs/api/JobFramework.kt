@@ -31,6 +31,7 @@ import com.booleworks.kjobs.data.LongPollingConfig
 import com.booleworks.kjobs.data.PollStatus
 import com.booleworks.kjobs.data.SynchronousResourceConfig
 import com.booleworks.kjobs.data.TagMatcher
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.response.respond
@@ -542,7 +543,7 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
  */
 @KJobsDsl
 class ApiConfigBuilder<INPUT> internal constructor(
-    var inputValidation: (INPUT) -> List<String> = { emptyList() },
+    var inputValidation: (INPUT) -> InputValidationResult = { InputValidationResult.success() },
     var enableDeletion: Boolean = false,
     var submitRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> post("submit") { block() } },
     var statusRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("status/{uuid}") { block() } },
@@ -655,6 +656,35 @@ class LongPollingConfigBuilder(
     var maximumConnectionTimeout: Duration = 3.minutes
 ) {
     internal fun toLongPollingConfig() = LongPollingConfig(enabled, longPollManager, maximumConnectionTimeout)
+}
+
+/**
+ * Result of the input validation.
+ *
+ * @param success whether the validation of the input was successful or not. In case of `false`, no job will be created
+ * for the input and the response code (usually 400, but could also be something more specific) and message should give
+ * a hint about what went wrong. In case of `true`, status 200 will be returned without any messages.
+ * @param message the message to be returned in case of an unsuccessful validation
+ * @param responseCode the response code in case of an unsuccessful validation
+ */
+class InputValidationResult private constructor(
+    val success: Boolean,
+    val message: String,
+    val responseCode: HttpStatusCode,
+) {
+    companion object {
+        /**
+         * Creates a new input validation result for a successful validation.
+         */
+        fun success() = InputValidationResult(true, "", HttpStatusCode.OK)
+
+        /**
+         * Creates a new input validation result for an unsuccessful validation with the given messages and optional response code.
+         * @param message the error message to be returned in the response
+         * @param responseCode the response code to return
+         */
+        fun failure(message: String, responseCode: HttpStatusCode = HttpStatusCode.BadRequest) = InputValidationResult(false, message, responseCode)
+    }
 }
 
 internal const val DEFAULT_MAX_JOB_RESTARTS = 3
