@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC22] - 2025-04-11
+
+### Changed
+- Additional to the function where jobs older than a given timespan are deleted automatically, it is now possible to define a maximum number of allowed jobs. If the overall count of finished jobs exceeds the maximum number of allowed jobs defined in `MaintenanceConfig.deleteOldJobsOnExceedingCount`, the oldest jobs regarding their creation date are deleted. This function counts all jobs disgarding their status, but deletes only the oldest finished jobs. 
+- Following example showcases the above behaviour: Assuming the DB contains 10 jobs of which 2 are in status RUNNING and all others are in status SUCCESSFUL and `MaintenanceConfig.deleteOldJobsOnExceedingCount` is set to 8. Then there are `10 - 8 = 2` jobs over the defined maximum in the db. Thus the two jobs with the earliest creation date are deleted.  
+- Due to the new method `Maintenance#deleteOldJobsExceedingDbJobCount` (for details see below Added section) the existing `Maintenance#deleteOldJobs` is renamed to `Maintenance#deleteOldJobsFinishedBefore`
+- Minor dependency updates
+
+### Added
+- Parameter `MaintenanceConfig.deleteOldJobsOnExceedingCount` as described above
+- Method `Maintenance#deleteOldJobsExceedingDbJobCount` which deletes the oldest jobs, sorted by creation date, if the overall count of finished jobs exceeds the maximum allowed job count defined in `MaintenanceConfig.deleteOldJobsOnExceedingCount`  
+- New scheduled function for deleting jobs that exceed the defined maximum job count as described above. The execution is only triggered when maintenance in the job framework is activated. The execution interval is defined in `MaintenanceConfig.oldJobDeletionInterval`. Both scheduled deletion functions are executed (the deletion on exceeding a maximum job count and the deletion of jobs that are older then a defined time span), means they are not mutually exclusive.   
+
 ## [1.0.0-RC21] - 2025-01-30
 
 ### Changed

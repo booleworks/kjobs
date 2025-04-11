@@ -72,7 +72,7 @@ object Maintenance {
                 return
             }.map { it.instanceName }.toSet()
         val runningJobs = jobPersistence.allJobsWithStatus(JobStatus.RUNNING).orQuitWith {
-            logger.error("Failed to fetch jobs: $it")
+            logger.error("Failed to fetch running jobs: $it")
             return
         }
         val jobsWithDeadInstances = runningJobs.filter { it.executingInstance !in liveInstances }
@@ -86,13 +86,24 @@ object Maintenance {
     /**
      * Deletes all jobs, including their inputs and results, which have finished for longer than the given duration.
      */
-    suspend fun deleteOldJobs(persistence: JobPersistence, after: Duration, persistencesPerType: Map<String, DataPersistence<*, *>>) {
+    suspend fun deleteOldJobsFinishedBefore(persistence: JobPersistence, after: Duration, persistencesPerType: Map<String, DataPersistence<*, *>>) {
         persistence.allJobsFinishedBefore(now().minus(after.toJavaDuration())).orQuitWith {
-            logger.error("Failed to fetch jobs: $it")
+            logger.error("Failed to fetch jobs for deleting: $it")
             return
         }.let { jobs ->
-            persistence.transaction { jobs.forEach { deleteForUuid(it.uuid, persistencesPerType) } }
-                .ifError { logger.error("Failed to delete old jobs: $it") }
+            deleteJobs(jobs, persistence, persistencesPerType)
+        }
+    }
+
+    /**
+     * Deletes all jobs, including their inputs and results, which exceed the allowed number of finished jobs.
+     */
+    suspend fun deleteOldJobsExceedingDbJobCount(persistence: JobPersistence, maxNumberKeptJobs: Int, persistencePerType: Map<String, DataPersistence<*, *>>) {
+        persistence.allJobsExceedingDbJobCount(maxNumberKeptJobs).orQuitWith {
+            logger.error("Failed to fetch jobs exceeding the job count: $it")
+            return
+        }.let { exceedingJobs ->
+            deleteJobs(exceedingJobs, persistence, persistencePerType)
         }
     }
 
@@ -110,7 +121,7 @@ object Maintenance {
         maxRestartsPerType: Map<String, Int>,
     ) {
         val myRunningJobs = persistence.allJobsOfInstance(JobStatus.RUNNING, myInstanceName).orQuitWith {
-            logger.error("Failed to fetch jobs: $it")
+            logger.error("Failed to fetch running jobs for instance: $it")
             return
         }
         restartJobs(myRunningJobs, persistencesPerType, maxRestartsPerType, "its instance has been restarted")
@@ -139,5 +150,10 @@ object Maintenance {
             }
             updateJob(job)
         }.ifError { logger.error("Updating job failed with: $it") }
+    }
+
+    private suspend fun deleteJobs(jobs: List<Job>, persistence: JobPersistence, persistencePerType: Map<String, DataPersistence<*, *>>) {
+        persistence.transaction { jobs.forEach { deleteForUuid(it.uuid, persistencePerType) } }
+            .ifError { logger.error("Failed to delete old jobs: $it") }
     }
 }
