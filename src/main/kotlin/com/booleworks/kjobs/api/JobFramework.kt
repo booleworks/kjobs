@@ -269,6 +269,10 @@ class JobFrameworkBuilder internal constructor(
      * @param deleteOldJobsAfter the time after which finished jobs should be deleted. Default is 365 days. Usually, this value can be set much lower (e.g.
      * to one day or even less). Note that, depending on the number of requests and the size of the input and result, the job database may become very large if
      * this value is set too high.
+     * @param deleteOldJobsOnExceedingCount the maximum number of jobs that are allowed to be stored. If the number of jobs exceeds the maximum number, the
+     * amount of jobs exceeding the maximum will be deleted. Only finished jobs are deleted by this routine and the deletion is performed from oldest to
+     * youngest jobs. Note that, depending on the number of requests and the size of the input and result, the job database may become very large if this value
+     * is set too high.
      * @param restartRunningJobsOnStartup whether we should check for running jobs of this instance at startup and restart them. The intention is that this
      * instance might have been restarted for whatever reason and still have the same name. If the instance was restarted when a job was running, this job would
      * still be in [JobStatus.RUNNING] state and nobody (including the instance itself) would recognize that the job is actually not computed anymore. So it is
