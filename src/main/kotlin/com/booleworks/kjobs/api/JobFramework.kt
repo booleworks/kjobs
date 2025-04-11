@@ -349,10 +349,10 @@ class JobFrameworkBuilder internal constructor(
                 Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatTimeout, restartsPerType)
             }
             dispatcher.scheduleForever(maintenanceConfig.oldJobDeletionInterval, "Delete old jobs after timespan", true, Dispatchers.IO) {
-                Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType)
+                Maintenance.deleteOldJobsFinishedBefore(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType)
             }
             dispatcher.scheduleForever(maintenanceConfig.oldJobDeletionInterval, "Delete old jobs on exceeding job count", true, Dispatchers.IO) {
-                Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsOnExceedingCount, persistencesPerType)
+                Maintenance.deleteOldJobsExceedingDbJobCount(jobPersistence, maintenanceConfig.deleteOldJobsOnExceedingCount, persistencesPerType)
             }
             if (cancellationConfig.enabled) {
                 dispatcher.scheduleForever(cancellationConfig.checkInterval, "Check for cancellations", true, Dispatchers.IO) {

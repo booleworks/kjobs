@@ -230,7 +230,7 @@ class MaintenanceTest : FunSpec({
             maintenanceConfig { deleteOldJobsAfter = interval }
         }
 
-        val directCall = suspend { Maintenance.deleteOldJobs(persistence, interval, mapOf(defaultJobType to persistence)) }
+        val directCall = suspend { Maintenance.deleteOldJobsFinishedBefore(persistence, interval, mapOf(defaultJobType to persistence)) }
         val testingCall = suspend { testingMode.deleteOldJobs() }
 
         for (method in listOf(directCall, testingCall)) {
@@ -311,7 +311,7 @@ class MaintenanceTest : FunSpec({
             maintenanceConfig { deleteOldJobsOnExceedingCount = 3 }
         }
 
-        val directCall = suspend { Maintenance.deleteOldJobs(persistence, maxJobCount, mapOf(defaultJobType to persistence)) }
+        val directCall = suspend { Maintenance.deleteOldJobsExceedingDbJobCount(persistence, maxJobCount, mapOf(defaultJobType to persistence)) }
         val testingCall = suspend { testingMode.deleteOldJobs() }
 
         for (method in listOf(directCall, testingCall)) {

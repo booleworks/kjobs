@@ -86,7 +86,7 @@ object Maintenance {
     /**
      * Deletes all jobs, including their inputs and results, which have finished for longer than the given duration.
      */
-    suspend fun deleteOldJobs(persistence: JobPersistence, after: Duration, persistencesPerType: Map<String, DataPersistence<*, *>>) {
+    suspend fun deleteOldJobsFinishedBefore(persistence: JobPersistence, after: Duration, persistencesPerType: Map<String, DataPersistence<*, *>>) {
         persistence.allJobsFinishedBefore(now().minus(after.toJavaDuration())).orQuitWith {
             logger.error("Failed to fetch jobs for deleting: $it")
             return
@@ -98,7 +98,7 @@ object Maintenance {
     /**
      * Deletes all jobs, including their inputs and results, which exceed the allowed number of finished jobs.
      */
-    suspend fun deleteOldJobs(persistence: JobPersistence, maxNumberKeptJobs: Int, persistencePerType: Map<String, DataPersistence<*, *>>) {
+    suspend fun deleteOldJobsExceedingDbJobCount(persistence: JobPersistence, maxNumberKeptJobs: Int, persistencePerType: Map<String, DataPersistence<*, *>>) {
         persistence.allJobsExceedingDbJobCount(maxNumberKeptJobs).orQuitWith {
             logger.error("Failed to fetch jobs exceeding the job count: $it")
             return

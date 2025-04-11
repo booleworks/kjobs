@@ -126,9 +126,9 @@ class JobFrameworkTestingApi internal constructor(
 
     /**
      * Deletes old jobs.
-     * @see Maintenance.deleteOldJobs
+     * @see Maintenance.deleteOldJobsFinishedBefore
      */
-    fun deleteOldJobs() = runBlocking { Maintenance.deleteOldJobs(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType) }
+    fun deleteOldJobs() = runBlocking { Maintenance.deleteOldJobsFinishedBefore(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType) }
 
     /**
      * Resets running jobs of the given [instance], the default is the instance provided in [JobFrameworkTestingMode].
