@@ -84,6 +84,12 @@ interface JobPersistence {
     suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>>
 
     /**
+     * Fetches the number of oldest jobs defined in [maxNumberKeptJobs]
+     * which are in status [JobStatus.SUCCESS] or [JobStatus.FAILURE].
+     */
+    suspend fun allJobsExceedingDbJobCount(maxNumberKeptJobs: Int): PersistenceAccessResult<List<Job>>
+
+    /**
      * Returns the status of the jobs with the given uuids.
      */
     suspend fun fetchStates(uuids: List<String>): PersistenceAccessResult<List<JobStatus>> =

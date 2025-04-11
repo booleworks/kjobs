@@ -64,6 +64,22 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
             ) && it.finishedAt?.isBefore(date) ?: false
         }.map { it.copy() })
 
+    override suspend fun allJobsExceedingDbJobCount(maxNumberKeptJobs: Int): PersistenceAccessResult<List<Job>> =
+        jobs.values.filter {
+            it.status in setOf(
+                JobStatus.SUCCESS,
+                JobStatus.FAILURE,
+                JobStatus.CANCELLED
+            )
+        }.let { finishedJobs ->
+            val exceedingJobCount = finishedJobs.count() - maxNumberKeptJobs
+            if (exceedingJobCount > 0) {
+                PersistenceAccessResult.result(finishedJobs.sortedBy { job -> job.createdAt }.take(exceedingJobCount).map { it.copy() })
+            } else {
+                PersistenceAccessResult.result(emptyList())
+            }
+        }
+
     override suspend fun persistJob(job: Job): PersistenceAccessResult<Unit> = PersistenceAccessResult.success.also { jobs[job.uuid] = job }
 
     override suspend fun updateJob(job: Job): PersistenceAccessResult<Unit> = PersistenceAccessResult.success.also { jobs[job.uuid] = job }

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Additional to the function where jobs older than a given timespan are deleted automatically, it is now possible to define a maximum number of allowed jobs. If the overall count of finished jobs exceeds the maximum allowed job count defined in `MaintenanceConfig.deleteOldJobsOnExceedingCount`, the oldest jobs regarding their creation date are deleted.
+
+### Added
+- Parameter `MaintenanceConfig.deleteOldJobsOnExceedingCount` as described above
+- Method `Maintenance#deleteOldJobs` which deletes the oldest jobs, sorted by creation date, if the overall count of finished jobs exceeds the maximum allowed job count defined in `MaintenanceConfig.deleteOldJobsOnExceedingCount`  
+- New scheduled function for deleting jobs that exceed the defined maximum job count as described above. The execution is only triggered when maintenance in the job framework is activated and the execution interval is defined in `MaintenanceConfig.oldJobDeletionInterval`  
+
 ## [1.0.0-RC21] - 2025-01-30
 
 ### Changed

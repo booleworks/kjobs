@@ -154,6 +154,36 @@ class JobPersistenceTest : FunSpec({
         )
     }
 
+    testPersistences("test all jobs exceeding job count") { persistence ->
+        val now = LocalDateTime.now()
+        persistence.allJobsExceedingDbJobCount(5).expectSuccess() shouldHaveSize 0
+        persistence.transaction {
+            persistJob(newJob("42", status = JobStatus.RUNNING, createdAt = fixDateWithSecond(1), finishedAt = now)).expectSuccess()
+            persistJob(
+                newJob(
+                    "45",
+                    status = JobStatus.FAILURE,
+                    createdAt = fixDateWithSecond(4),
+                    finishedAt = now
+                )
+            ).expectSuccess() // only fourth oldest job, thus preserved
+            persistJob(newJob("43", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(2), finishedAt = now.minusSeconds(1))).expectSuccess()
+            persistJob(newJob("44", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(3), finishedAt = now.plusHours(2))).expectSuccess()
+            persistJob(newJob("46", status = JobStatus.CREATED, createdAt = fixDateWithSecond(5), finishedAt = now.plusDays(100))).expectSuccess()
+            persistJob(newJob("47", status = JobStatus.FAILURE, createdAt = fixDateWithSecond(6), finishedAt = now.minusDays(10))).expectSuccess()
+            persistJob(newJob("48", status = JobStatus.CANCELLED, createdAt = fixDateWithSecond(7), finishedAt = now.minusSeconds(1))).expectSuccess()
+            persistJob(newJob("49", status = JobStatus.CANCEL_REQUESTED, createdAt = fixDateWithSecond(8), finishedAt = now.minusSeconds(1))).expectSuccess()
+            persistJob(newJob("50", status = JobStatus.FAILURE, createdAt = fixDateWithSecond(9), finishedAt = now.minusSeconds(1))).expectSuccess()
+            persistJob(newJob("51", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(10), finishedAt = now.minusSeconds(1))).expectSuccess()
+        }
+
+        // first jobs is preseved because not finished. There are 7 finished jobs thus the two oldest 2 have to be deleted
+        persistence.allJobsExceedingDbJobCount(5).expectSuccess() shouldContainExactlyInAnyOrder listOf(
+            newJob("43", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(2), finishedAt = now.minusSeconds(1)),
+            newJob("44", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(3), finishedAt = now.plusHours(2))
+        )
+    }
+
     testPersistences("test fetch states") { persistence ->
         val now = LocalDateTime.now()
         persistence.fetchStates(listOf("42", "43")) shouldBeEqual PersistenceAccessResult.uuidNotFound("42")
@@ -226,3 +256,5 @@ internal fun newJob(
     Job(
         uuid, jobType, listOf("T1", "T2"), "Test $uuid", 5, "ME", createdAt, status, startedAt, executingInstance, finishedAt, timeout, numRestarts
     )
+
+internal fun fixDateWithSecond(second: Int) = LocalDateTime.of(2022, 7, 22, second, 0)

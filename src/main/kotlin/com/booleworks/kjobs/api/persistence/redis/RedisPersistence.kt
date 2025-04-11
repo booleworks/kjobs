@@ -15,6 +15,7 @@ import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.internalError
 import com.booleworks.kjobs.data.modified
 import com.booleworks.kjobs.data.notFound
+import com.booleworks.kjobs.data.orQuitWith
 import com.booleworks.kjobs.data.result
 import com.booleworks.kjobs.data.success
 import com.booleworks.kjobs.data.uuidNotFound
@@ -32,6 +33,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+
 
 private val logger = LoggerFactory.getLogger("com.booleworks.kjobs.RedisDataPersistence")
 
@@ -84,7 +86,8 @@ open class RedisJobPersistence(
             RedisJobTransactionalPersistence(commands, config).run { block() }
             val transactionResult = commands.exec().get()
             if (transactionResult == null || transactionResult.wasDiscarded()) {
-                logger.debug("Transaction with precondition was not executed ({})",
+                logger.debug(
+                    "Transaction with precondition was not executed ({})",
                     transactionResult?.let { "Transaction was discarded" } ?: "Transaction was null")
                 PersistenceAccessResult.modified()
             } else {
@@ -128,6 +131,22 @@ open class RedisJobPersistence(
             it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString())
                     && it.get("finishedAt")?.let(LocalDateTime::parse)?.isBefore(date) ?: false
         }
+
+    override suspend fun allJobsExceedingDbJobCount(maxNumberKeptJobs: Int): PersistenceAccessResult<List<Job>> =
+        getAllJobsBy({ commands, key -> commands.hmget(key, "status") }) {
+            it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
+        }.orQuitWith {
+            logger.error("Failed fetching jobs for job count: " + it.message)
+            return PersistenceAccessResult.internalError<List<Job>>(it.message)
+        }.let { jobs ->
+            val exceedingJobCount = jobs.count() - maxNumberKeptJobs
+            if (exceedingJobCount > 0) {
+                PersistenceAccessResult.result(jobs.sortedBy { job: Job -> job.createdAt }.take(exceedingJobCount))
+            } else {
+                PersistenceAccessResult.result(emptyList())
+            }
+        }
+
 
     override suspend fun fetchStates(uuids: List<String>): PersistenceAccessResult<List<JobStatus>> {
         // TODO use pipelining
