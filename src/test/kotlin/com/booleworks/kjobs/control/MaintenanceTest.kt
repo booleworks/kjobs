@@ -221,7 +221,7 @@ class MaintenanceTest : FunSpec({
         }
     }
 
-    test("test delete old jobs") {
+    test("test delete old jobs after defined time") {
         val redis = RedisServer.newRedisServer().start()
         val interval = 300.minutes
         val persistence = newRedisPersistence<TestInput, TestResult>(redis)
@@ -299,6 +299,87 @@ class MaintenanceTest : FunSpec({
             persistence.fetchFailure("49") shouldBeEqual PersistenceAccessResult.uuidNotFound("49")
             persistence.fetchFailure("50").expectSuccess()
             persistence.fetchFailure("51") shouldBeEqual PersistenceAccessResult.uuidNotFound("51")
+        }
+    }
+
+    test("test delete old jobs on exceeding job count") {
+        val redis = RedisServer.newRedisServer().start()
+        val maxJobCount = 3
+        val persistence = newRedisPersistence<TestInput, TestResult>(redis)
+        val testingMode = JobFrameworkTestingMode("I1", persistence, false) {
+            addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
+            maintenanceConfig { deleteOldJobsOnExceedingCount = 3 }
+        }
+
+        val directCall = suspend { Maintenance.deleteOldJobs(persistence, maxJobCount, mapOf(defaultJobType to persistence)) }
+        val testingCall = suspend { testingMode.deleteOldJobs() }
+
+        for (method in listOf(directCall, testingCall)) {
+            JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
+
+            persistence.dataTransaction {
+                persistJob(newJob("42", status = RUNNING, createdAt = now().plusSeconds(1)))
+                persistJob(newJob("43", status = CREATED, createdAt = now().plusSeconds(2)))
+                persistJob(newJob("44", status = CANCEL_REQUESTED, createdAt = now().plusSeconds(3)))
+                persistJob(newJob("45", status = CANCELLED, createdAt = now().plusSeconds(4)))
+                persistJob(newJob("46", status = SUCCESS, createdAt = now().plusSeconds(5)))
+                persistJob(newJob("47", status = FAILURE, createdAt = now().plusSeconds(6)))
+                persistJob(newJob("48", status = SUCCESS, createdAt = now().plusSeconds(7)))
+                persistJob(newJob("49", status = SUCCESS, createdAt = now().plusSeconds(8)))
+                persistJob(newJob("50", status = SUCCESS, createdAt = now().plusSeconds(9)))
+                persistJob(newJob("51", status = SUCCESS, createdAt = now().plusSeconds(10)))
+                persistInput(newJob("42"), TestInput(42))
+                persistInput(newJob("43"), TestInput(43))
+                persistInput(newJob("44"), TestInput(44))
+                persistInput(newJob("45"), TestInput(45))
+                persistInput(newJob("46"), TestInput(46))
+                persistInput(newJob("47"), TestInput(47))
+                persistInput(newJob("48"), TestInput(48))
+                persistInput(newJob("49"), TestInput(49))
+                persistInput(newJob("50"), TestInput(50))
+                persistInput(newJob("51"), TestInput(51))
+                persistOrUpdateResult(newJob("42"), TestResult(42))
+                persistOrUpdateResult(newJob("43"), TestResult(43))
+                persistOrUpdateResult(newJob("44"), TestResult(44))
+                persistOrUpdateResult(newJob("45"), TestResult(45))
+                persistOrUpdateResult(newJob("46"), TestResult(46))
+                persistOrUpdateResult(newJob("47"), TestResult(47))
+                persistOrUpdateResult(newJob("48"), TestResult(48))
+                persistOrUpdateFailure(newJob("49"), "Some error")
+                persistOrUpdateFailure(newJob("50"), "Some error")
+                persistOrUpdateFailure(newJob("51"), "Some error")
+            }
+            method()
+            persistence.fetchJob("42").expectSuccess()
+            persistence.fetchJob("43").expectSuccess()
+            persistence.fetchJob("44").expectSuccess()
+            persistence.fetchJob("45") shouldBeEqual PersistenceAccessResult.uuidNotFound("45")
+            persistence.fetchJob("46") shouldBeEqual PersistenceAccessResult.uuidNotFound("46")
+            persistence.fetchJob("47") shouldBeEqual PersistenceAccessResult.uuidNotFound("47")
+            persistence.fetchJob("48") shouldBeEqual PersistenceAccessResult.uuidNotFound("48")
+            persistence.fetchJob("49").expectSuccess()
+            persistence.fetchJob("50").expectSuccess()
+            persistence.fetchJob("51").expectSuccess()
+            persistence.fetchInput("42").expectSuccess()
+            persistence.fetchInput("43").expectSuccess()
+            persistence.fetchInput("44").expectSuccess()
+            persistence.fetchInput("45") shouldBeEqual PersistenceAccessResult.uuidNotFound("45")
+            persistence.fetchInput("46") shouldBeEqual PersistenceAccessResult.uuidNotFound("46")
+            persistence.fetchInput("47") shouldBeEqual PersistenceAccessResult.uuidNotFound("47")
+            persistence.fetchInput("48") shouldBeEqual PersistenceAccessResult.uuidNotFound("48")
+            persistence.fetchInput("49").expectSuccess()
+            persistence.fetchInput("50").expectSuccess()
+            persistence.fetchInput("51").expectSuccess()
+            persistence.fetchResult("42").expectSuccess()
+            persistence.fetchResult("43").expectSuccess()
+            persistence.fetchResult("44").expectSuccess()
+            persistence.fetchResult("45") shouldBeEqual PersistenceAccessResult.uuidNotFound("45")
+            persistence.fetchResult("46") shouldBeEqual PersistenceAccessResult.uuidNotFound("46")
+            persistence.fetchResult("47") shouldBeEqual PersistenceAccessResult.uuidNotFound("47")
+            persistence.fetchResult("48") shouldBeEqual PersistenceAccessResult.uuidNotFound("48")
+            persistence.fetchFailure("49").expectSuccess()
+            persistence.fetchFailure("50").expectSuccess()
+            persistence.fetchFailure("51").expectSuccess()
         }
     }
 
