@@ -231,7 +231,7 @@ class MaintenanceTest : FunSpec({
         }
 
         val directCall = suspend { Maintenance.deleteOldJobsFinishedBefore(persistence, interval, mapOf(defaultJobType to persistence)) }
-        val testingCall = suspend { testingMode.deleteOldJobs() }
+        val testingCall = suspend { testingMode.deleteOldJobsFinishedBefore() }
 
         for (method in listOf(directCall, testingCall)) {
             JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
@@ -272,7 +272,7 @@ class MaintenanceTest : FunSpec({
             persistence.fetchJob("42").expectSuccess()
             persistence.fetchJob("43").expectSuccess()
             persistence.fetchJob("44").expectSuccess()
-            persistence.fetchJob("45").expectSuccess()
+            persistence.fetchJob("45") shouldBeEqual PersistenceAccessResult.uuidNotFound("45")
             persistence.fetchJob("46") shouldBeEqual PersistenceAccessResult.uuidNotFound("46")
             persistence.fetchJob("47") shouldBeEqual PersistenceAccessResult.uuidNotFound("47")
             persistence.fetchJob("48").expectSuccess()
@@ -282,7 +282,7 @@ class MaintenanceTest : FunSpec({
             persistence.fetchInput("42").expectSuccess()
             persistence.fetchInput("43").expectSuccess()
             persistence.fetchInput("44").expectSuccess()
-            persistence.fetchInput("45").expectSuccess()
+            persistence.fetchInput("45") shouldBeEqual PersistenceAccessResult.uuidNotFound("45")
             persistence.fetchInput("46") shouldBeEqual PersistenceAccessResult.uuidNotFound("46")
             persistence.fetchInput("47") shouldBeEqual PersistenceAccessResult.uuidNotFound("47")
             persistence.fetchInput("48").expectSuccess()
@@ -292,7 +292,7 @@ class MaintenanceTest : FunSpec({
             persistence.fetchResult("42").expectSuccess()
             persistence.fetchResult("43").expectSuccess()
             persistence.fetchResult("44").expectSuccess()
-            persistence.fetchResult("45").expectSuccess()
+            persistence.fetchResult("45") shouldBeEqual PersistenceAccessResult.uuidNotFound("45")
             persistence.fetchResult("46") shouldBeEqual PersistenceAccessResult.uuidNotFound("46")
             persistence.fetchResult("47") shouldBeEqual PersistenceAccessResult.uuidNotFound("47")
             persistence.fetchResult("48").expectSuccess()
@@ -304,15 +304,15 @@ class MaintenanceTest : FunSpec({
 
     test("test delete old jobs on exceeding job count") {
         val redis = RedisServer.newRedisServer().start()
-        val maxJobCount = 3
+        val maxJobCount = 6
         val persistence = newRedisPersistence<TestInput, TestResult>(redis)
         val testingMode = JobFrameworkTestingMode("I1", persistence, false) {
             addJob(defaultJobType, persistence, { _, _ -> ComputationResult.Success(TestResult(42)) }) {}
-            maintenanceConfig { deleteOldJobsOnExceedingCount = 3 }
+            maintenanceConfig { deleteOldJobsOnExceedingCount = maxJobCount }
         }
 
         val directCall = suspend { Maintenance.deleteOldJobsExceedingDbJobCount(persistence, maxJobCount, mapOf(defaultJobType to persistence)) }
-        val testingCall = suspend { testingMode.deleteOldJobs() }
+        val testingCall = suspend { testingMode.deleteOldJobsExceedingDbJobCount() }
 
         for (method in listOf(directCall, testingCall)) {
             JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }

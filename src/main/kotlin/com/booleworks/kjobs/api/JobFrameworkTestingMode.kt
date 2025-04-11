@@ -125,10 +125,18 @@ class JobFrameworkTestingApi internal constructor(
         runBlocking { Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatTimeout, maxRestartsPerType) }
 
     /**
-     * Deletes old jobs.
+     * Deletes old jobs finished before the defined time.
      * @see Maintenance.deleteOldJobsFinishedBefore
      */
-    fun deleteOldJobs() = runBlocking { Maintenance.deleteOldJobsFinishedBefore(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType) }
+    fun deleteOldJobsFinishedBefore() =
+        runBlocking { Maintenance.deleteOldJobsFinishedBefore(jobPersistence, maintenanceConfig.deleteOldJobsAfter, persistencesPerType) }
+
+    /**
+     * Deletes old jobs that exceed the db job count.
+     * @see Maintenance.deleteOldJobsFinishedBefore
+     */
+    fun deleteOldJobsExceedingDbJobCount() =
+        runBlocking { Maintenance.deleteOldJobsExceedingDbJobCount(jobPersistence, maintenanceConfig.deleteOldJobsOnExceedingCount, persistencesPerType) }
 
     /**
      * Resets running jobs of the given [instance], the default is the instance provided in [JobFrameworkTestingMode].

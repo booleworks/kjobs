@@ -151,36 +151,30 @@ class JobPersistenceTest : FunSpec({
         persistence.allJobsFinishedBefore(now).expectSuccess() shouldContainExactlyInAnyOrder listOf(
             newJob("43", status = JobStatus.SUCCESS, finishedAt = now.minusSeconds(1)),
             newJob("47", status = JobStatus.FAILURE, finishedAt = now.minusDays(10)),
+            newJob("48", status = JobStatus.CANCELLED, finishedAt = now.minusSeconds(1)),
         )
     }
 
     testPersistences("test all jobs exceeding job count") { persistence ->
         val now = LocalDateTime.now()
-        persistence.allJobsExceedingDbJobCount(5).expectSuccess() shouldHaveSize 0
+        persistence.allJobsExceedingDbJobCount(8).expectSuccess() shouldHaveSize 0
         persistence.transaction {
-            persistJob(newJob("42", status = JobStatus.RUNNING, createdAt = fixDateWithSecond(1), finishedAt = now)).expectSuccess()
-            persistJob(
-                newJob(
-                    "45",
-                    status = JobStatus.FAILURE,
-                    createdAt = fixDateWithSecond(4),
-                    finishedAt = now
-                )
-            ).expectSuccess() // only fourth-oldest job, thus preserved
-            persistJob(newJob("43", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(2), finishedAt = now.minusSeconds(1))).expectSuccess()
-            persistJob(newJob("44", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(3), finishedAt = now.plusHours(2))).expectSuccess()
-            persistJob(newJob("46", status = JobStatus.CREATED, createdAt = fixDateWithSecond(5), finishedAt = now.plusDays(100))).expectSuccess()
-            persistJob(newJob("47", status = JobStatus.FAILURE, createdAt = fixDateWithSecond(6), finishedAt = now.minusDays(10))).expectSuccess()
-            persistJob(newJob("48", status = JobStatus.CANCELLED, createdAt = fixDateWithSecond(7), finishedAt = now.minusSeconds(1))).expectSuccess()
-            persistJob(newJob("49", status = JobStatus.CANCEL_REQUESTED, createdAt = fixDateWithSecond(8), finishedAt = now.minusSeconds(1))).expectSuccess()
-            persistJob(newJob("50", status = JobStatus.FAILURE, createdAt = fixDateWithSecond(9), finishedAt = now.minusSeconds(1))).expectSuccess()
-            persistJob(newJob("51", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(10), finishedAt = now.minusSeconds(1))).expectSuccess()
+            persistJob(newJob("42", status = JobStatus.RUNNING, createdAt = fixDateWithSecond(1))).expectSuccess()
+            persistJob(newJob("45", status = JobStatus.FAILURE, createdAt = fixDateWithSecond(4))).expectSuccess()
+            persistJob(newJob("43", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(2))).expectSuccess()
+            persistJob(newJob("44", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(3))).expectSuccess()
+            persistJob(newJob("46", status = JobStatus.CREATED, createdAt = fixDateWithSecond(5))).expectSuccess()
+            persistJob(newJob("47", status = JobStatus.FAILURE, createdAt = fixDateWithSecond(6))).expectSuccess()
+            persistJob(newJob("48", status = JobStatus.CANCELLED, createdAt = fixDateWithSecond(7))).expectSuccess()
+            persistJob(newJob("49", status = JobStatus.CANCEL_REQUESTED, createdAt = fixDateWithSecond(8))).expectSuccess()
+            persistJob(newJob("50", status = JobStatus.FAILURE, createdAt = fixDateWithSecond(9))).expectSuccess()
+            persistJob(newJob("51", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(10))).expectSuccess()
         }
 
-        // first jobs is preseved because not finished. There are 7 finished jobs thus the two oldest 2 have to be deleted
-        persistence.allJobsExceedingDbJobCount(5).expectSuccess() shouldContainExactlyInAnyOrder listOf(
-            newJob("43", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(2), finishedAt = now.minusSeconds(1)),
-            newJob("44", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(3), finishedAt = now.plusHours(2))
+        // first job is preserved because not finished. There are 7 finished jobs thus the two oldest 2 have to be deleted
+        persistence.allJobsExceedingDbJobCount(8).expectSuccess() shouldContainExactlyInAnyOrder listOf(
+            newJob("43", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(2)),
+            newJob("44", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(3))
         )
     }
 
