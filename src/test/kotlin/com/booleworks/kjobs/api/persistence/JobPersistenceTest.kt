@@ -166,7 +166,7 @@ class JobPersistenceTest : FunSpec({
                     createdAt = fixDateWithSecond(4),
                     finishedAt = now
                 )
-            ).expectSuccess() // only fourth oldest job, thus preserved
+            ).expectSuccess() // only fourth-oldest job, thus preserved
             persistJob(newJob("43", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(2), finishedAt = now.minusSeconds(1))).expectSuccess()
             persistJob(newJob("44", status = JobStatus.SUCCESS, createdAt = fixDateWithSecond(3), finishedAt = now.plusHours(2))).expectSuccess()
             persistJob(newJob("46", status = JobStatus.CREATED, createdAt = fixDateWithSecond(5), finishedAt = now.plusDays(100))).expectSuccess()

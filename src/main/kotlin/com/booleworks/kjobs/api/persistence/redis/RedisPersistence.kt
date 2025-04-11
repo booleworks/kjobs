@@ -128,7 +128,7 @@ open class RedisJobPersistence(
 
     override suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>> =
         getAllJobsBy({ commands, key -> commands.hmget(key, "status", "finishedAt") }) {
-            it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString())
+            it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
                     && it.get("finishedAt")?.let(LocalDateTime::parse)?.isBefore(date) ?: false
         }
 
@@ -141,7 +141,7 @@ open class RedisJobPersistence(
         }.let { jobs ->
             val exceedingJobCount = jobs.count() - maxNumberKeptJobs
             if (exceedingJobCount > 0) {
-                PersistenceAccessResult.result(jobs.sortedBy { job: Job -> job.createdAt }.take(exceedingJobCount))
+                PersistenceAccessResult.result(jobs.sortedBy { it.createdAt }.take(exceedingJobCount))
             } else {
                 PersistenceAccessResult.result(emptyList())
             }
@@ -204,7 +204,7 @@ open class RedisJobTransactionalPersistence(
     }
 
     override suspend fun deleteForUuid(uuid: String, persistencesPerType: Map<String, DataPersistence<*, *>>): PersistenceAccessResult<Unit> {
-        val removedKeys = stringCommands.del(config.jobKey(uuid), config.inputKey(uuid), config.resultKey(uuid), config.failureKey(uuid))
+        stringCommands.del(config.jobKey(uuid), config.inputKey(uuid), config.resultKey(uuid), config.failureKey(uuid))
         return PersistenceAccessResult.success
     }
 

@@ -60,7 +60,8 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
         PersistenceAccessResult.result(jobs.values.filter {
             it.status in setOf(
                 JobStatus.SUCCESS,
-                JobStatus.FAILURE
+                JobStatus.FAILURE,
+                JobStatus.CANCELLED
             ) && it.finishedAt?.isBefore(date) ?: false
         }.map { it.copy() })
 
