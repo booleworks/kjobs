@@ -132,21 +132,22 @@ open class RedisJobPersistence(
                     && it.get("finishedAt")?.let(LocalDateTime::parse)?.isBefore(date) ?: false
         }
 
-    override suspend fun allJobsExceedingDbJobCount(maxNumberKeptJobs: Int): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy({ commands, key -> commands.hmget(key, "status") }) {
-            it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
-        }.orQuitWith {
-            logger.error("Failed fetching jobs for job count: " + it.message)
-            return PersistenceAccessResult.internalError<List<Job>>(it.message)
-        }.let { jobs ->
-            val exceedingJobCount = jobs.count() - maxNumberKeptJobs
-            if (exceedingJobCount > 0) {
+    override suspend fun allJobsExceedingDbJobCount(maxNumberKeptJobs: Int): PersistenceAccessResult<List<Job>> {
+        val overallKeyCount = scanKeys(config.jobPattern).count()
+        val exceedingJobCount = overallKeyCount - maxNumberKeptJobs
+        return if (exceedingJobCount > 0) {
+            getAllJobsBy({ commands, key -> commands.hmget(key, "status") }) {
+                it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
+            }.orQuitWith {
+                logger.error("Failed fetching jobs for job count: " + it.message)
+                return PersistenceAccessResult.internalError<List<Job>>(it.message)
+            }.let { jobs ->
                 PersistenceAccessResult.result(jobs.sortedBy { it.createdAt }.take(exceedingJobCount))
-            } else {
-                PersistenceAccessResult.result(emptyList())
             }
+        } else {
+            PersistenceAccessResult.result(emptyList())
         }
-
+    }
 
     override suspend fun fetchStates(uuids: List<String>): PersistenceAccessResult<List<JobStatus>> {
         // TODO use pipelining
