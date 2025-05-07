@@ -28,6 +28,7 @@ import io.kotest.matchers.date.shouldBeBetween
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.ints.shouldBeZero
 import io.kotest.matchers.nulls.shouldBeNull
+import kotlinx.coroutines.Dispatchers
 import java.time.LocalDateTime.now
 import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
@@ -77,7 +78,7 @@ class ExecutorTest : FunSpec({
 
     testWithRedis("test main executor updates heartbeat") {
         fetchHeartbeats(now() - 10.seconds.toJavaDuration()).expectSuccess().shouldBeEmpty()
-        defaultExecutor(this).execute()?.join()
+        defaultExecutor(this).execute(Dispatchers.Default)?.join()
         fetchHeartbeats(now() - 1.seconds.toJavaDuration()).expectSuccess()
             .shouldHaveSingleElement { it.instanceName == defaultInstanceName && it.lastBeat > now().minusSeconds(1) }
     }
@@ -86,7 +87,7 @@ class ExecutorTest : FunSpec({
         val job = newJob()
         val input = TestInput(42)
         dataTransaction { persistJob(job); persistInput(job, input) }
-        defaultExecutor(this).execute()?.join()
+        defaultExecutor(this).execute(Dispatchers.Default)?.join()
         val jobAfterComputation = fetchJob(job.uuid).right()
         jobAfterComputation.uuid shouldBeEqual job.uuid
         jobAfterComputation.type shouldBeEqual "TestJob"
@@ -108,7 +109,7 @@ class ExecutorTest : FunSpec({
         val job = newJob()
         val input = TestInput(42, throwException = true)
         dataTransaction { persistJob(job); persistInput(job, input) }
-        defaultExecutor(this).execute()?.join()
+        defaultExecutor(this).execute(Dispatchers.Default)?.join()
         val jobAfterComputation = fetchJob(job.uuid).right()
         jobAfterComputation.uuid shouldBeEqual job.uuid
         jobAfterComputation.type shouldBeEqual "TestJob"
@@ -130,7 +131,7 @@ class ExecutorTest : FunSpec({
         val job = newJob()
         val input = TestInput(42, expectedDelay = 10, throwException = true)
         dataTransaction { persistJob(job); persistInput(job, input) }
-        defaultExecutor(this, timeout = { _, _ -> 1.milliseconds }).execute()?.join()
+        defaultExecutor(this, timeout = { _, _ -> 1.milliseconds }).execute(Dispatchers.Default)?.join()
         val jobAfterComputation = fetchJob(job.uuid).right()
         jobAfterComputation.uuid shouldBeEqual job.uuid
         jobAfterComputation.type shouldBeEqual "TestJob"

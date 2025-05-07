@@ -19,6 +19,7 @@ import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher
 import com.booleworks.kjobs.data.ifError
 import com.booleworks.kjobs.data.orQuitWith
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,7 +70,7 @@ class MainJobExecutor(
      * is returned if the computation was started.
      * @return the coroutine job of the actual computation
      */
-    suspend fun execute(): kotlinx.coroutines.Job? = coroutineScope {
+    suspend fun execute(jobDispatcher: CoroutineDispatcher): kotlinx.coroutines.Job? = coroutineScope {
         launch { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
         val myCapacity = getExecutionCapacity() ?: return@coroutineScope null
         if (!myCapacity.mayTakeJobs) {
@@ -77,7 +78,7 @@ class MainJobExecutor(
             return@coroutineScope null
         }
         val job = getAndReserveJob(myCapacity) ?: return@coroutineScope null
-        val computationJob = with(specificExecutors[job.type]!!) { launchComputationJob(job) }
+        val computationJob = with(specificExecutors[job.type]!!) { launchComputationJob(jobDispatcher, job) }
         if (cancellationConfig.enabled) {
             launchCancellationCheck(computationJob, jobCancellationQueue, job.uuid)
         }
@@ -164,7 +165,7 @@ class SpecificExecutor<INPUT, RESULT>(
     private val timeoutComputation: (Job, INPUT) -> Duration,
     private val maxRestarts: Int
 ) {
-    internal fun launchComputationJob(job: Job) = CoroutineScope(Dispatchers.Default + CoroutineName("Computation of Job ${job.uuid}")).launch {
+    internal fun launchComputationJob(jobDispatcher: CoroutineDispatcher, job: Job) = CoroutineScope(jobDispatcher + CoroutineName("Computation of Job ${job.uuid}")).launch {
         val uuid = job.uuid
         val jobInput = withContext(Dispatchers.IO) { // input may be large
             persistence.fetchInput(uuid)

@@ -346,8 +346,8 @@ class JobFrameworkBuilder internal constructor(
             val jobCancellationQueue = AtomicReference(setOf<String>())
             val executor = generateJobExecutor(jobCancellationQueue)
             val dispatcher = Executors.newFixedThreadPool(maintenanceConfig.threadPoolSize).asCoroutineDispatcher() + supervisor
-            dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, "Main executor run", true, executorConfig.dispatcher) {
-                executor.execute()
+            dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, "Main executor run", true, Dispatchers.IO) {
+                executor.execute(executorConfig.dispatcher)
             }
             dispatcher.scheduleForever(maintenanceConfig.heartbeatTimeout, "Restart jobs of dead instances", true, Dispatchers.IO) {
                 Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatTimeout, restartsPerType)
