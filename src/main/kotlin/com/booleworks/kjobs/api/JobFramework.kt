@@ -247,14 +247,14 @@ class JobFrameworkBuilder internal constructor(
      * @param jobPrioritizer a job prioritizer, see [JobPrioritizer] for detailed information. The [default prioritizer][DefaultJobPrioritizer] will prioritize
      * first by [Job.priority] and then by [Job.createdAt] (both ascending).
      * @param tagMatcher a tag matcher to this instance to select only jobs with specific [tags][Job.tags]. Default is [TagMatcher.Any].
-     * @param jobDispatcher the [CoroutineDispatcher] in which the computations are running. By default, this is [Dispatchers.Default].
+     * @param computationDispatcher the [CoroutineDispatcher] in which the computations are running. By default, this is [Dispatchers.Default].
      */
     @KJobsDsl
     class ExecutorConfig internal constructor(
         var executionCapacityProvider: ExecutionCapacityProvider = DefaultExecutionCapacityProvider,
         var jobPrioritizer: JobPrioritizer = DefaultJobPrioritizer,
         var tagMatcher: TagMatcher = TagMatcher.Any,
-        var jobDispatcher: CoroutineDispatcher = Dispatchers.Default
+        var computationDispatcher: CoroutineDispatcher = Dispatchers.Default
     )
 
     /**
@@ -347,7 +347,7 @@ class JobFrameworkBuilder internal constructor(
             val executor = generateJobExecutor(jobCancellationQueue)
             val dispatcher = Executors.newFixedThreadPool(maintenanceConfig.threadPoolSize).asCoroutineDispatcher() + supervisor
             dispatcher.scheduleForever(maintenanceConfig.jobCheckInterval, "Main executor run", true, Dispatchers.IO) {
-                executor.execute(executorConfig.jobDispatcher)
+                executor.execute(executorConfig.computationDispatcher)
             }
             dispatcher.scheduleForever(maintenanceConfig.heartbeatTimeout, "Restart jobs of dead instances", true, Dispatchers.IO) {
                 Maintenance.restartJobsFromDeadInstances(jobPersistence, persistencesPerType, maintenanceConfig.heartbeatTimeout, restartsPerType)

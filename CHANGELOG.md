@@ -8,13 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0-RC23] - 2025-05-07
 
 ### Changed
-- Main job execution tasks—heartbeat updates, capacity checks, starting new jobs, and cancel checks—now run on Dispatchers.IO instead of ExecutorConfig.dispatcher.
-- Job execution, previously run on Dispatchers.Default, now correctly uses ExecutorConfig.dispatcher as intended.
-- Renamed `dispatcher` to `jobDispatcher` in `ExecutorConfig`.
+- Main job execution tasks (heartbeat update, capacity check, and launching the new computation) now run on `Dispatchers.IO`
+- Renamed `ExecutorConfig.dispatcher` to `computationDispatcher`
 - Minor dependency updates
 
 ### Fixed
-- Hearbeat updates could be blocked by heavy jobs because main execution ran on the custom dispatcher (per default `Dispatchers.Default`).
+- Job execution, previously run on `Dispatchers.Default`, now correctly uses the configured `ExecutorConfig.computationDispatcher`
+- Heartbeat updates could be blocked by heavy jobs because main execution ran on the custom dispatcher (per default `Dispatchers.Default`)
 
 ## [1.0.0-RC22] - 2025-04-11
 
