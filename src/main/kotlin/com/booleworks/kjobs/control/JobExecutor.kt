@@ -19,6 +19,7 @@ import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.TagMatcher
 import com.booleworks.kjobs.data.ifError
 import com.booleworks.kjobs.data.orQuitWith
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -67,9 +68,10 @@ class MainJobExecutor(
      * Note that the actual computation is started in a separate coroutine
      * job (i.e. not a child job of the outer context). This computation job
      * is returned if the computation was started.
+     * @param computationDispatcher the dispatcher to be used for the actual computations
      * @return the coroutine job of the actual computation
      */
-    suspend fun execute(): kotlinx.coroutines.Job? = coroutineScope {
+    suspend fun execute(computationDispatcher: CoroutineDispatcher): kotlinx.coroutines.Job? = coroutineScope {
         launch { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
         val myCapacity = getExecutionCapacity() ?: return@coroutineScope null
         if (!myCapacity.mayTakeJobs) {
@@ -77,7 +79,7 @@ class MainJobExecutor(
             return@coroutineScope null
         }
         val job = getAndReserveJob(myCapacity) ?: return@coroutineScope null
-        val computationJob = with(specificExecutors[job.type]!!) { launchComputationJob(job) }
+        val computationJob = with(specificExecutors[job.type]!!) { launchComputationJob(job, computationDispatcher) }
         if (cancellationConfig.enabled) {
             launchCancellationCheck(computationJob, jobCancellationQueue, job.uuid)
         }
@@ -164,41 +166,42 @@ class SpecificExecutor<INPUT, RESULT>(
     private val timeoutComputation: (Job, INPUT) -> Duration,
     private val maxRestarts: Int
 ) {
-    internal fun launchComputationJob(job: Job) = CoroutineScope(Dispatchers.Default + CoroutineName("Computation of Job ${job.uuid}")).launch {
-        val uuid = job.uuid
-        val jobInput = withContext(Dispatchers.IO) { // input may be large
-            persistence.fetchInput(uuid)
-        }.orQuitWith {
-            abortComputationWithError(persistence, uuid, "Failed to fetch job input for ID ${uuid}: $it", "Failed to fetch job input: $it")
-            return@launch
-        }
-        // Parsing input may take some time. Afterward, we check if anyone might have "stolen" the job (because of overlapping transactions)
-        val executingInstance = persistence.fetchJob(uuid).orQuitWith {
-            abortComputationWithError(persistence, uuid, "Failed to fetch job: $it", "Failed to fetch job: $it")
-            log.error("Failed to fetch job: $it")
-            return@launch
-        }.executingInstance
-        if (executingInstance != myInstanceName) {
-            log.info("Job with ID $uuid was stolen from $myInstanceName by $executingInstance")
-            return@launch
-        } else {
-            val timeout = timeoutComputation(job, jobInput)
-            job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
-            persistence.transaction { updateJob(job) }
-
-            log.trace("Starting computation of job with ID $uuid")
-            val result: ComputationResult<RESULT> = runCatching {
-                withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
-                    ?: ComputationResult.Error("The job did not finish within the configured timeout of $timeout", tryRepeat = false)
-            }.getOrElse {
-                yield() // for the case that the coroutine was cancelled
-                log.error("The job with ID $uuid failed with an exception and will be set to 'FAILURE': ${it.message}", it)
-                ComputationResult.Error("Unexpected exception during computation: ${it.message}", tryRepeat = false)
+    internal fun launchComputationJob(job: Job, computationDispatcher: CoroutineDispatcher) =
+        CoroutineScope(computationDispatcher + CoroutineName("Computation of Job ${job.uuid}")).launch {
+            val uuid = job.uuid
+            val jobInput = withContext(Dispatchers.IO) { // input may be large
+                persistence.fetchInput(uuid)
+            }.orQuitWith {
+                abortComputationWithError(persistence, uuid, "Failed to fetch job input for ID ${uuid}: $it", "Failed to fetch job input: $it")
+                return@launch
             }
-            log.trace("Finished computation of job with ID $uuid")
-            writeResultToDb(uuid, result)
+            // Parsing input may take some time. Afterward, we check if anyone might have "stolen" the job (because of overlapping transactions)
+            val executingInstance = persistence.fetchJob(uuid).orQuitWith {
+                abortComputationWithError(persistence, uuid, "Failed to fetch job: $it", "Failed to fetch job: $it")
+                log.error("Failed to fetch job: $it")
+                return@launch
+            }.executingInstance
+            if (executingInstance != myInstanceName) {
+                log.info("Job with ID $uuid was stolen from $myInstanceName by $executingInstance")
+                return@launch
+            } else {
+                val timeout = timeoutComputation(job, jobInput)
+                job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
+                persistence.transaction { updateJob(job) }
+
+                log.trace("Starting computation of job with ID $uuid")
+                val result: ComputationResult<RESULT> = runCatching {
+                    withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
+                        ?: ComputationResult.Error("The job did not finish within the configured timeout of $timeout", tryRepeat = false)
+                }.getOrElse {
+                    yield() // for the case that the coroutine was cancelled
+                    log.error("The job with ID $uuid failed with an exception and will be set to 'FAILURE': ${it.message}", it)
+                    ComputationResult.Error("Unexpected exception during computation: ${it.message}", tryRepeat = false)
+                }
+                log.trace("Finished computation of job with ID $uuid")
+                writeResultToDb(uuid, result)
+            }
         }
-    }
 
     private suspend inline fun writeResultToDb(id: String, computationResult: ComputationResult<RESULT>) {
         log.trace("Fetching job with ID $id to update its result")
