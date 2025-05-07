@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC23] - 2025-05-07
+
+### Changed
+- Main job execution tasks—heartbeat updates, capacity checks, starting new jobs, and cancel checks—now run on Dispatchers.IO instead of ExecutorConfig.dispatcher.
+- Job execution, previously run on Dispatchers.Default, now correctly uses ExecutorConfig.dispatcher as intended.
+- Minor dependency updates
+
+### Fixed
+- Hearbeat updates could be blocked by heavy jobs because main execution ran on the custom dispatcher (per default `Dispatchers.Default`).
+
 ## [1.0.0-RC22] - 2025-04-11
 
 ### Changed
