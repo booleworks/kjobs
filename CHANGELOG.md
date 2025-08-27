@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC24] - 2025-08-xx
+
+### Changed
+- Improved `RedisLongPollManager` performance by using a single Redis connection for publishing a completed job instead of creating a new one each time.
+
+
 ## [1.0.0-RC23] - 2025-05-07
 
 ### Changed

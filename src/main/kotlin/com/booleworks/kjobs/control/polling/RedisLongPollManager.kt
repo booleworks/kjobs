@@ -5,6 +5,7 @@ package com.booleworks.kjobs.control.polling
 
 import com.booleworks.kjobs.data.PollStatus
 import io.lettuce.core.RedisClient
+import io.lettuce.core.api.sync.RedisCommands
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -24,6 +25,7 @@ private const val FAILURE_INDICATOR = "||FAILURE"
 private const val CONNECTION_CLOSE_DELAY = 50L
 
 class RedisLongPollManager(protected val redisClient: RedisClient, protected val channelName: String = DEFAULT_REDIS_CHANNEL) : LongPollManager {
+    val stringCommands: RedisCommands<String, String> = redisClient.connect().sync()
 
     override fun publishSuccess(uuid: String) = publish("$uuid$SUCCESS_INDICATOR")
 
@@ -31,11 +33,12 @@ class RedisLongPollManager(protected val redisClient: RedisClient, protected val
 
     private fun publish(message: String) {
         log.debug("Publishing $message")
-        redisClient.connect().use { it.sync().publish(channelName, message) }
+        stringCommands.publish(channelName, message)
     }
 
     override fun CoroutineScope.subscribe(uuid: String, timeout: Duration): Deferred<PollStatus> {
         val deferred = CompletableDeferred<PollStatus>()
+        // TODO maybe we can re-use a single connection for the subscriptions, too? But we have to be careful regarding the subscribe()/unsubscribe() interferences. Maybe keep being subscribed?
         val subscribeConnection = redisClient.connectPubSub()
         val subscription = subscribeConnection.reactive()
         subscription.subscribe(channelName).subscribe()

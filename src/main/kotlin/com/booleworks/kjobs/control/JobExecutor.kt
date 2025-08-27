@@ -162,7 +162,7 @@ class SpecificExecutor<INPUT, RESULT>(
     private val myInstanceName: String,
     private val persistence: DataPersistence<INPUT, RESULT>,
     private val computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
-    private val longPollManager: () -> LongPollManager,
+    private val longPollManager: LongPollManager,
     private val timeoutComputation: (Job, INPUT) -> Duration,
     private val maxRestarts: Int
 ) {
@@ -266,8 +266,8 @@ class SpecificExecutor<INPUT, RESULT>(
             }
         }.onRight {
             when (computation.resultStatus()) {
-                JobStatus.SUCCESS -> longPollManager().publishSuccess(job.uuid)
-                JobStatus.FAILURE -> longPollManager().publishFailure(job.uuid)
+                JobStatus.SUCCESS -> longPollManager.publishSuccess(job.uuid)
+                JobStatus.FAILURE -> longPollManager.publishFailure(job.uuid)
                 else -> error("Unexpected result status")
             }
         }.ifError {
