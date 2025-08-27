@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Improved `RedisLongPollManager` performance by using a single Redis connection for publishing a completed job instead of creating a new one each time.
+- Improved `RedisPersistence` performance by re-using a couple of Redis connections instead of creating a new one each time.
 
 
 ## [1.0.0-RC23] - 2025-05-07
