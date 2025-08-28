@@ -41,6 +41,8 @@ import kotlin.time.toJavaDuration
 
 private val log: Logger = LoggerFactory.getLogger("com.booleworks.kjobs.JobExecutor")
 
+private const val NUMBER_OF_JOB_RESERVATION_RETRIES = 10 // TODO should we make this configurable?
+
 private typealias CoroutineJob = kotlinx.coroutines.Job
 
 sealed interface ComputationResult<out RESULT> {
@@ -132,39 +134,70 @@ class MainJobExecutor(
     }
 
     private suspend inline fun getAndReserveJob(executionCapacity: ExecutionCapacity): Job? {
-        val job = selectJobWithHighestPriority(executionCapacity)
-        if (job != null) {
-            job.executingInstance = myInstanceName
-            job.startedAt = LocalDateTime.now()
-            job.status = JobStatus.RUNNING
-            // timeout will be recomputed shortly, but we need to set a timeout for the case that the pod is restarted in between
-            // (jobs will not be restarted without a timeout being set)
-            job.timeout = LocalDateTime.now().plusMinutes(2)
-            val jobInCreatedStatus: Map<String, (Job) -> Boolean> = mapOf(job.uuid to { it.status == JobStatus.CREATED })
-            jobPersistence.transactionWithPreconditions(jobInCreatedStatus) { updateJob(job) }.orQuitWith {
-                if (it == PersistenceAccessError.Modified) {
-                    log.info("Job with ID ${job.uuid} was modified before it could be reserved. Another instance was probably faster.")
-                } else {
-                    log.error("Failed to update job with ID ${job.uuid}: $it")
-                }
-                return null
-            }
-            jobExecutionPool.addJob(job)
-            log.debug("Job executor selected job: ${job.uuid}")
-            return job
-        } else {
-            log.trace("No jobs left to execute.")
-            return null
-        }
+        val jobs = getRelevantJobs(executionCapacity)
+        return selectJobToExecute(jobs, NUMBER_OF_JOB_RESERVATION_RETRIES)
     }
 
-    private suspend inline fun selectJobWithHighestPriority(executionCapacity: ExecutionCapacity): Job? {
-        val result = jobPersistence.allJobsWithStatus(JobStatus.CREATED).orQuitWith {
-            log.warn("Job access failed with error: $it")
-            return null
-        }
-        return result.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.let(jobPrioritizer::invoke)
+    private suspend fun getRelevantJobs(executionCapacity: ExecutionCapacity): List<Job> {
+        log.trace("Fetching relevant jobs.")
+        val jobs = jobPersistence.allJobsWithStatus(JobStatus.CREATED).orQuitWith {
+            log.error("Job access failed with error: $it")
+            return listOf()
+        }.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.toList()
+        log.trace("Found relevant Jobs: ${jobs.size}")
+        return jobs
     }
+
+    private suspend inline fun selectJobToExecute(jobs: List<Job>, tryLimit: Int): Job? {
+        val jobCandidates = jobs.associateBy { it.uuid }.toMutableMap()
+        var counter = 0
+        while (counter < tryLimit) {
+            val currentJob = selectJobWithHighestPriority(jobCandidates.values.toList())
+            if (currentJob == null) {
+                log.trace("No suitable job found in job candidates to reserve.")
+                return null
+            }
+            log.trace("Selected Job with highest priority: ${currentJob.uuid}")
+            val reservationResult = tryReserveJob(currentJob)
+            when (reservationResult) {
+                JobReservationResult.SUCCESS -> return currentJob
+                JobReservationResult.ERROR -> return null
+                JobReservationResult.ALREADY_RESERVED -> {
+                    counter++
+                    jobCandidates.remove(currentJob.uuid)
+                }
+            }
+        }
+        log.trace("Tried $counter times to reserve a job but did not succeed.")
+        return null
+    }
+
+    private fun selectJobWithHighestPriority(jobs: List<Job>): Job? = jobs.let(jobPrioritizer::invoke)
+
+    private suspend inline fun tryReserveJob(job: Job): JobReservationResult {
+        job.executingInstance = myInstanceName
+        job.startedAt = LocalDateTime.now()
+        job.status = JobStatus.RUNNING
+        // timeout will be recomputed shortly, but we need to set a timeout for the case that the pod is restarted in between
+        // (jobs will not be restarted without a timeout being set)
+        job.timeout = LocalDateTime.now().plusMinutes(2)
+        val jobInCreatedStatus: Map<String, (Job) -> Boolean> = mapOf(job.uuid to { it.status == JobStatus.CREATED })
+        jobPersistence.transactionWithPreconditions(jobInCreatedStatus) { updateJob(job) }
+            .ifError {
+                if (it == PersistenceAccessError.Modified) {
+                    log.debug("Job with ID ${job.uuid} was modified before it could be reserved. Another instance was probably faster.")
+                    return JobReservationResult.ALREADY_RESERVED
+                } else {
+                    log.error("Failed to update job with ID ${job.uuid}: $it")
+                    return JobReservationResult.ERROR
+                }
+            }
+        jobExecutionPool.addJob(job)
+        log.debug("Job successfully reserved job: ${job.uuid}")
+        return JobReservationResult.SUCCESS
+    }
+
+    private enum class JobReservationResult() { SUCCESS, ERROR, ALREADY_RESERVED }
 
     private fun launchCancellationCheck(coroutineJob: CoroutineJob, jobCancellationQueue: AtomicReference<Set<String>>, uuid: String) {
         CoroutineScope(Dispatchers.IO + CoroutineName("Cancellation check for job $uuid")).launch {
