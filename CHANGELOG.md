@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Improved `RedisLongPollManager` performance by using a single Redis connection for publishing a completed job instead of creating a new one each time.
 - Improved `RedisPersistence` performance by re-using a couple of Redis connections instead of creating a new one each time.
+- Minor dependency updates
 
 ### Added
 - Configuration parameter `RedisConfig.scanLimit` to configure the limit of the Redis scan operations. The default is 1000 and has the same value as the previously hardcoded limit.
