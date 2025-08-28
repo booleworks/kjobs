@@ -33,6 +33,7 @@ import kotlinx.coroutines.yield
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -50,6 +51,39 @@ sealed interface ComputationResult<out RESULT> {
 }
 
 /**
+ * Thread-safe pool of the currently running jobs of this instance.
+ */
+class JobExecutionPool {
+    /**
+     * The pool of running jobs is stored as map from job ID to the job instance.
+     */
+    private val runningJobs = ConcurrentHashMap<String, Job>()
+
+    /**
+     * Adds the given job to the pool of running jobs.
+     * Returns the job instance associated with the job ID of the given job, or `null` if there was no job present for this job ID yet.
+     */
+    fun addJob(job: Job): Job? {
+        log.debug("Adding job to JobExecutionPool: ${job.uuid}")
+        return runningJobs.put(job.uuid, job)
+    }
+
+    /**
+     * Removes the job associated with the given job ID.
+     * Returns the job instance associated with the given job ID, or `null` if the job was not present for this job ID.
+     */
+    fun removeJob(uuid: String): Job? {
+        log.debug("Removing job from JobExecutionPool: $uuid")
+        return runningJobs.remove(uuid)
+    }
+
+    /**
+     * Returns all running jobs.
+     */
+    fun getAll(): List<Job> = runningJobs.values.toList()
+}
+
+/**
  * The central instance which is responsible to compute jobs.
  */
 class MainJobExecutor(
@@ -60,7 +94,8 @@ class MainJobExecutor(
     private val tagMatcher: TagMatcher,
     private val cancellationConfig: CancellationConfig,
     private val jobCancellationQueue: AtomicReference<Set<String>>,
-    private val specificExecutors: Map<String, SpecificExecutor<*, *>>
+    private val specificExecutors: Map<String, SpecificExecutor<*, *>>,
+    private val jobExecutionPool: JobExecutionPool = JobExecutionPool(),
 ) {
     /**
      * The main execution routine of the job executor.
@@ -73,24 +108,25 @@ class MainJobExecutor(
      */
     suspend fun execute(computationDispatcher: CoroutineDispatcher): kotlinx.coroutines.Job? = coroutineScope {
         launch { Maintenance.updateHeartbeat(jobPersistence, myInstanceName) }
-        val myCapacity = getExecutionCapacity() ?: return@coroutineScope null
+        val myCapacity = getExecutionCapacity()
         if (!myCapacity.mayTakeJobs) {
             log.trace("No capacity for further jobs.")
             return@coroutineScope null
         }
         val job = getAndReserveJob(myCapacity) ?: return@coroutineScope null
         val computationJob = with(specificExecutors[job.type]!!) { launchComputationJob(job, computationDispatcher) }
+        computationJob.invokeOnCompletion { throwable ->
+            throwable?.let { log.warn("Exception while running job ${job.uuid} with message '${throwable.message}'", throwable) }
+            jobExecutionPool.removeJob(job.uuid)
+        }
         if (cancellationConfig.enabled) {
             launchCancellationCheck(computationJob, jobCancellationQueue, job.uuid)
         }
         return@coroutineScope computationJob
     }
 
-    private suspend inline fun getExecutionCapacity(): ExecutionCapacity? {
-        val allMyRunningJobs = jobPersistence.allJobsOfInstance(JobStatus.RUNNING, myInstanceName).orQuitWith {
-            log.warn("Failed to retrieve all running jobs: $it")
-            return null
-        }
+    private fun getExecutionCapacity(): ExecutionCapacity {
+        val allMyRunningJobs = jobExecutionPool.getAll()
         log.trace("Found {} currently running jobs of instance {}", allMyRunningJobs.size, myInstanceName)
         return executionCapacityProvider(allMyRunningJobs)
     }
@@ -113,6 +149,7 @@ class MainJobExecutor(
                 }
                 return null
             }
+            jobExecutionPool.addJob(job)
             log.debug("Job executor selected job: ${job.uuid}")
             return job
         } else {
