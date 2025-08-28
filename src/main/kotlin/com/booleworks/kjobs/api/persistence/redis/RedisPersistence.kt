@@ -40,8 +40,6 @@ import java.time.format.DateTimeFormatter
 
 private val logger = LoggerFactory.getLogger("com.booleworks.kjobs.RedisDataPersistence")
 
-private const val SCAN_LIMIT = 1000L
-
 /**
  * [JobPersistence] implementation for Redis based on [Lettuce](https://lettuce.io).
  * It requires a [RedisClient] providing the connection to the Redis instance and
@@ -188,7 +186,7 @@ open class RedisJobPersistence(
     }
 
     private fun StatefulRedisConnection<String, String>.scanKeys(keyPattern: String): List<String> =
-        ScanIterator.scan(sync(), ScanArgs().match(keyPattern).limit(SCAN_LIMIT)).asSequence().toList()
+        ScanIterator.scan(sync(), ScanArgs().match(keyPattern).limit(config.scanLimit)).asSequence().toList()
 }
 
 /**
