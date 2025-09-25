@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved performance by avoiding second check for stolen jobs, since the Lua script used for the job reservation is performed atomically.
 - Improved job timeout update by only updating timeout field and avoid using a transaction.
 - Improved performance of fetching all jobs with a specific status (function `allJobsWithStatus`).
+- Improved performance of updating a heartbeat (`updateHeartbeat`) and checking the instance's heartbeat in the liveness check (`livenessCheck`)
 - Minor dependency updates
 
 ### Added

@@ -25,6 +25,7 @@ import io.lettuce.core.RedisFuture
 import io.lettuce.core.ScanArgs
 import io.lettuce.core.ScanIterator
 import io.lettuce.core.ScriptOutputType
+import io.lettuce.core.SetArgs
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.api.async.RedisAsyncCommands
 import io.lettuce.core.codec.ByteArrayCodec
@@ -35,6 +36,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -146,6 +148,20 @@ open class RedisJobPersistence(
         standardStringCommands.hgetall(config.jobKey(uuid)).get()
             .ifEmpty { return@withContext PersistenceAccessResult.uuidNotFound(uuid) }
             .redisMapToJob(uuid)
+    }
+
+    override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
+        // heartbeat with expiration to prevent heartbeat entries of previous instances to remain forever in Redis
+        val setArgs = SetArgs.Builder.ex(Duration.ofDays(1)) // TODO make configurable?
+        standardStringCommands.set(config.heartbeatKey(heartbeat.instanceName), heartbeat.lastBeat.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), setArgs)
+        return PersistenceAccessResult.success
+    }
+
+    override suspend fun fetchHeartbeat(instanceName: String, since: LocalDateTime): PersistenceAccessResult<Heartbeat?> = withContext(Dispatchers.IO) {
+        val heartbeatKey = config.heartbeatKey(instanceName)
+        val lastBeat = standardStringCommands.get(heartbeatKey).get() ?: run { return@withContext PersistenceAccessResult.notFound() }
+        val heartbeat = Heartbeat(instanceName, LocalDateTime.parse(lastBeat))
+        return@withContext PersistenceAccessResult.result(if (heartbeat.lastBeat.isBefore(since)) null else heartbeat)
     }
 
     override suspend fun fetchHeartbeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> = withContext(Dispatchers.IO) {
@@ -301,11 +317,6 @@ open class RedisJobTransactionalPersistence(
 
     override suspend fun deleteForUuid(uuid: String, persistencesPerType: Map<String, DataPersistence<*, *>>): PersistenceAccessResult<Unit> {
         stringCommands.del(config.jobKey(uuid), config.inputKey(uuid), config.resultKey(uuid), config.failureKey(uuid))
-        return PersistenceAccessResult.success
-    }
-
-    override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
-        stringCommands.set(config.heartbeatKey(heartbeat.instanceName), heartbeat.lastBeat.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
         return PersistenceAccessResult.success
     }
 }

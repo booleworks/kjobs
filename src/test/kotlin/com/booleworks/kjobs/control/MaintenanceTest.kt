@@ -72,9 +72,7 @@ class MaintenanceTest : FunSpec({
     test("test liveness check") {
         val redis = RedisServer.newRedisServer().start()
         val persistence = newRedisPersistence<TestInput, TestResult>(redis)
-        persistence.transaction {
-            updateHeartbeat(Heartbeat("I1", now().minusSeconds(10)))
-        }
+        persistence.updateHeartbeat(Heartbeat("I1", now().minusSeconds(10)))
         Maintenance.livenessCheck(persistence, "I1", 1.seconds) shouldBeEqual false
         Maintenance.livenessCheck(persistence, "I1", 11.seconds) shouldBeEqual true
         Maintenance.livenessCheck(persistence, "I1", 10.seconds) shouldBeEqual false
@@ -167,10 +165,10 @@ class MaintenanceTest : FunSpec({
                             startedAt = now(), timeout = now().plusDays(1), numRestarts = 2
                         )
                     )
-                    updateHeartbeat(Heartbeat("I1", now().minus((timeout - 1.seconds).toJavaDuration())))
-                    updateHeartbeat(Heartbeat("I2", now().minus((timeout + 1.seconds).toJavaDuration())))
-                    updateHeartbeat(Heartbeat("I3", now().minus(1.seconds.toJavaDuration())))
                 }
+                persistence.updateHeartbeat(Heartbeat("I1", now().minus((timeout - 1.seconds).toJavaDuration())))
+                persistence.updateHeartbeat(Heartbeat("I2", now().minus((timeout + 1.seconds).toJavaDuration())))
+                persistence.updateHeartbeat(Heartbeat("I3", now().minus(1.seconds.toJavaDuration())))
                 method()
                 persistence.fetchJob("42").expectSuccess().also {
                     it.status shouldBe CREATED

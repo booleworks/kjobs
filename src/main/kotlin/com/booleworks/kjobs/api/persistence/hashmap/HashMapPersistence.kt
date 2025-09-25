@@ -16,6 +16,8 @@ import com.booleworks.kjobs.data.modified
 import com.booleworks.kjobs.data.result
 import com.booleworks.kjobs.data.success
 import com.booleworks.kjobs.data.uuidNotFound
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
 
@@ -60,6 +62,15 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =
         jobs[uuid]?.let { PersistenceAccessResult.result(it.copy()) } ?: PersistenceAccessResult.uuidNotFound(uuid)
 
+    override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
+        latestHeartbeat = heartbeat
+        return PersistenceAccessResult.success
+    }
+
+    override suspend fun fetchHeartbeat(instanceName: String, since: LocalDateTime): PersistenceAccessResult<Heartbeat?> = withContext(Dispatchers.IO) {
+        PersistenceAccessResult.result(if (latestHeartbeat.lastBeat.isBefore(since)) null else latestHeartbeat.copy())
+    }
+
     override suspend fun fetchHeartbeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> =
         PersistenceAccessResult.result(if (latestHeartbeat.lastBeat.isBefore(since)) emptyList() else listOf(latestHeartbeat.copy()))
 
@@ -96,7 +107,6 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
 
     }
 
-
     override suspend fun persistJob(job: Job): PersistenceAccessResult<Unit> = PersistenceAccessResult.success.also { jobs[job.uuid] = job }
 
     override suspend fun updateJob(job: Job): PersistenceAccessResult<Unit> = PersistenceAccessResult.success.also { jobs[job.uuid] = job }
@@ -109,11 +119,6 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
                 it.failures.remove(uuid)
             }
         }
-        return PersistenceAccessResult.success
-    }
-
-    override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
-        latestHeartbeat = heartbeat
         return PersistenceAccessResult.success
     }
 }

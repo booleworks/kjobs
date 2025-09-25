@@ -73,6 +73,18 @@ interface JobPersistence {
     suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job>
 
     /**
+     * Creates or updates the given heartbeat (based on the fact that [Heartbeat.instanceName] is the
+     * primary key).
+     */
+    suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit>
+
+    /**
+     * Fetches the heartbeat for the given instance if it is newer than the given date.
+     * Otherwise, `null` is returned.
+     */
+    suspend fun fetchHeartbeat(instanceName: String, since: LocalDateTime): PersistenceAccessResult<Heartbeat?>
+
+    /**
      * Fetches all heartbeats since the given date.
      */
     suspend fun fetchHeartbeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>>
@@ -141,12 +153,6 @@ interface JobTransactionalPersistence {
      * for instance does not use it.
      */
     suspend fun deleteForUuid(uuid: String, persistencesPerType: Map<String, DataPersistence<*, *>>): PersistenceAccessResult<Unit>
-
-    /**
-     * Creates or updates the given heartbeat (based on the fact that [Heartbeat.instanceName] is the
-     * primary key).
-     */
-    suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit>
 }
 
 

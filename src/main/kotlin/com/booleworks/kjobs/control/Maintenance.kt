@@ -28,7 +28,7 @@ object Maintenance {
      * Updates the heartbeat for this instance in the [persistence].
      */
     suspend fun updateHeartbeat(persistence: JobPersistence, myInstanceName: String) {
-        persistence.transaction { updateHeartbeat(Heartbeat(myInstanceName, now())) }
+        persistence.updateHeartbeat(Heartbeat(myInstanceName, now()))
     }
 
     /**
@@ -36,10 +36,10 @@ object Maintenance {
      * its last heartbeat is not more than [heartbeatTimeout].
      */
     suspend fun livenessCheck(persistence: JobPersistence, instanceName: String, heartbeatTimeout: Duration): Boolean =
-        persistence.fetchHeartbeats(now().minus(heartbeatTimeout.toJavaDuration())).orQuitWith {
-            logger.error("Liveness check failed to fetch heartbeats: $it")
+        persistence.fetchHeartbeat(instanceName, now().minus(heartbeatTimeout.toJavaDuration())).orQuitWith {
+            logger.error("Liveness check failed to fetch heartbeat: $it")
             return false
-        }.any { it.instanceName == instanceName }
+        } != null
 
     /**
      * Retrieves all jobs from the [persistence] in status [JobStatus.CANCEL_REQUESTED] and writes their
