@@ -16,11 +16,14 @@ import com.booleworks.kjobs.data.PersistenceAccessError
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.PollStatus
 import com.booleworks.kjobs.data.SynchronousResourceConfig
+import com.booleworks.kjobs.data.ifError
 import com.booleworks.kjobs.data.mapResult
 import com.booleworks.kjobs.data.orQuitWith
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.InternalServerError
 import io.ktor.http.HttpStatusCode.Companion.NotFound
+import io.ktor.http.HttpStatusCode.Companion.OK
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.response.respond
@@ -32,7 +35,7 @@ import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
-import java.util.UUID
+import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
 
 private val apiLog = LoggerFactory.getLogger("com.booleworks.kjobs.ApiLog")
@@ -56,10 +59,12 @@ private val apiLog = LoggerFactory.getLogger("com.booleworks.kjobs.ApiLog")
  * ### `GET result/{uuid}`
  * - returns the result using [ApiConfig.resultResponder]
  * - if no such job exists, or it is not in status `SUCCESS`, status 404 is returned
+ * - the job is deleted afterward if [ApiConfig.deleteJobAfterFetchingResult] is enabled
  *
  * ### `GET failure/{uuid}`
  * - returns the failure of the job with the given uuid
  * - if no such job exists, or it is not in status `FAILURE`, status 404 is returned
+ * - the job is deleted afterward if [ApiConfig.deleteJobAfterFetchingResult] is enabled
  *
  * ### `POST cancel/{uuid}` (if enabled via [JobFrameworkBuilder.CancellationConfig.enabled])
  * - cancels the job with the given uuid
@@ -77,6 +82,7 @@ private val apiLog = LoggerFactory.getLogger("com.booleworks.kjobs.ApiLog")
  * - waits until the job is computed (computation might be performed by another instance)
  * - returns the result of the computation using [ApiConfig.resultResponder]
  * - the default path `synchronous` can be changed via [ApiConfig.syncRoute]
+ * - the job is deleted afterward if [ApiConfig.deleteJobAfterFetchingResult] is enabled
  *
  * ### `DELETE delete/{uuid}` (if enabled via [ApiConfig.enableDeletion])
  * - deletes the job with the given uuid
@@ -110,7 +116,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
             if (job.status != JobStatus.SUCCESS) {
                 call.respondText("Cannot return the result for job with ID $uuid and status ${job.status}.", status = BadRequest)
             } else {
-                result(job, jobConfig.persistence)?.let { resultResponder(it) }
+                result(job.uuid, apiConfig, jobConfig)
             }
         }
     }
@@ -121,7 +127,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
             if (job.status != JobStatus.FAILURE) {
                 call.respondText("Cannot return a failure for job with ID $uuid and status ${job.status}.", status = BadRequest)
             } else {
-                failure(job, jobConfig.persistence)?.let { call.respondText(it) }
+                failure(job.uuid, apiConfig, jobConfig, OK)
             }
         }
     }
@@ -173,13 +179,9 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
                 apiLog.trace("Synchronous job with ID {} is in status {}", uuid, status)
             } while (status in setOf(JobStatus.CREATED, JobStatus.RUNNING) && LocalDateTime.now() < timeout)
             if (status == JobStatus.SUCCESS) {
-                jobConfig.persistence.fetchResult(uuid)
-                    .orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@syncRoute }
-                    .let { resultResponder(it) }
+                result(uuid, apiConfig, jobConfig)
             } else if (status == JobStatus.FAILURE) {
-                jobConfig.persistence.fetchFailure(uuid)
-                    .orQuitWith { call.respond(InternalServerError, "Failed to retrieve job result"); return@syncRoute }
-                    .let { call.respond(InternalServerError, "Computation failed with message: $it") }
+                failure(uuid, apiConfig, jobConfig, InternalServerError)
             } else {
                 if (LocalDateTime.now() > timeout) {
                     call.respondText(
@@ -305,7 +307,7 @@ private suspend inline fun <INPUT> PipelineContext<Unit, ApplicationCall>.valida
     input: INPUT
 ): String? {
     val inputValidation = apiConfig.inputValidation(input)
-    if (!inputValidation.success)  {
+    if (!inputValidation.success) {
         call.respond(inputValidation.responseCode, inputValidation.message)
         return null
     }
@@ -341,17 +343,33 @@ private suspend inline fun PipelineContext<Unit, ApplicationCall>.resultStatus(u
     fetchJobAndCheckType(uuid, requestedJobType, persistence)?.let { call.respondText(it.status.toString()) }
 }
 
-private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(job: Job, persistence: DataPersistence<*, RESULT>): RESULT? =
-    persistence.fetchResult(job.uuid).orQuitWith {
-        call.respondText("Failed to retrieve job result for ID ${job.uuid}: $it", status = InternalServerError)
-        return null
+private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(uuid: String, apiConfig: ApiConfig<*, RESULT>, jobConfig: JobConfig<*, RESULT>) {
+    val result = jobConfig.persistence.fetchResult(uuid).orQuitWith {
+        call.respondText("Failed to retrieve job result for ID ${uuid}: $it", status = InternalServerError)
+        return
     }
+    with(apiConfig) { resultResponder(result) }
+    deleteJob(uuid, apiConfig, jobConfig)
+}
 
-private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.failure(job: Job, persistence: DataPersistence<*, RESULT>): String? =
-    persistence.fetchFailure(job.uuid).orQuitWith {
-        call.respondText("Failed to retrieve job failure for ID ${job.uuid}: $it", status = InternalServerError)
-        return null
+private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.failure(
+    uuid: String, apiConfig: ApiConfig<*, RESULT>, jobConfig: JobConfig<*, RESULT>, status: HttpStatusCode
+) {
+    val failure = jobConfig.persistence.fetchFailure(uuid).orQuitWith {
+        call.respondText("Failed to retrieve job failure for ID ${uuid}: $it", status = InternalServerError)
+        return
     }
+    call.respond(status, failure)
+    deleteJob(uuid, apiConfig, jobConfig)
+}
+
+private suspend inline fun <RESULT> deleteJob(uuid: String, apiConfig: ApiConfig<*, RESULT>, jobConfig: JobConfig<*, RESULT>) {
+    if (apiConfig.deleteJobAfterFetchingResult) {
+        jobConfig.persistence.transaction { deleteForUuid(uuid, mapOf(jobConfig.jobType to jobConfig.persistence)) }
+            .ifError { apiLog.error("Failed to delete job after fetching result: $it") }
+
+    }
+}
 
 private suspend inline fun PipelineContext<Unit, ApplicationCall>.parseUuid(): UUID? = call.parameters["uuid"]?.let {
     runCatching { UUID.fromString(it) }.getOrNull()

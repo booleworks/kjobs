@@ -53,7 +53,7 @@ class MaintenanceTest : FunSpec({
         val testingCall = { instance: String -> suspend { testingMode.updateHeartbeat(instance) } }
 
         for (method in listOf(directCall, testingCall)) {
-            JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
+            JedisPool("localhost", redis.bindPort).resource.use { it.flushDB() }
             persistence.fetchHeartbeats(now().minusDays(10)).expectSuccess() shouldHaveSize 0
             val since = now()
             method("I1")()
@@ -92,7 +92,7 @@ class MaintenanceTest : FunSpec({
 
         for (method in listOf(directCall, testingCall)) {
             jobCancellationQueue.set(setOf())
-            JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
+            JedisPool("localhost", redis.bindPort).resource.use { it.flushDB() }
             persistence.transaction {
                 persistJob(newJob("42", status = CANCEL_REQUESTED))
                 persistJob(newJob("43"))
@@ -140,7 +140,7 @@ class MaintenanceTest : FunSpec({
         val testingCall = suspend { testingMode.restartJobsFromDeadInstances() }
         coroutineScope {
             for (method in listOf(directCall, testingCall)) {
-                JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
+                JedisPool("localhost", redis.bindPort).resource.use { it.flushDB() }
 
                 persistence.transaction {
                     persistJob(newJob("42", status = RUNNING, executingInstance = "I2", startedAt = now(), timeout = now().plusDays(1)))
@@ -232,7 +232,7 @@ class MaintenanceTest : FunSpec({
         val testingCall = suspend { testingMode.deleteOldJobsFinishedBefore() }
 
         for (method in listOf(directCall, testingCall)) {
-            JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
+            JedisPool("localhost", redis.bindPort).resource.use { it.flushDB() }
 
             persistence.dataTransaction {
                 persistJob(newJob("42", status = RUNNING, finishedAt = now().minus(interval.toJavaDuration())))
@@ -313,7 +313,7 @@ class MaintenanceTest : FunSpec({
         val testingCall = suspend { testingMode.deleteOldJobsExceedingDbJobCount() }
 
         for (method in listOf(directCall, testingCall)) {
-            JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
+            JedisPool("localhost", redis.bindPort).resource.use { it.flushDB() }
 
             persistence.dataTransaction {
                 persistJob(newJob("42", status = RUNNING, createdAt = now().plusSeconds(1)))
@@ -400,7 +400,7 @@ class MaintenanceTest : FunSpec({
         val testingCall = suspend { testingMode.resetMyRunningJobs() }
 
         for (method in listOf(directCall, testingCall)) {
-            JedisPool(redis.host, redis.bindPort).resource.use { it.flushDB() }
+            JedisPool("localhost", redis.bindPort).resource.use { it.flushDB() }
 
             persistence.dataTransaction {
                 persistJob(newJob("42", status = CREATED))

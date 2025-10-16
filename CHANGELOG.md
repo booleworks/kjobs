@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Configuration parameter `RedisConfig.scanLimit` to configure the limit of the Redis scan operations. The default is 1000 and has the same value as the previously hardcoded limit.
+- Configuration parameter `deleteJobAfterFetchingResult` in `ApiConfig`. If enabled a job is deleted after fetching the result (either via the result route, the failure route or the sync route). Default is `false`.
 
 ## [1.0.0-RC23] - 2025-05-07
 

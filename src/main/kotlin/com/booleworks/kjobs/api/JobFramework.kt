@@ -539,6 +539,7 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
  * is empty in case the validation did not find any errors. If the list is not empty, the request is rejected with [HttpStatusCode.BadRequest] and
  * a message constructed from the list. Default is an empty list.
  * @param enableDeletion whether a `DELETE` resource should be added which allows the API user to delete a job (usually once the result has been fetched)
+ * @param deleteJobAfterFetchingResult whether the job should be deleted after the result was fetched (either via the result route, the failure route or the sync route)
  * @param submitRoute replacement for the submit resource, default is `POST submit`
  * @param statusRoute replacement for the status resource, default is `GET status/{uuid}`
  * @param resultRoute replacement for the result resource, default is `GET result/{uuid}`
@@ -553,6 +554,7 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
 class ApiConfigBuilder<INPUT> internal constructor(
     var inputValidation: (INPUT) -> InputValidationResult = { InputValidationResult.success() },
     var enableDeletion: Boolean = false,
+    var deleteJobAfterFetchingResult: Boolean = false,
     var submitRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> post("submit") { block() } },
     var statusRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("status/{uuid}") { block() } },
     var resultRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("result/{uuid}") { block() } },
@@ -571,7 +573,8 @@ class ApiConfigBuilder<INPUT> internal constructor(
         jobInfoConfig: JobInfoConfig,
         longPollingConfig: LongPollingConfig
     ) = ApiConfig(
-        inputReceiver, resultResponder, inputValidation, enableDeletion, enableCancellation, syncMockConfig, jobInfoConfig, longPollingConfig,
+        inputReceiver, resultResponder, inputValidation, enableDeletion, enableCancellation,
+        syncMockConfig, jobInfoConfig, longPollingConfig, deleteJobAfterFetchingResult,
         submitRoute, statusRoute, resultRoute, failureRoute, deleteRoute, cancelRoute, syncRoute, infoRoute, longPollingRoute
     )
 }
