@@ -42,6 +42,16 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
         return transaction(block)
     }
 
+    override suspend fun tryReserveJob(job: Job, instanceName: String): PersistenceAccessResult<Unit> {
+        val originalJob = jobs[job.uuid]
+        return if (originalJob == null) {
+            PersistenceAccessResult.uuidNotFound(job.uuid)
+        } else {
+            val wasReplaced = originalJob.executingInstance == null && jobs.replace(job.uuid, originalJob, job)
+            if (wasReplaced) PersistenceAccessResult.success else PersistenceAccessResult.modified()
+        }
+    }
+
     override suspend fun updateJobTimeout(uuid: String, timeout: LocalDateTime?): PersistenceAccessResult<Unit> =
         PersistenceAccessResult.success.also { jobs[uuid]?.let { it.timeout = timeout } }
 

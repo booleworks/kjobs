@@ -160,12 +160,17 @@ class MainJobExecutor(
             log.trace("Selected Job with highest priority: ${currentJob.uuid}")
             val reservationResult = tryReserveJob(currentJob)
             when (reservationResult) {
-                JobReservationResult.SUCCESS -> return currentJob
-                JobReservationResult.ERROR -> return null
+                JobReservationResult.SUCCESS -> {
+                    jobExecutionPool.addJob(currentJob)
+                    return currentJob
+                }
+
                 JobReservationResult.ALREADY_RESERVED -> {
                     counter++
                     jobCandidates.remove(currentJob.uuid)
                 }
+
+                JobReservationResult.ERROR -> return null
             }
         }
         log.trace("Tried $counter times to reserve a job but did not succeed.")
@@ -181,23 +186,19 @@ class MainJobExecutor(
         // timeout will be recomputed shortly, but we need to set a timeout for the case that the pod is restarted in between
         // (jobs will not be restarted without a timeout being set)
         job.timeout = LocalDateTime.now().plusMinutes(2)
-        val jobInCreatedStatus: Map<String, (Job) -> Boolean> = mapOf(job.uuid to { it.status == JobStatus.CREATED })
-        jobPersistence.transactionWithPreconditions(jobInCreatedStatus) { updateJob(job) }
+        jobPersistence.tryReserveJob(job, myInstanceName)
             .ifError {
                 if (it == PersistenceAccessError.Modified) {
-                    log.debug("Job with ID ${job.uuid} was modified before it could be reserved. Another instance was probably faster.")
+                    log.info("Job with ID ${job.uuid} was modified before it could be reserved. Another instance was probably faster.")
                     return JobReservationResult.ALREADY_RESERVED
                 } else {
                     log.error("Failed to update job with ID ${job.uuid}: $it")
                     return JobReservationResult.ERROR
                 }
             }
-        jobExecutionPool.addJob(job)
-        log.debug("Job successfully reserved job: ${job.uuid}")
+        log.debug("Successfully reserved job: ${job.uuid}")
         return JobReservationResult.SUCCESS
     }
-
-    private enum class JobReservationResult() { SUCCESS, ERROR, ALREADY_RESERVED }
 
     private fun launchCancellationCheck(coroutineJob: CoroutineJob, jobCancellationQueue: AtomicReference<Set<String>>, uuid: String) {
         CoroutineScope(Dispatchers.IO + CoroutineName("Cancellation check for job $uuid")).launch {
@@ -245,32 +246,21 @@ class SpecificExecutor<INPUT, RESULT>(
                 abortComputationWithError(persistence, uuid, "Failed to fetch job input for ID ${uuid}: $it", "Failed to fetch job input: $it")
                 return@launch
             }
-            // Parsing input may take some time. Afterward, we check if anyone might have "stolen" the job (because of overlapping transactions)
-            val executingInstance = persistence.fetchJob(uuid).orQuitWith {
-                abortComputationWithError(persistence, uuid, "Failed to fetch job: $it", "Failed to fetch job: $it")
-                log.error("Failed to fetch job: $it")
-                return@launch
-            }.executingInstance
-            if (executingInstance != myInstanceName) {
-                log.info("Job with ID $uuid was stolen from $myInstanceName by $executingInstance")
-                return@launch
-            } else {
-                val timeout = timeoutComputation(job, jobInput)
-                job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
-                persistence.updateJobTimeout(job.uuid, job.timeout)
+            val timeout = timeoutComputation(job, jobInput)
+            job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
+            persistence.updateJobTimeout(job.uuid, job.timeout)
 
-                log.trace("Starting computation of job with ID $uuid")
-                val result: ComputationResult<RESULT> = runCatching {
-                    withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
-                        ?: ComputationResult.Error("The job did not finish within the configured timeout of $timeout", tryRepeat = false)
-                }.getOrElse {
-                    yield() // for the case that the coroutine was cancelled
-                    log.error("The job with ID $uuid failed with an exception and will be set to 'FAILURE': ${it.message}", it)
-                    ComputationResult.Error("Unexpected exception during computation: ${it.message}", tryRepeat = false)
-                }
-                log.trace("Finished computation of job with ID $uuid")
-                writeResultToDb(uuid, result)
+            log.trace("Starting computation of job with ID $uuid")
+            val result: ComputationResult<RESULT> = runCatching {
+                withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
+                    ?: ComputationResult.Error("The job did not finish within the configured timeout of $timeout", tryRepeat = false)
+            }.getOrElse {
+                yield() // for the case that the coroutine was cancelled
+                log.error("The job with ID $uuid failed with an exception and will be set to 'FAILURE': ${it.message}", it)
+                ComputationResult.Error("Unexpected exception during computation: ${it.message}", tryRepeat = false)
             }
+            log.trace("Finished computation of job with ID $uuid")
+            writeResultToDb(uuid, result)
         }
 
     private suspend inline fun writeResultToDb(id: String, computationResult: ComputationResult<RESULT>) {
@@ -376,3 +366,5 @@ class SpecificExecutor<INPUT, RESULT>(
         const val UPDATE_RETRIES_WAIT_PERIOD = 5
     }
 }
+
+enum class JobReservationResult() { SUCCESS, ALREADY_RESERVED, ERROR }

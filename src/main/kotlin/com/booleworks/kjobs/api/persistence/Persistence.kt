@@ -53,6 +53,11 @@ interface JobPersistence {
     ): PersistenceAccessResult<Unit>
 
     /**
+     * Tries to reserve the given job for the given instance name.
+     */
+    suspend fun tryReserveJob(job: Job, instanceName: String): PersistenceAccessResult<Unit>
+
+    /**
      * Updates the job timeout.
      */
     suspend fun updateJobTimeout(uuid: String, timeout: LocalDateTime?): PersistenceAccessResult<Unit>

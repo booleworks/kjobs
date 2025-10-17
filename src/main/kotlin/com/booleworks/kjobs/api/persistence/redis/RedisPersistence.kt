@@ -105,6 +105,36 @@ open class RedisJobPersistence(
         handleTransactionException(exception)
     }
 
+    override suspend fun tryReserveJob(job: Job, instanceName: String): PersistenceAccessResult<Unit> {
+        try {
+            // input: 1 key (job key), 3 values (executing instance, started at, timeout)
+            // output: "OK" if reservation was successful, "MODIFIED" if job was already reserved
+            val reserveIfStatusIsCreated = """
+            local jobId = KEYS[1]
+            local instanceName = ARGV[1]
+            local startedAt = ARGV[2]
+            local timeout = ARGV[3]
+                
+            if redis.call("hget", jobId,"status") == "CREATED"
+            then
+                return redis.call("hmset", jobId, "executingInstance", instanceName, "startedAt", startedAt, "status", "RUNNING", "timeout", timeout)
+            else
+                return "MODIFIED"
+            end
+        """.trimIndent()
+            val keyArguments: Array<String> = arrayOf(config.jobKey(job.uuid))
+            val valueArguments: Array<String?> = arrayOf(instanceName, job.startedAt?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), job.timeout?.toString())
+            return when (val result = standardStringCommands.eval<String>(reserveIfStatusIsCreated, ScriptOutputType.STATUS, keyArguments, *valueArguments).get()) {
+                "OK" -> PersistenceAccessResult.success
+                "MODIFIED" -> PersistenceAccessResult.modified()
+                else -> PersistenceAccessResult.internalError("Unknown result: $result")
+            }
+        } catch (e: Exception) {
+            logger.error("Trying to reserve job failed with exception.", e)
+            return PersistenceAccessResult.internalError(e.message ?: "Unknown error")
+        }
+    }
+
     override suspend fun updateJobTimeout(uuid: String, timeout: LocalDateTime?): PersistenceAccessResult<Unit> {
         standardStringCommands.hset(config.jobKey(uuid), "timeout", timeout?.toString())
         return PersistenceAccessResult.success
