@@ -24,6 +24,7 @@ import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisFuture
 import io.lettuce.core.ScanArgs
 import io.lettuce.core.ScanIterator
+import io.lettuce.core.ScriptOutputType
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.api.async.RedisAsyncCommands
 import io.lettuce.core.codec.ByteArrayCodec
@@ -128,7 +129,7 @@ open class RedisJobPersistence(
     }
 
     override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy({ transaction, key -> transaction.hget(key, "status") }) { it == status.toString() }
+        getAllJobsBy(status, config.jobPattern)
 
     override suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>> =
         getAllJobsBy({ commands, key -> commands.hmget(key, "status", "executingInstance") }) {
@@ -192,6 +193,59 @@ open class RedisJobPersistence(
 
     private fun StatefulRedisConnection<String, String>.scanKeys(keyPattern: String): List<String> =
         ScanIterator.scan(sync(), ScanArgs().match(keyPattern).limit(config.scanLimit)).asSequence().toList()
+
+    private fun getAllJobsBy(status: JobStatus, jobPattern: String): PersistenceAccessResult<List<Job>> {
+        // input: 0 keys, 3 values (status, job pattern, scan limit)
+        // output: list of all jobs that match the given status
+        val filteredJobs = """
+            local status = ARGV[1]
+            local jobPattern = ARGV[2]
+            local scanLimit = ARGV[3]
+            
+            local cursor = "0"
+            local jobs = {}
+            
+            repeat
+                local result = redis.call("SCAN", cursor, "MATCH", jobPattern, "COUNT", scanLimit)
+                cursor = result[1]
+                local keys = result[2]
+            
+                for _, key in ipairs(keys) do
+                    local jobStatus = redis.call("HGET", key, "status")
+                    if jobStatus == status then
+                        local all = redis.call("HGETALL", key)
+                        -- we add an additional pair ("redis-key" to key) to create the Job instance more easily later
+                        table.insert(all, "redis-key")
+                        table.insert(all, key)                              
+                        table.insert(jobs, all)
+                    end
+                end
+            until cursor == "0"     
+            return jobs
+        """.trimIndent()
+        val valueArguments: Array<String> = arrayOf(status.name, jobPattern, config.scanLimit.toString())
+        val jobs = standardStringCommands.eval<List<List<String>>>(filteredJobs, ScriptOutputType.OBJECT, arrayOf<String>(), *valueArguments).get()
+        return jobs.map {
+            val redisMap = it.redisListToRedisMap()
+            redisMap.redisMapToJob(config.extractUuid(redisMap["redis-key"]!!))
+        }.unwrapOrReturnFirstError { return@getAllJobsBy it }
+    }
+
+    /**
+     * Converts a Redis list with map data into a map instance.
+     * Assumption: The Redis list contains the map entries as consecutive key-value list entries.
+     * Example: `["key1", "value1", "key2", "value2"]`
+     */
+    private fun List<String>.redisListToRedisMap(): Map<String, String> {
+        if (size % 2 == 1) {
+            error("Unexpected number of elements in Redis Job list")
+        }
+        return 0.until(size / 2).associate { i ->
+            val key = get(i * 2)
+            val value = get(i * 2 + 1)
+            key to value
+        }
+    }
 }
 
 /**
