@@ -32,6 +32,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import org.slf4j.event.Level
 import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
@@ -139,13 +140,15 @@ class MainJobExecutor(
     }
 
     private suspend fun getRelevantJobs(executionCapacity: ExecutionCapacity): List<Job> {
-        log.trace("Fetching relevant jobs.")
-        val jobs = jobPersistence.allJobsWithStatus(JobStatus.CREATED).orQuitWith {
-            log.error("Job access failed with error: $it")
-            return listOf()
-        }.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.toList()
-        log.trace("Found relevant Jobs: ${jobs.size}")
-        return jobs
+        val createdJobs = logTime(log, Level.TRACE, { "Fetched all jobs in status CREATED in $it" }) {
+            jobPersistence.allJobsWithStatus(JobStatus.CREATED).orQuitWith {
+                log.error("Job access failed with error: $it")
+                return listOf()
+            }
+        }
+        val relevantJobs = createdJobs.filter { tagMatcher.matches(it) && executionCapacity.isSufficientFor(it) }.toList()
+        log.trace("Found relevant Jobs: ${relevantJobs.size}")
+        return relevantJobs
     }
 
     private suspend inline fun selectJobToExecute(jobs: List<Job>, tryLimit: Int): Job? {
@@ -157,8 +160,7 @@ class MainJobExecutor(
                 log.trace("No suitable job found in job candidates to reserve.")
                 return null
             }
-            log.trace("Selected Job with highest priority: ${currentJob.uuid}")
-            val reservationResult = tryReserveJob(currentJob)
+            val reservationResult = logTime(log, Level.TRACE, { "Tried reserving job ${currentJob.uuid} in $it" }) { tryReserveJob(currentJob) }
             when (reservationResult) {
                 JobReservationResult.SUCCESS -> {
                     jobExecutionPool.addJob(currentJob)
@@ -240,27 +242,29 @@ class SpecificExecutor<INPUT, RESULT>(
     internal fun launchComputationJob(job: Job, computationDispatcher: CoroutineDispatcher) =
         CoroutineScope(computationDispatcher + CoroutineName("Computation of Job ${job.uuid}")).launch {
             val uuid = job.uuid
-            val jobInput = withContext(Dispatchers.IO) { // input may be large
-                persistence.fetchInput(uuid)
-            }.orQuitWith {
-                abortComputationWithError(persistence, uuid, "Failed to fetch job input for ID ${uuid}: $it", "Failed to fetch job input: $it")
-                return@launch
+            val jobInput = logTime(log, Level.TRACE, { "Fetching input in $it" }) {
+                withContext(Dispatchers.IO) { // input may be large
+                    persistence.fetchInput(uuid)
+                }.orQuitWith {
+                    abortComputationWithError(persistence, uuid, "Failed to fetch job input for ID ${uuid}: $it", "Failed to fetch job input: $it")
+                    return@launch
+                }
             }
             val timeout = timeoutComputation(job, jobInput)
             job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
             persistence.updateJobTimeout(job.uuid, job.timeout)
 
-            log.trace("Starting computation of job with ID $uuid")
-            val result: ComputationResult<RESULT> = runCatching {
-                withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
-                    ?: ComputationResult.Error("The job did not finish within the configured timeout of $timeout", tryRepeat = false)
-            }.getOrElse {
-                yield() // for the case that the coroutine was cancelled
-                log.error("The job with ID $uuid failed with an exception and will be set to 'FAILURE': ${it.message}", it)
-                ComputationResult.Error("Unexpected exception during computation: ${it.message}", tryRepeat = false)
+            val result: ComputationResult<RESULT> = logTime(log, Level.TRACE, { "Computed job $uuid in $it" }) {
+                runCatching {
+                    withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
+                        ?: ComputationResult.Error("The job did not finish within the configured timeout of $timeout", tryRepeat = false)
+                }.getOrElse {
+                    yield() // for the case that the coroutine was cancelled
+                    log.error("The job with ID $uuid failed with an exception and will be set to 'FAILURE': ${it.message}", it)
+                    ComputationResult.Error("Unexpected exception during computation: ${it.message}", tryRepeat = false)
+                }
             }
-            log.trace("Finished computation of job with ID $uuid")
-            writeResultToDb(uuid, result)
+            logTime(log, Level.TRACE, { "Writing job result to DB in $it" }) { writeResultToDb(uuid, result) }
         }
 
     private suspend inline fun writeResultToDb(id: String, computationResult: ComputationResult<RESULT>) {

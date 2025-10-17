@@ -13,6 +13,7 @@ import com.booleworks.kjobs.data.ifError
 import com.booleworks.kjobs.data.orQuitWith
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import org.slf4j.event.Level
 import java.time.LocalDateTime.now
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
@@ -28,7 +29,9 @@ object Maintenance {
      * Updates the heartbeat for this instance in the [persistence].
      */
     suspend fun updateHeartbeat(persistence: JobPersistence, myInstanceName: String) {
-        persistence.updateHeartbeat(Heartbeat(myInstanceName, now()))
+        logTime(logger, Level.TRACE, { "Update heartbeat in $it" }) {
+            persistence.updateHeartbeat(Heartbeat(myInstanceName, now()))
+        }
     }
 
     /**
@@ -36,10 +39,12 @@ object Maintenance {
      * its last heartbeat is not more than [heartbeatTimeout].
      */
     suspend fun livenessCheck(persistence: JobPersistence, instanceName: String, heartbeatTimeout: Duration): Boolean =
-        persistence.fetchHeartbeat(instanceName, now().minus(heartbeatTimeout.toJavaDuration())).orQuitWith {
-            logger.error("Liveness check failed to fetch heartbeat: $it")
-            return false
-        } != null
+        logTime(logger, Level.TRACE, { "Liveness check in $it" }) {
+            persistence.fetchHeartbeat(instanceName, now().minus(heartbeatTimeout.toJavaDuration())).orQuitWith {
+                logger.error("Liveness check failed to fetch heartbeat: $it")
+                return false
+            } != null
+        }
 
     /**
      * Retrieves all jobs from the [persistence] in status [JobStatus.CANCEL_REQUESTED] and writes their
@@ -87,11 +92,14 @@ object Maintenance {
      * Deletes all jobs, including their inputs and results, which have finished for longer than the given duration.
      */
     suspend fun deleteOldJobsFinishedBefore(persistence: JobPersistence, after: Duration, persistencesPerType: Map<String, DataPersistence<*, *>>) {
-        persistence.allJobsFinishedBefore(now().minus(after.toJavaDuration())).orQuitWith {
+        val date = now().minus(after.toJavaDuration())
+        persistence.allJobsFinishedBefore(date).orQuitWith {
             logger.error("Failed to fetch jobs for deleting: $it")
             return
         }.let { jobs ->
-            deleteJobs(jobs, persistence, persistencesPerType)
+            logTime(logger, Level.TRACE, { "Deleted ${jobs.size} old jobs finished before $date in $it" }) {
+                deleteJobs(jobs, persistence, persistencesPerType)
+            }
         }
     }
 
@@ -103,7 +111,9 @@ object Maintenance {
             logger.error("Failed to fetch jobs exceeding the job count: $it")
             return
         }.let { exceedingJobs ->
-            deleteJobs(exceedingJobs, persistence, persistencePerType)
+            logTime(logger, Level.TRACE, { "Deleted ${exceedingJobs.size} old jobs exceeding job count in $it" }) {
+                deleteJobs(exceedingJobs, persistence, persistencePerType)
+            }
         }
     }
 

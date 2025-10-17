@@ -8,6 +8,7 @@ import com.booleworks.kjobs.api.persistence.DataTransactionalPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.api.persistence.JobTransactionalPersistence
 import com.booleworks.kjobs.common.unwrapOrReturnFirstError
+import com.booleworks.kjobs.control.logTime
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
@@ -36,6 +37,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.slf4j.event.Level
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -91,9 +93,11 @@ open class RedisJobPersistence(
                     return PersistenceAccessResult.modified()
                 }
             }
-            commands.multi().get()
-            RedisJobTransactionalPersistence(commands, config).run { block() }
-            commands.exec().get()
+            logTime(logger, Level.TRACE, { "Transaction with precondition in $it" }) {
+                commands.multi().get()
+                RedisJobTransactionalPersistence(commands, config).run { block() }
+                commands.exec().get()
+            }
         }
         if (transactionResult == null || transactionResult.wasDiscarded()) {
             logger.debug(
@@ -142,7 +146,8 @@ open class RedisJobPersistence(
         return PersistenceAccessResult.success
     }
 
-    override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = getAllJobsBy<Unit>()
+    override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> =
+        logTime(logger, Level.TRACE, { "Fetched all jobs in $it" }) { getAllJobsBy<Unit>() }
 
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> = withContext(Dispatchers.IO) {
         standardStringCommands.hgetall(config.jobKey(uuid)).get()
@@ -175,28 +180,36 @@ open class RedisJobPersistence(
     }
 
     override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy(status, config.jobPattern)
+        logTime(logger, Level.TRACE, { "Fetching all jobs with $status in $it" }) {
+            getAllJobsBy(status, config.jobPattern)
+        }
 
     override suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy({ commands, key -> commands.hmget(key, "status", "executingInstance") }) {
-            it.get("status") == status.toString() && it.get("executingInstance") == instance
+        logTime(logger, Level.TRACE, { "Fetching all jobs of $status and instance $instance in $it" }) {
+            getAllJobsBy({ commands, key -> commands.hmget(key, "status", "executingInstance") }) {
+                it.get("status") == status.toString() && it.get("executingInstance") == instance
+            }
         }
 
     override suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy({ commands, key -> commands.hmget(key, "status", "finishedAt") }) {
-            it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
-                    && it.get("finishedAt")?.let(LocalDateTime::parse)?.isBefore(date) ?: false
+        logTime(logger, Level.TRACE, { "Fetching all jobs finished before $date in $it" }) {
+            getAllJobsBy({ commands, key -> commands.hmget(key, "status", "finishedAt") }) {
+                it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
+                        && it.get("finishedAt")?.let(LocalDateTime::parse)?.isBefore(date) ?: false
+            }
         }
 
     override suspend fun allJobsExceedingDbJobCount(maxNumberKeptJobs: Int): PersistenceAccessResult<List<Job>> {
         val overallKeyCount = standardConnection.scanKeys(config.jobPattern).count()
         val exceedingJobCount = overallKeyCount - maxNumberKeptJobs
         return if (exceedingJobCount > 0) {
-            getAllJobsBy({ commands, key -> commands.hmget(key, "status") }) {
-                it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
-            }.orQuitWith {
-                logger.error("Failed fetching jobs for job count: " + it.message)
-                return PersistenceAccessResult.internalError<List<Job>>(it.message)
+            logTime(logger, Level.TRACE, { "Fetched jobs for job count in $it" }) {
+                getAllJobsBy({ commands, key -> commands.hmget(key, "status") }) {
+                    it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
+                }.orQuitWith {
+                    logger.error("Failed fetching jobs for job count: " + it.message)
+                    return PersistenceAccessResult.internalError<List<Job>>(it.message)
+                }
             }.let { jobs ->
                 PersistenceAccessResult.result(jobs.sortedBy { it.createdAt }.take(exceedingJobCount))
             }
@@ -238,7 +251,9 @@ open class RedisJobPersistence(
     }
 
     private fun StatefulRedisConnection<String, String>.scanKeys(keyPattern: String): List<String> =
-        ScanIterator.scan(sync(), ScanArgs().match(keyPattern).limit(config.scanLimit)).asSequence().toList()
+        logTime(logger, Level.TRACE, { "Scanned keys of pattern $keyPattern in $it" }) {
+            ScanIterator.scan(sync(), ScanArgs().match(keyPattern).limit(config.scanLimit)).asSequence().toList()
+        }
 
     private fun getAllJobsBy(status: JobStatus, jobPattern: String): PersistenceAccessResult<List<Job>> {
         // input: 0 keys, 3 values (status, job pattern, scan limit)

@@ -3,6 +3,7 @@
 
 package com.booleworks.kjobs.control.polling
 
+import com.booleworks.kjobs.control.logTime
 import com.booleworks.kjobs.data.PollStatus
 import io.lettuce.core.RedisClient
 import io.lettuce.core.api.sync.RedisCommands
@@ -11,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import org.slf4j.event.Level
 import kotlin.concurrent.thread
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
@@ -33,7 +35,7 @@ class RedisLongPollManager(protected val redisClient: RedisClient, protected val
 
     private fun publish(message: String) {
         log.debug("Publishing $message")
-        stringCommands.publish(channelName, message)
+        logTime(log, Level.TRACE, { "Publishing in $it" }) { stringCommands.publish(channelName, message) }
     }
 
     override fun CoroutineScope.subscribe(uuid: String, timeout: Duration): Deferred<PollStatus> {
