@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved `RedisLongPollManager` performance by using a single Redis connection for publishing a completed job instead of creating a new one each time.
 - Improved `RedisPersistence` performance by re-using a couple of Redis connections instead of creating a new one each time.
 - Improved performance by adding a `JobExecutionPool` that keeps track of the instance's running job instead of fetching all jobs from the job persistence again.
-- Improved performance job selection: Loop over fetched job candidates and try to reserve a job instead of just trying the first job. This avoids re-fetching all jobs again after the first try.   
+- Improved performance job selection: Loop over fetched job candidates and try to reserve a job instead of just trying the first job. This avoids re-fetching all jobs again after the first try.
+- Improved job timeout update by only updating timeout field and avoid using a transaction
 - Minor dependency updates
 
 ### Added

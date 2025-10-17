@@ -257,7 +257,7 @@ class SpecificExecutor<INPUT, RESULT>(
             } else {
                 val timeout = timeoutComputation(job, jobInput)
                 job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
-                persistence.transaction { updateJob(job) }
+                persistence.updateJobTimeout(job.uuid, job.timeout)
 
                 log.trace("Starting computation of job with ID $uuid")
                 val result: ComputationResult<RESULT> = runCatching {

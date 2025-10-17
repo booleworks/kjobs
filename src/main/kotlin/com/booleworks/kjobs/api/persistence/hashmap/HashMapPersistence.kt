@@ -42,6 +42,9 @@ open class HashMapJobPersistence : JobPersistence, JobTransactionalPersistence {
         return transaction(block)
     }
 
+    override suspend fun updateJobTimeout(uuid: String, timeout: LocalDateTime?): PersistenceAccessResult<Unit> =
+        PersistenceAccessResult.success.also { jobs[uuid]?.let { it.timeout = timeout } }
+
     override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = PersistenceAccessResult.result(jobs.values.map { it.copy() })
 
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> =

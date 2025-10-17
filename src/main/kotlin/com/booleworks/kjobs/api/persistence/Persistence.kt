@@ -53,6 +53,11 @@ interface JobPersistence {
     ): PersistenceAccessResult<Unit>
 
     /**
+     * Updates the job timeout.
+     */
+    suspend fun updateJobTimeout(uuid: String, timeout: LocalDateTime?): PersistenceAccessResult<Unit>
+
+    /**
      * Fetches all jobs.
      */
     suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>>

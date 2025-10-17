@@ -104,6 +104,11 @@ open class RedisJobPersistence(
         handleTransactionException(exception)
     }
 
+    override suspend fun updateJobTimeout(uuid: String, timeout: LocalDateTime?): PersistenceAccessResult<Unit> {
+        standardStringCommands.hset(config.jobKey(uuid), "timeout", timeout?.toString())
+        return PersistenceAccessResult.success
+    }
+
     override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = getAllJobsBy<Unit>()
 
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> = withContext(Dispatchers.IO) {
