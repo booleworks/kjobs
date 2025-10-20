@@ -155,8 +155,7 @@ class MainJobExecutor(
         val jobCandidates = jobs.associateBy { it.uuid }.toMutableMap()
         var counter = 0
         while (counter < tryLimit) {
-            val currentJob = selectJobWithHighestPriority(jobCandidates.values.toList())
-            if (currentJob == null) {
+            val currentJob = jobPrioritizer(jobCandidates.values.toList()) ?: run {
                 log.trace("No suitable job found in job candidates to reserve.")
                 return null
             }
@@ -178,8 +177,6 @@ class MainJobExecutor(
         log.trace("Tried $counter times to reserve a job but did not succeed.")
         return null
     }
-
-    private fun selectJobWithHighestPriority(jobs: List<Job>): Job? = jobs.let(jobPrioritizer::invoke)
 
     private suspend inline fun tryReserveJob(job: Job): JobReservationResult {
         job.executingInstance = myInstanceName

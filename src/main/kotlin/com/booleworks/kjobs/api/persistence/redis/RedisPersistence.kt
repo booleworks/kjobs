@@ -36,6 +36,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.intellij.lang.annotations.Language
 import org.slf4j.LoggerFactory
 import org.slf4j.event.Level
 import java.time.Duration
@@ -113,24 +114,9 @@ open class RedisJobPersistence(
 
     override suspend fun tryReserveJob(job: Job, instanceName: String): PersistenceAccessResult<Unit> {
         try {
-            // input: 1 key (job key), 3 values (executing instance, started at, timeout)
-            // output: "OK" if reservation was successful, "MODIFIED" if job was already reserved
-            val reserveIfStatusIsCreated = """
-            local jobId = KEYS[1]
-            local instanceName = ARGV[1]
-            local startedAt = ARGV[2]
-            local timeout = ARGV[3]
-                
-            if redis.call("hget", jobId,"status") == "CREATED"
-            then
-                return redis.call("hmset", jobId, "executingInstance", instanceName, "startedAt", startedAt, "status", "RUNNING", "timeout", timeout)
-            else
-                return "MODIFIED"
-            end
-        """.trimIndent()
             val keyArguments: Array<String> = arrayOf(config.jobKey(job.uuid))
             val valueArguments: Array<String?> = arrayOf(instanceName, job.startedAt?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), job.timeout?.toString())
-            return when (val result = standardStringCommands.eval<String>(reserveIfStatusIsCreated, ScriptOutputType.STATUS, keyArguments, *valueArguments).get()) {
+            return when (val result = standardStringCommands.eval<String>(LuaScripts.reserveJobIfStatusIsCreated, ScriptOutputType.STATUS, keyArguments, *valueArguments).get()) {
                 "OK" -> PersistenceAccessResult.success
                 "MODIFIED" -> PersistenceAccessResult.modified()
                 else -> PersistenceAccessResult.internalError("Unknown result: $result")
@@ -256,36 +242,8 @@ open class RedisJobPersistence(
         }
 
     private fun getAllJobsBy(status: JobStatus, jobPattern: String): PersistenceAccessResult<List<Job>> {
-        // input: 0 keys, 3 values (status, job pattern, scan limit)
-        // output: list of all jobs that match the given status
-        val filteredJobs = """
-            local status = ARGV[1]
-            local jobPattern = ARGV[2]
-            local scanLimit = ARGV[3]
-            
-            local cursor = "0"
-            local jobs = {}
-            
-            repeat
-                local result = redis.call("SCAN", cursor, "MATCH", jobPattern, "COUNT", scanLimit)
-                cursor = result[1]
-                local keys = result[2]
-            
-                for _, key in ipairs(keys) do
-                    local jobStatus = redis.call("HGET", key, "status")
-                    if jobStatus == status then
-                        local all = redis.call("HGETALL", key)
-                        -- we add an additional pair ("redis-key" to key) to create the Job instance more easily later
-                        table.insert(all, "redis-key")
-                        table.insert(all, key)                              
-                        table.insert(jobs, all)
-                    end
-                end
-            until cursor == "0"     
-            return jobs
-        """.trimIndent()
         val valueArguments: Array<String> = arrayOf(status.name, jobPattern, config.scanLimit.toString())
-        val jobs = standardStringCommands.eval<List<List<String>>>(filteredJobs, ScriptOutputType.OBJECT, arrayOf<String>(), *valueArguments).get()
+        val jobs = standardStringCommands.eval<List<List<String>>>(LuaScripts.filterJobs, ScriptOutputType.OBJECT, arrayOf<String>(), *valueArguments).get()
         return jobs.map {
             val redisMap = it.redisListToRedisMap()
             redisMap.redisMapToJob(config.extractUuid(redisMap["redis-key"]!!))
@@ -496,3 +454,53 @@ internal fun Map<String, String>.redisMapToJob(uuidIn: String? = null): Persiste
 private const val TAG_SEPARATOR = """\\\\"""
 
 fun <K, V> List<KeyValue<K, V>>.get(key: K): V? = firstOrNull { it.key == key }?.getValueOrElse(null)
+
+private object LuaScripts {
+
+    // input: 1 key (job key), 3 values (executing instance, started at, timeout)
+    // output: "OK" if reservation was successful, "MODIFIED" if job was already reserved
+    @Language("Lua")
+    val reserveJobIfStatusIsCreated = """
+        local jobId = KEYS[1]
+        local instanceName = ARGV[1]
+        local startedAt = ARGV[2]
+        local timeout = ARGV[3]
+
+        if redis.call("hget", jobId,"status") == "CREATED"
+        then
+            return redis.call("hmset", jobId, "executingInstance", instanceName, "startedAt", startedAt, "status", "RUNNING", "timeout", timeout)
+        else
+            return "MODIFIED"
+        end
+    """.trimIndent()
+
+    // input: 0 keys, 3 values (status, job pattern, scan limit)
+    // output: list of all jobs that match the given status
+    @Language("Lua")
+    val filterJobs = """
+        local status = ARGV[1]
+        local jobPattern = ARGV[2]
+        local scanLimit = ARGV[3]
+
+        local cursor = "0"
+        local jobs = {}
+
+        repeat
+            local result = redis.call("SCAN", cursor, "MATCH", jobPattern, "COUNT", scanLimit)
+            cursor = result[1]
+            local keys = result[2]
+
+            for _, key in ipairs(keys) do
+                local jobStatus = redis.call("HGET", key, "status")
+                if jobStatus == status then
+                    local all = redis.call("HGETALL", key)
+                    -- we add an additional pair ("redis-key" to key) to create the Job instance more easily later
+                    table.insert(all, "redis-key")
+                    table.insert(all, key)
+                    table.insert(jobs, all)
+                end
+            end
+        until cursor == "0"
+        return jobs
+    """.trimIndent()
+}
