@@ -10,6 +10,7 @@ import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.defaultComputation
 import com.booleworks.kjobs.common.defaultInstanceName
+import com.booleworks.kjobs.common.testApplicationWithPlugins
 import com.booleworks.kjobs.data.JobStatistics
 import com.booleworks.kjobs.data.JobStatus
 import io.kotest.core.spec.style.FunSpec
@@ -21,14 +22,12 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.serialization.jackson.jackson
-import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.route
-import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.cancelAndJoin
 import java.time.LocalDateTime
 import kotlin.time.Duration.Companion.milliseconds
@@ -41,7 +40,7 @@ class StatisticsTest : FunSpec({
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             val client = createClient { install(ContentNegotiation) { jackson { } } }
             routing {
                 route("base") {
@@ -57,6 +56,7 @@ class StatisticsTest : FunSpec({
             client.get("base/statistics") { accept(ContentType.Application.Json) }.body<JobStatistics>() shouldBeEqual
                     JobStatistics(12, 2, 2, 2, 2, 2, 2, 7.5, 10.0)
         }
+
         jobFramework!!.cancelAndJoin()
     }
 
@@ -64,7 +64,7 @@ class StatisticsTest : FunSpec({
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             val client = createClient { install(ContentNegotiation) { jackson { } } }
             routing {
                 route("base") {
@@ -90,7 +90,7 @@ class StatisticsTest : FunSpec({
     test("test override route") {
         val jobPersistence = HashMapJobPersistence()
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             val client = createClient { install(ContentNegotiation) { jackson { } } }
             routing {
                 route("base") {
@@ -110,7 +110,7 @@ class StatisticsTest : FunSpec({
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             val client = createClient { install(ContentNegotiation) { jackson { } } }
             routing {
                 route("base") {
@@ -145,8 +145,8 @@ private fun JobFrameworkBuilder.setupTwoJobApis(
             "test1",
             this@route,
             dataPersistence,
-            { call.receive<TestInput>() },
-            { call.respond<TestResult>(it) },
+            { receive<TestInput>() },
+            { respond<TestResult>(it) },
             defaultComputation
         )
     }
@@ -155,8 +155,8 @@ private fun JobFrameworkBuilder.setupTwoJobApis(
             "test2",
             this@route,
             dataPersistence,
-            { call.receive<TestInput>() },
-            { call.respond<TestResult>(it) },
+            { receive<TestInput>() },
+            { respond<TestResult>(it) },
             defaultComputation
         )
     }

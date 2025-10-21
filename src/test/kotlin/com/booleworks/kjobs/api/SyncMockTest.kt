@@ -12,6 +12,7 @@ import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.expectSuccess
 import com.booleworks.kjobs.common.parseTestResult
 import com.booleworks.kjobs.common.right
+import com.booleworks.kjobs.common.testApplicationWithPlugins
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.result
@@ -24,11 +25,9 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.call
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.routing.route
-import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
@@ -39,13 +38,13 @@ class SyncMockTest : FunSpec({
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             routing {
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt()) },
-                            { call.respond(it) }, defaultComputation
+                            "J1", this@route, dataPersistence, { TestInput(receiveText().toInt()) },
+                            { respond(it) }, defaultComputation
                         ) {
                             enableSynchronousResource { checkInterval = 5.milliseconds }
                         }
@@ -64,13 +63,13 @@ class SyncMockTest : FunSpec({
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             routing {
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { call.receiveText().toInt().let { TestInput(it, it) } },
-                            { call.respond(it) }, defaultComputation
+                            "J1", this@route, dataPersistence, { receiveText().toInt().let { TestInput(it, it) } },
+                            { respond(it) }, defaultComputation
                         ) {
                             enableSynchronousResource {
                                 checkInterval = 5.milliseconds
@@ -104,13 +103,13 @@ class SyncMockTest : FunSpec({
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             routing {
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), throwException = true) },
-                            { call.respond(it) }, defaultComputation
+                            "J1", this@route, dataPersistence, { TestInput(receiveText().toInt(), throwException = true) },
+                            { respond(it) }, defaultComputation
                         ) {
                             enableSynchronousResource { checkInterval = 10.milliseconds }
                         }
@@ -130,13 +129,13 @@ class SyncMockTest : FunSpec({
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             routing {
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt()) },
-                            { call.respond(it) }, defaultComputation
+                            "J1", this@route, dataPersistence, { TestInput(receiveText().toInt()) },
+                            { respond(it) }, defaultComputation
                         ) {
                             apiConfig {
                                 deleteJobAfterFetchingResult = true
@@ -158,13 +157,13 @@ class SyncMockTest : FunSpec({
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             routing {
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), throwException = true) },
-                            { call.respond(it) }, defaultComputation
+                            "J1", this@route, dataPersistence, { TestInput(receiveText().toInt(), throwException = true) },
+                            { respond(it) }, defaultComputation
                         ) {
                             apiConfig {
                                 deleteJobAfterFetchingResult = true

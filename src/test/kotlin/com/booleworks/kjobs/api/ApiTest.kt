@@ -36,7 +36,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
-import java.util.*
+import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -49,7 +49,7 @@ class ApiTest : FunSpec({
             route("test") {
                 jobFramework = JobFramework(defaultInstanceName, persistence) {
                     maintenanceConfig { jobCheckInterval = 500.milliseconds }
-                    addApi(defaultJobType, this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation)
+                    addApi(defaultJobType, this@route, persistence, { receive<TestInput>() }, { respond<TestResult>(it) }, defaultComputation)
                 }
             }
         }
@@ -72,13 +72,13 @@ class ApiTest : FunSpec({
                 maintenanceConfig { jobCheckInterval = 50.milliseconds }
                 enableCancellation()
                 route("test") {
-                    addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                    addApi("testType", this@route, persistence, { receive<TestInput>() }, { respond<TestResult>(it) }, defaultComputation) {
                         apiConfig { enableDeletion = true }
                         enableJobInfoResource {}
                     }
                 }
                 route("test2") {
-                    addApi("testType2", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                    addApi("testType2", this@route, persistence, { receive<TestInput>() }, { respond<TestResult>(it) }, defaultComputation) {
                         apiConfig { enableDeletion = true }
                         enableJobInfoResource {}
                     }
@@ -121,19 +121,19 @@ class ApiTest : FunSpec({
                 maintenanceConfig { jobCheckInterval = 20.milliseconds }
                 enableCancellation()
                 route("test") {
-                    addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                    addApi("testType", this@route, persistence, { receive<TestInput>() }, { respond<TestResult>(it) }, defaultComputation) {
                         enableSynchronousResource()
                         enableJobInfoResource()
                         apiConfig {
                             enableDeletion = true
-                            submitRoute = { block -> post("sub") { block() } }
-                            statusRoute = { block -> get("stat/{uuid}") { block() } }
-                            resultRoute = { block -> get("res/{uuid}") { block() } }
-                            failureRoute = { block -> get("fail/{uuid}") { block() } }
-                            deleteRoute = { block -> get("del/{uuid}") { block() } }
-                            cancelRoute = { block -> post("cancellation/{uuid}") { block() } }
-                            syncRoute = { block -> post("sync") { block() } }
-                            infoRoute = { block -> post("info/{uuid}") { block() } }
+                            submitRoute = { block -> post("sub") { call.block() } }
+                            statusRoute = { block -> get("stat/{uuid}") { call.block() } }
+                            resultRoute = { block -> get("res/{uuid}") { call.block() } }
+                            failureRoute = { block -> get("fail/{uuid}") { call.block() } }
+                            deleteRoute = { block -> get("del/{uuid}") { call.block() } }
+                            cancelRoute = { block -> post("cancellation/{uuid}") { call.block() } }
+                            syncRoute = { block -> post("sync") { call.block() } }
+                            infoRoute = { block -> post("info/{uuid}") { call.block() } }
                         }
                     }
                 }
@@ -175,10 +175,11 @@ class ApiTest : FunSpec({
             jobFramework = JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 20.milliseconds }
                 route("test") {
-                    addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                    addApi("testType", this@route, persistence, { receive<TestInput>() }, { respond<TestResult>(it) }, defaultComputation) {
                         enableSynchronousResource()
                         apiConfig {
-                            inputValidation = { if (it.value >= 0) InputValidationResult.success() else InputValidationResult.failure("Value must not be negative") }
+                            inputValidation =
+                                { if (it.value >= 0) InputValidationResult.success() else InputValidationResult.failure("Value must not be negative") }
                         }
                     }
                 }
@@ -203,11 +204,14 @@ class ApiTest : FunSpec({
             jobFramework = JobFramework(defaultInstanceName, persistence) {
                 maintenanceConfig { jobCheckInterval = 20.milliseconds }
                 route("test") {
-                    addApi("testType", this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                    addApi("testType", this@route, persistence, { receive<TestInput>() }, { respond<TestResult>(it) }, defaultComputation) {
                         enableSynchronousResource()
                         apiConfig {
                             inputValidation = {
-                                if (it.value >= 0) InputValidationResult.success() else InputValidationResult.failure("You are not allowed to enter", HttpStatusCode.Forbidden)
+                                if (it.value >= 0) InputValidationResult.success() else InputValidationResult.failure(
+                                    "You are not allowed to enter",
+                                    HttpStatusCode.Forbidden
+                                )
                             }
                         }
                     }
@@ -233,7 +237,7 @@ class ApiTest : FunSpec({
             route("test") {
                 jobFramework = JobFramework(defaultInstanceName, persistence) {
                     maintenanceConfig { jobCheckInterval = 500.milliseconds }
-                    addApi(defaultJobType, this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                    addApi(defaultJobType, this@route, persistence, { receive<TestInput>() }, { respond<TestResult>(it) }, defaultComputation) {
                         apiConfig {
                             deleteJobAfterFetchingResult = false
                         }
@@ -276,7 +280,7 @@ class ApiTest : FunSpec({
             route("test") {
                 jobFramework = JobFramework(defaultInstanceName, persistence) {
                     maintenanceConfig { jobCheckInterval = 500.milliseconds }
-                    addApi(defaultJobType, this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                    addApi(defaultJobType, this@route, persistence, { receive<TestInput>() }, { respond<TestResult>(it) }, defaultComputation) {
                         apiConfig {
                             deleteJobAfterFetchingResult = true
                         }

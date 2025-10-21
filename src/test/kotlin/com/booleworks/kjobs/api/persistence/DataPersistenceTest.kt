@@ -18,8 +18,8 @@ import com.booleworks.kjobs.data.uuidNotFound
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.github.fppt.jedismock.RedisServer
+import kotlinx.coroutines.test.runTest
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.engine.runBlocking
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.equals.shouldBeEqual
 import io.lettuce.core.codec.ByteArrayCodec
@@ -32,7 +32,7 @@ val redisConfigWithCompression = object : DefaultRedisConfig() {
 
 class DataPersistenceTest : FunSpec({
 
-    fun testPersistences(testName: String, config: RedisConfig = DefaultRedisConfig(), block: suspend (DataPersistence<MyInput, MyResult>) -> Unit) = runBlocking {
+    fun testPersistences(testName: String, config: RedisConfig = DefaultRedisConfig(), block: suspend (DataPersistence<MyInput, MyResult>) -> Unit) = runTest {
         val hashMapJobPersistence = HashMapJobPersistence()
         test("HashMap: $testName") { block(HashMapDataPersistence(hashMapJobPersistence)) }
         val redis = RedisServer.newRedisServer().start()

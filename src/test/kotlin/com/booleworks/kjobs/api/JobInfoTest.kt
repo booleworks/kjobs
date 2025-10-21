@@ -12,6 +12,7 @@ import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.jacksonObjectMapperWithTime
 import com.booleworks.kjobs.common.ser
+import com.booleworks.kjobs.common.testApplicationWithPlugins
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.fasterxml.jackson.module.kotlin.readValue
@@ -25,11 +26,9 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
-import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.route
-import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.cancelAndJoin
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -39,7 +38,7 @@ class JobInfoTest : FunSpec({
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             routing {
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
@@ -48,8 +47,8 @@ class JobInfoTest : FunSpec({
                             defaultJobType,
                             this@route,
                             dataPersistence,
-                            { call.receive<TestInput>() },
-                            { call.respond<TestResult>(it) },
+                            { receive<TestInput>() },
+                            { respond<TestResult>(it) },
                             defaultComputation
                         ) {
                             enableJobInfoResource()
@@ -76,7 +75,7 @@ class JobInfoTest : FunSpec({
         val jobPersistence = HashMapJobPersistence()
         val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
         var jobFramework: kotlinx.coroutines.Job? = null
-        testApplication {
+        testApplicationWithPlugins {
             routing {
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
@@ -85,11 +84,11 @@ class JobInfoTest : FunSpec({
                             defaultJobType,
                             this@route,
                             dataPersistence,
-                            { call.receive<TestInput>() },
-                            { call.respond<TestResult>(it) },
+                            { receive<TestInput>() },
+                            { respond<TestResult>(it) },
                             defaultComputation
                         ) {
-                            enableJobInfoResource { responder = { call.respond("Information about UUID ${it.uuid}") } }
+                            enableJobInfoResource { responder = { respond("Information about UUID ${it.uuid}") } }
                         }
                     }
                 }
@@ -102,3 +101,4 @@ class JobInfoTest : FunSpec({
         jobFramework!!.cancelAndJoin()
     }
 })
+

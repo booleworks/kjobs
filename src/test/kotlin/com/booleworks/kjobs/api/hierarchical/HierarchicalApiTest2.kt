@@ -41,7 +41,7 @@ class HierarchicalApiTest2 : FunSpec({
             route("split-job") {
                 jobFramework = JobFramework(defaultInstanceName, intPersistence) {
                     addApiForHierarchicalJob(
-                        "splitJob", this@route, listPersistence, { call.receive<TestInputList>() }, { call.respond(it) }, parentComputation
+                        "splitJob", this@route, listPersistence, { receive<TestInputList>() }, { respond(it) }, parentComputation
                     ) {
                         addDependentJob("int-computation", intPersistence, { _, input -> ComputationResult.Success(input + 1) }) {}
                         addDependentJob("string-computation", stringPersistence, { _, input -> ComputationResult.Success("$input!") }) {}

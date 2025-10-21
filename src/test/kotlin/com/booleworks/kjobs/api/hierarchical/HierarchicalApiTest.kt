@@ -58,7 +58,7 @@ class HierarchicalApiTest : FunSpec({
                     executorConfig { executionCapacityProvider = ExecutionCapacityProvider { AcceptingAnyJob } }
                     addApiForHierarchicalJob(
                         defaultJobType, this@route, persistence,
-                        { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, superComputation()
+                        { receive<TestInput>() }, { respond<TestResult>(it) }, superComputation()
                     ) {
                         addDependentJob(subJob1, newRedisPersistence<SubTestInput1, SubTestResult1>(), { _: Job, input: SubTestInput1 ->
                             delay(input.a.milliseconds); ComputationResult.Success(SubTestResult1(input.a))

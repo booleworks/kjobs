@@ -8,12 +8,11 @@ import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.control.polling.LongPollManager
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.routing.Route
-import io.ktor.util.pipeline.PipelineContext
 import kotlin.time.Duration
 
 internal class ApiConfig<INPUT, RESULT>(
-    val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
-    val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
+    val inputReceiver: suspend ApplicationCall.() -> INPUT,
+    val resultResponder: suspend ApplicationCall.(RESULT) -> Unit,
     val inputValidation: (INPUT) -> InputValidationResult,
     val enableDeletion: Boolean,
     val enableCancellation: Boolean,
@@ -21,15 +20,15 @@ internal class ApiConfig<INPUT, RESULT>(
     val jobInfoConfig: JobInfoConfig,
     val longPollingConfig: LongPollingConfig,
     val deleteJobAfterFetchingResult: Boolean,
-    val submitRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val statusRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val resultRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val failureRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val deleteRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val cancelRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val syncRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val infoRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
-    val longPollingRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
+    val submitRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit,
+    val statusRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit,
+    val resultRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit,
+    val failureRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit,
+    val deleteRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit,
+    val cancelRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit,
+    val syncRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit,
+    val infoRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit,
+    val longPollingRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit,
 )
 
 internal data class JobConfig<INPUT, RESULT>(
@@ -50,7 +49,7 @@ internal class SynchronousResourceConfig<INPUT>(
 
 internal class JobInfoConfig(
     val enabled: Boolean,
-    val responder: suspend PipelineContext<Unit, ApplicationCall>.(Job) -> Unit
+    val responder: suspend ApplicationCall.(Job) -> Unit
 )
 
 internal class LongPollingConfig(

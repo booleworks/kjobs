@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved job timeout update by only updating timeout field and avoid using a transaction.
 - Improved performance of fetching all jobs with a specific status (function `allJobsWithStatus`).
 - Improved performance of updating a heartbeat (`updateHeartbeat`) and checking the instance's heartbeat in the liveness check (`livenessCheck`)
+- Major Update to ktor 3.3.1 and according refactoring for breaking changes
+- Update Lettuce to 6.8.1.RELEASE, Jackson to 2.20.0
 - Minor dependency updates
 
 ### Added

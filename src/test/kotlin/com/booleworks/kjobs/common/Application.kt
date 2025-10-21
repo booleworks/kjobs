@@ -32,7 +32,30 @@ lateinit var defaultRedis: RedisServer
 fun FunSpec.testJobFrameworkWithRedis(testName: String, block: suspend ApplicationTestBuilder.() -> Unit) = test(testName) {
     defaultRedis = RedisServer.newRedisServer().start()
     testApplication {
+        // since ktor 3.X TestApplication no longer automatically loads application modules or configuration files as it did before
+        install(ContentNegotiation) {
+            jackson {
+                enable(SerializationFeature.INDENT_OUTPUT)
+                disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                registerKotlinModule()
+                registerModule(JavaTimeModule())
+            }
+        }
         block()
     }
     defaultRedis.stop()
 }
+
+fun testApplicationWithPlugins(block: suspend ApplicationTestBuilder.() -> Unit) =
+    testApplication {
+        // since ktor 3.X TestApplication no longer automatically loads application modules or configuration files as it did before
+        install(ContentNegotiation) {
+            jackson {
+                enable(SerializationFeature.INDENT_OUTPUT)
+                disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                registerKotlinModule()
+                registerModule(JavaTimeModule())
+            }
+        }
+        block()
+    }

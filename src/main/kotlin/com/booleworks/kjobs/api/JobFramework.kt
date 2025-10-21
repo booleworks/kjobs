@@ -33,13 +33,11 @@ import com.booleworks.kjobs.data.SynchronousResourceConfig
 import com.booleworks.kjobs.data.TagMatcher
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.application.call
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
-import io.ktor.util.pipeline.PipelineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -114,8 +112,8 @@ class JobFrameworkBuilder internal constructor(
         jobType: String,
         route: Route,
         dataPersistence: DataPersistence<INPUT, RESULT>,
-        inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
-        resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
+        inputReceiver: suspend ApplicationCall.() -> INPUT,
+        resultResponder: suspend ApplicationCall.(RESULT) -> Unit,
         computation: suspend (Job, INPUT) -> ComputationResult<RESULT>,
         configuration: ApiBuilder<INPUT, RESULT>.() -> Unit = {}
     ): ApiBuilder<INPUT, RESULT> {
@@ -169,8 +167,8 @@ class JobFrameworkBuilder internal constructor(
         jobType: String,
         route: Route,
         dataPersistence: DataPersistence<INPUT, RESULT>,
-        inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
-        resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
+        inputReceiver: suspend ApplicationCall.() -> INPUT,
+        resultResponder: suspend ApplicationCall.(RESULT) -> Unit,
         parentComputation: suspend (Job, INPUT, Map<String, HierarchicalJobApi<*, *>>) -> ComputationResult<RESULT>,
         configuration: HierarchicalApiBuilder<INPUT, RESULT>.() -> Unit = {}
     ): HierarchicalApiBuilder<INPUT, RESULT> {
@@ -400,8 +398,8 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
     private val jobType: String,
     private val route: Route,
     private val persistence: DataPersistence<INPUT, RESULT>,
-    private val inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
-    private val resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
+    private val inputReceiver: suspend ApplicationCall.() -> INPUT,
+    private val resultResponder: suspend ApplicationCall.(RESULT) -> Unit,
 ) {
     internal lateinit var computation: suspend (Job, INPUT) -> ComputationResult<RESULT>
     private val apiConfig: ApiConfigBuilder<INPUT> = ApiConfigBuilder()
@@ -492,8 +490,8 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
     jobType: String,
     route: Route,
     persistence: DataPersistence<INPUT, RESULT>,
-    inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
-    resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
+    inputReceiver: suspend ApplicationCall.() -> INPUT,
+    resultResponder: suspend ApplicationCall.(RESULT) -> Unit,
     internal val superComputation: suspend (Job, INPUT, Map<String, HierarchicalJobApi<*, *>>) -> ComputationResult<RESULT>,
 ) : ApiBuilder<INPUT, RESULT>(myInstanceName, jobType, route, persistence, inputReceiver, resultResponder) {
 
@@ -556,19 +554,19 @@ class ApiConfigBuilder<INPUT> internal constructor(
     var inputValidation: (INPUT) -> InputValidationResult = { InputValidationResult.success() },
     var enableDeletion: Boolean = false,
     var deleteJobAfterFetchingResult: Boolean = false,
-    var submitRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> post("submit") { block() } },
-    var statusRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("status/{uuid}") { block() } },
-    var resultRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("result/{uuid}") { block() } },
-    var failureRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("failure/{uuid}") { block() } },
-    var deleteRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> delete("delete/{uuid}") { block() } },
-    var cancelRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> post("cancel/{uuid}") { block() } },
-    var syncRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> post("synchronous") { block() } },
-    var infoRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("info/{uuid}") { block() } },
-    var longPollingRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit = { block -> get("poll/{uuid}") { block() } },
+    var submitRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit = { block -> post("submit") { call.block() } },
+    var statusRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit = { block -> get("status/{uuid}") { call.block() } },
+    var resultRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit = { block -> get("result/{uuid}") { call.block() } },
+    var failureRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit = { block -> get("failure/{uuid}") { call.block() } },
+    var deleteRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit = { block -> delete("delete/{uuid}") { call.block() } },
+    var cancelRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit = { block -> post("cancel/{uuid}") { call.block() } },
+    var syncRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit = { block -> post("synchronous") { call.block() } },
+    var infoRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit = { block -> get("info/{uuid}") { call.block() } },
+    var longPollingRoute: Route.(suspend ApplicationCall.() -> Unit) -> Unit = { block -> get("poll/{uuid}") { call.block() } },
 ) {
     internal fun <RESULT> toApiConfig(
-        inputReceiver: suspend PipelineContext<Unit, ApplicationCall>.() -> INPUT,
-        resultResponder: suspend PipelineContext<Unit, ApplicationCall>.(RESULT) -> Unit,
+        inputReceiver: suspend ApplicationCall.() -> INPUT,
+        resultResponder: suspend ApplicationCall.(RESULT) -> Unit,
         enableCancellation: Boolean,
         syncMockConfig: SynchronousResourceConfig<INPUT>,
         jobInfoConfig: JobInfoConfig,
@@ -643,7 +641,7 @@ class SynchronousResourceConfigBuilder<INPUT>(
 @KJobsDsl
 class JobInfoConfigBuilder(
     internal var enabled: Boolean = false,
-    var responder: suspend PipelineContext<Unit, ApplicationCall>.(Job) -> Unit = { call.respond(it) }
+    var responder: suspend ApplicationCall.(Job) -> Unit = { respond(it) }
 ) {
     internal fun toJobInfoConfig() = JobInfoConfig(enabled, responder)
 }

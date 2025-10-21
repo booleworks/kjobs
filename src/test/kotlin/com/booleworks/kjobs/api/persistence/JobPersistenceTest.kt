@@ -15,16 +15,16 @@ import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.uuidNotFound
 import com.github.fppt.jedismock.RedisServer
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.engine.runBlocking
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.equals.shouldBeEqual
+import kotlinx.coroutines.test.runTest
 import java.time.LocalDateTime
 
 class JobPersistenceTest : FunSpec({
 
-    fun testPersistences(testName: String, block: suspend (JobPersistence) -> Unit) = runBlocking {
+    fun testPersistences(testName: String, block: suspend (JobPersistence) -> Unit) = runTest {
         test("HashMap: $testName") { block(HashMapJobPersistence()) }
         val redis = RedisServer.newRedisServer().start()
         test("Redis: $testName") {

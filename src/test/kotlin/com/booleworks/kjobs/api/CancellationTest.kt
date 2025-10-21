@@ -38,8 +38,8 @@ class CancellationTest : FunSpec({
             route("test") {
                 frameworkJob = JobFramework(defaultInstanceName, persistence) {
                     addApi(
-                        "J1", this@route, persistence, { TestInput(call.receiveText().toInt(), 100_000) },
-                        { call.respond(it.inputValue) }, defaultComputation
+                        "J1", this@route, persistence, { TestInput(receiveText().toInt(), 100_000) },
+                        { respond(it.inputValue) }, defaultComputation
                     )
                     enableCancellation {
                         checkInterval = 5.milliseconds
@@ -70,8 +70,8 @@ class CancellationTest : FunSpec({
                         "J1",
                         this@route,
                         persistence,
-                        { TestInput(call.receiveText().toInt(), 2000) },
-                        { call.respond(it.inputValue) },
+                        { TestInput(receiveText().toInt(), 2000) },
+                        { respond(it.inputValue) },
                         { _, input -> Thread.sleep(input.expectedDelay.toLong()); ComputationResult.Success(TestResult(input.value)) }
                     )
                     enableCancellation {

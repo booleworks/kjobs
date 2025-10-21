@@ -49,8 +49,8 @@ class LongPollTest : FunSpec({
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 2_000) },
-                            { call.respond(it.inputValue) }, defaultComputation
+                            "J1", this@route, dataPersistence, { TestInput(receiveText().toInt(), 2_000) },
+                            { respond(it.inputValue) }, defaultComputation
                         ) {
                             enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 200.milliseconds
@@ -94,8 +94,8 @@ class LongPollTest : FunSpec({
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 20_000) },
-                            { call.respond(it.inputValue) }, defaultComputation
+                            "J1", this@route, dataPersistence, { TestInput(receiveText().toInt(), 20_000) },
+                            { respond(it.inputValue) }, defaultComputation
                         ) {
                             enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 1.seconds
@@ -140,8 +140,8 @@ class LongPollTest : FunSpec({
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { call.receiveText().toInt().let { TestInput(it, 0, it < 0) } },
-                            { call.respond(it.inputValue) }, defaultComputation
+                            "J1", this@route, dataPersistence, { receiveText().toInt().let { TestInput(it, 0, it < 0) } },
+                            { respond(it.inputValue) }, defaultComputation
                         ) {
                             enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 3.minutes
@@ -181,8 +181,8 @@ class LongPollTest : FunSpec({
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 2_000) },
-                            { call.respond(it.inputValue) }, defaultComputation
+                            "J1", this@route, dataPersistence, { TestInput(receiveText().toInt(), 2_000) },
+                            { respond(it.inputValue) }, defaultComputation
                         ) {
                             enableLongPolling({ RedisLongPollManager(redis.lettuceClient) })
                         }
@@ -224,8 +224,8 @@ class LongPollTest : FunSpec({
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 500) },
-                            { call.respond(it.inputValue) }, defaultComputation
+                            "J1", this@route, dataPersistence, { TestInput(receiveText().toInt(), 500) },
+                            { respond(it.inputValue) }, defaultComputation
                         ) {
                             enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 3.minutes
@@ -264,8 +264,8 @@ class LongPollTest : FunSpec({
                     }
                     route("test") {
                         addApi(
-                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 500) },
-                            { call.respond(it.inputValue) }, defaultComputation
+                            "J1", this@route, dataPersistence, { TestInput(receiveText().toInt(), 500) },
+                            { respond(it.inputValue) }, defaultComputation
                         ) {
                             enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 3.minutes
@@ -274,8 +274,8 @@ class LongPollTest : FunSpec({
                     }
                     route("test2") {
                         addApi(
-                            "J2", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), 1000) },
-                            { call.respond(it.inputValue) }, defaultComputation
+                            "J2", this@route, dataPersistence, { TestInput(receiveText().toInt(), 1000) },
+                            { respond(it.inputValue) }, defaultComputation
                         ) {
                             enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 3.minutes
@@ -319,8 +319,8 @@ class LongPollTest : FunSpec({
                     }
                     route("test") {
                         addApi(
-                            "J1", this@route, dataPersistence, { call.receiveText().toInt().let { TestInput(it, it) } },
-                            { call.respond(it.inputValue) }, defaultComputation
+                            "J1", this@route, dataPersistence, { receiveText().toInt().let { TestInput(it, it) } },
+                            { respond(it.inputValue) }, defaultComputation
                         ) {
                             enableLongPolling({ RedisLongPollManager(redis.lettuceClient) }) {
                                 maximumConnectionTimeout = 3.minutes
