@@ -84,7 +84,7 @@ internal fun defaultExecutor(
     cancellationConfig,
     jobCancellationQueue,
     specificExecutors
-        ?: mapOf(defaultJobType to SpecificExecutor(myInstanceName, persistence, defaultComputation, NopLongPollManager, timeout, maxRestarts)),
+        ?: mapOf(defaultJobType to SpecificExecutor(myInstanceName, persistence, defaultComputation, { NopLongPollManager }, timeout, maxRestarts)),
 )
 
 class TestException(message: String) : Exception(message)

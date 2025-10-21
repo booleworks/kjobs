@@ -446,7 +446,7 @@ open class ApiBuilder<INPUT, RESULT> internal constructor(
     }
 
     internal fun specificExecutor(longPollManager: () -> LongPollManager): SpecificExecutor<INPUT, RESULT> =
-        SpecificExecutor(myInstanceName, persistence, computation, longPollManager(), jobConfig.timeoutComputation, jobConfig.maxRestarts)
+        SpecificExecutor(myInstanceName, persistence, computation, longPollManager, jobConfig.timeoutComputation, jobConfig.maxRestarts)
 
     internal fun build(enableCancellation: Boolean) = with(route) {
         setupJobApi(
@@ -480,7 +480,7 @@ class JobBuilder<INPUT, RESULT> internal constructor(
     fun jobConfig(configuration: JobConfigBuilder<INPUT>.() -> Unit) = configuration(jobConfig)
 
     internal fun specificExecutor(): SpecificExecutor<INPUT, RESULT> =
-        SpecificExecutor(myInstanceName, persistence, computation, NopLongPollManager, jobConfig.timeoutComputation, jobConfig.maxRestarts)
+        SpecificExecutor(myInstanceName, persistence, computation, { NopLongPollManager }, jobConfig.timeoutComputation, jobConfig.maxRestarts)
 }
 
 /**
@@ -516,7 +516,7 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
             require(jobType !in dependents) { "A dependent job with type $jobType is already defined" }
             dependents[jobType] = Triple(
                 JobConfig(jobType, persistence, myInstanceName, config.tagProvider, config.customInfoProvider, config.priorityProvider),
-                SpecificExecutor(myInstanceName, persistence, computation, NopLongPollManager, config.timeoutComputation, config.maxRestarts),
+                SpecificExecutor(myInstanceName, persistence, computation, { NopLongPollManager }, config.timeoutComputation, config.maxRestarts),
                 persistence
             )
         }
