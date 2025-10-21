@@ -39,9 +39,9 @@ import kotlinx.coroutines.withContext
 import org.intellij.lang.annotations.Language
 import org.slf4j.LoggerFactory
 import org.slf4j.event.Level
-import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.time.toJavaDuration
 
 
 private val logger = LoggerFactory.getLogger("com.booleworks.kjobs.RedisDataPersistence")
@@ -143,7 +143,7 @@ open class RedisJobPersistence(
 
     override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
         // heartbeat with expiration to prevent heartbeat entries of previous instances to remain forever in Redis
-        val setArgs = SetArgs.Builder.ex(Duration.ofDays(1)) // TODO make configurable?
+        val setArgs = SetArgs.Builder.ex(config.heartbeatExpiration.toJavaDuration())
         standardStringCommands.set(config.heartbeatKey(heartbeat.instanceName), heartbeat.lastBeat.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), setArgs)
         return PersistenceAccessResult.success
     }
