@@ -40,7 +40,8 @@ class RedisLongPollManager(protected val redisClient: RedisClient, protected val
 
     override fun CoroutineScope.subscribe(uuid: String, timeout: Duration): Deferred<PollStatus> {
         val deferred = CompletableDeferred<PollStatus>()
-        // TODO maybe we can re-use a single connection for the subscriptions, too? But we have to be careful regarding the subscribe()/unsubscribe() interferences. Maybe keep being subscribed?
+        // TODO maybe we can re-use a single connection for the subscriptions, too? But we have to be careful regarding the subscribe()/unsubscribe()
+        //  interferences. Maybe keep being subscribed?
         val subscribeConnection = redisClient.connectPubSub()
         val subscription = subscribeConnection.reactive()
         subscription.subscribe(channelName).subscribe()

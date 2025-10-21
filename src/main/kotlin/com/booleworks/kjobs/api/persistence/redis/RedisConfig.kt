@@ -6,6 +6,8 @@ package com.booleworks.kjobs.api.persistence.redis
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 
+private const val DEFAULT_SCAN_LIMIT = 1000L
+
 /**
  * Configuration for the [RedisDataPersistence].
  */
@@ -28,7 +30,7 @@ interface RedisConfig {
      * For most use cases the default value is good. For high performance use cases it can help to
      * adjust the limit.
      */
-    val scanLimit: Long get() = 1000L
+    val scanLimit: Long get() = DEFAULT_SCAN_LIMIT
 
     fun jobKey(uuid: String): String = "job:$uuid"
     fun inputKey(uuid: String): String = "input:$uuid"

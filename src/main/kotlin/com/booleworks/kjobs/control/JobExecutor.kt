@@ -368,4 +368,4 @@ class SpecificExecutor<INPUT, RESULT>(
     }
 }
 
-enum class JobReservationResult() { SUCCESS, ALREADY_RESERVED, ERROR }
+enum class JobReservationResult { SUCCESS, ALREADY_RESERVED, ERROR }

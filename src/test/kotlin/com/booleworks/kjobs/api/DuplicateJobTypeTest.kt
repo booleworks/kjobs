@@ -22,8 +22,8 @@ import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.ExecutionCapacity
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import io.kotest.assertions.throwables.shouldThrowWithMessage
-import io.kotest.common.runBlocking
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.engine.runBlocking
 import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond

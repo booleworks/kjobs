@@ -14,8 +14,8 @@ import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.uuidNotFound
 import com.github.fppt.jedismock.RedisServer
-import io.kotest.common.runBlocking
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.engine.runBlocking
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize

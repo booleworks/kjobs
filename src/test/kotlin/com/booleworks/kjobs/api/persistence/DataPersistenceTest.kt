@@ -18,8 +18,8 @@ import com.booleworks.kjobs.data.uuidNotFound
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.github.fppt.jedismock.RedisServer
-import io.kotest.common.runBlocking
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.engine.runBlocking
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.equals.shouldBeEqual
 import io.lettuce.core.codec.ByteArrayCodec

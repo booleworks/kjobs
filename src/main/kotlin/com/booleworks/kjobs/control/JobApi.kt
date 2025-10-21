@@ -35,7 +35,7 @@ import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
-import java.util.*
+import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 
 private val apiLog = LoggerFactory.getLogger("com.booleworks.kjobs.ApiLog")
@@ -343,7 +343,11 @@ private suspend inline fun PipelineContext<Unit, ApplicationCall>.resultStatus(u
     fetchJobAndCheckType(uuid, requestedJobType, persistence)?.let { call.respondText(it.status.toString()) }
 }
 
-private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(uuid: String, apiConfig: ApiConfig<*, RESULT>, jobConfig: JobConfig<*, RESULT>) {
+private suspend inline fun <RESULT> PipelineContext<Unit, ApplicationCall>.result(
+    uuid: String,
+    apiConfig: ApiConfig<*, RESULT>,
+    jobConfig: JobConfig<*, RESULT>
+) {
     val result = jobConfig.persistence.fetchResult(uuid).orQuitWith {
         call.respondText("Failed to retrieve job result for ID ${uuid}: $it", status = InternalServerError)
         return

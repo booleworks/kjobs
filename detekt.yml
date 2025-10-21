@@ -485,7 +485,7 @@ style:
   active: true
   AlsoCouldBeApply:
     active: true
-  MandatoryBracesIfStatements:
+  BracesOnIfStatements:
     active: false
   CanBeNonNullable:
     active: true
@@ -518,12 +518,11 @@ style:
     includeLineWrapping: false
   ForbiddenComment:
     active: false
-    values:
+    comments:
       - 'FIXME:'
       - 'STOPSHIP:'
       - 'TODO:'
     allowedPatterns: ''
-    customMessage: ''
   ForbiddenImport:
     active: false
     imports: [ ]
@@ -602,7 +601,7 @@ style:
     active: true
   OptionalUnit:
     active: true
-  OptionalWhenBraces:
+  BracesOnWhenStatements:
     active: false
   PreferToOverPairSyntax:
     active: false

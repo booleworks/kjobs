@@ -539,7 +539,8 @@ class HierarchicalApiBuilder<INPUT, RESULT> internal constructor(
  * is empty in case the validation did not find any errors. If the list is not empty, the request is rejected with [HttpStatusCode.BadRequest] and
  * a message constructed from the list. Default is an empty list.
  * @param enableDeletion whether a `DELETE` resource should be added which allows the API user to delete a job (usually once the result has been fetched)
- * @param deleteJobAfterFetchingResult whether the job should be deleted after the result was fetched (either via the result route, the failure route or the sync route)
+ * @param deleteJobAfterFetchingResult whether the job should be deleted after the result was fetched
+ *                                     (either via the result route, the failure route or the sync route)
  * @param submitRoute replacement for the submit resource, default is `POST submit`
  * @param statusRoute replacement for the status resource, default is `GET status/{uuid}`
  * @param resultRoute replacement for the result resource, default is `GET result/{uuid}`

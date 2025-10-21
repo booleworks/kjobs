@@ -56,7 +56,8 @@ open class RedisJobPersistence(
     protected val config: RedisConfig = DefaultRedisConfig(),
 ) : JobPersistence {
 
-    // the standard connection can be shared among threads without locking since it is NOT used for pipelines (setAutoFlushCommands = false/true) NOR for transactions (multi/exec)
+    // the standard connection can be shared among threads without locking since it is NOT used for pipelines (setAutoFlushCommands = false/true)
+    // NOR for transactions (multi/exec)
     protected val standardConnection: StatefulRedisConnection<String, String> = redisClient.connect()
     protected val standardStringCommands: RedisAsyncCommands<String, String> = standardConnection.async()
 
@@ -116,7 +117,8 @@ open class RedisJobPersistence(
         try {
             val keyArguments: Array<String> = arrayOf(config.jobKey(job.uuid))
             val valueArguments: Array<String?> = arrayOf(instanceName, job.startedAt?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), job.timeout?.toString())
-            return when (val result = standardStringCommands.eval<String>(LuaScripts.reserveJobIfStatusIsCreated, ScriptOutputType.STATUS, keyArguments, *valueArguments).get()) {
+            return when (val result =
+                standardStringCommands.eval<String>(LuaScripts.reserveJobIfStatusIsCreated, ScriptOutputType.STATUS, keyArguments, *valueArguments).get()) {
                 "OK" -> PersistenceAccessResult.success
                 "MODIFIED" -> PersistenceAccessResult.modified()
                 else -> PersistenceAccessResult.internalError("Unknown result: $result")
@@ -308,7 +310,8 @@ open class RedisDataPersistence<INPUT, RESULT>(
     config: RedisConfig = DefaultRedisConfig(),
 ) : RedisJobPersistence(redisClient, config), DataPersistence<INPUT, RESULT> {
 
-    // the standard connection can be shared among threads without looking since it is NOT used for pipelines (setAutoFlushCommands = false/true) NOR for transactions (multi/exec)
+    // the standard connection can be shared among threads without looking since it is NOT used for pipelines (setAutoFlushCommands = false/true)
+    // NOR for transactions (multi/exec)
     protected val standardByteArrayConnection: StatefulRedisConnection<ByteArray, ByteArray> = newByteArrayConnection()
     protected val standardByteArrayCommands: RedisAsyncCommands<ByteArray, ByteArray> = standardByteArrayConnection.async()
 
