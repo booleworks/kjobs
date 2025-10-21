@@ -5,6 +5,7 @@ package com.booleworks.kjobs.common
 
 import com.booleworks.kjobs.api.DEFAULT_MAX_JOB_RESTARTS
 import com.booleworks.kjobs.api.JobFrameworkBuilder
+import com.booleworks.kjobs.api.JobFrameworkTestingApi
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.api.persistence.redis.RedisDataPersistence
@@ -108,20 +109,22 @@ fun <R> PersistenceAccessResult<R>.expectSuccess() = this.orQuitWith { fail("Exp
 
 fun Job.shouldHaveBeenStarted() = this.status shouldBeOneOf listOf(JobStatus.RUNNING, JobStatus.SUCCESS)
 
-suspend fun JobPersistence.setRunning(uuid: String, instanceName: String = defaultInstanceName) {
-    val job = fetchJob(uuid).expectSuccess()
+suspend fun setRunning(jobPersistence: JobPersistence, testingApi: JobFrameworkTestingApi, uuid: String, instanceName: String = defaultInstanceName) {
+    val job = jobPersistence.fetchJob(uuid).expectSuccess()
     job.status = JobStatus.RUNNING
     job.executingInstance = instanceName
     job.startedAt = LocalDateTime.now()
-    transaction { updateJob(job) }.expectSuccess()
+    jobPersistence.transaction { updateJob(job) }.expectSuccess()
+    testingApi.addJobToJobExecutionPool(job)
 }
 
-suspend fun JobPersistence.reset(uuid: String) {
-    val job = fetchJob(uuid).expectSuccess()
+suspend fun reset(jobPersistence: JobPersistence, testingApi: JobFrameworkTestingApi, uuid: String) {
+    val job = jobPersistence.fetchJob(uuid).expectSuccess()
     job.status = JobStatus.CREATED
     job.executingInstance = null
     job.startedAt = null
     job.finishedAt = null
     job.timeout = null
-    transaction { updateJob(job) }.expectSuccess()
+    jobPersistence.transaction { updateJob(job) }.expectSuccess()
+    testingApi.removeJobFromJobExecutionPool(uuid)
 }

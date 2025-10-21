@@ -110,7 +110,7 @@ class CancellationTest : FunSpec({
         testingMode.cancelJob(persistence.fetchJob(uuid).expectSuccess()) shouldBeEqual Either.Right("Job with id $uuid has already finished with status CANCELLED")
         persistence.fetchJob(uuid).expectSuccess().status shouldBeEqual JobStatus.CANCELLED
 
-        persistence.setRunning(uuid)
+        setRunning(persistence, testingMode, uuid)
         testingMode.cancelJob(persistence.fetchJob(uuid).expectSuccess()) shouldBeEqual Either.Right(
             "Job with id $uuid is currently running and will be cancelled as soon as possible. " +
                     "If it finishes in the meantime, the cancel request will be ignored."
@@ -120,7 +120,7 @@ class CancellationTest : FunSpec({
         testingMode.cancelJob(persistence.fetchJob(uuid).expectSuccess()) shouldBeEqual Either.Right("Cancellation for job with id $uuid has already been requested")
         persistence.fetchJob(uuid).expectSuccess().status shouldBeEqual JobStatus.CANCEL_REQUESTED
 
-        persistence.reset(uuid)
+        reset(persistence, testingMode, uuid)
         testingMode.runExecutor()
         persistence.fetchJob(uuid).expectSuccess().status shouldBeEqual JobStatus.SUCCESS
         testingMode.cancelJob(persistence.fetchJob(uuid).expectSuccess()) shouldBeEqual Either.Right("Job with id $uuid has already finished with status SUCCESS")

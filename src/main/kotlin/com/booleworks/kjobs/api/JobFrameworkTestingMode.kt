@@ -154,4 +154,14 @@ class JobFrameworkTestingApi internal constructor(
      */
     fun cancelJob(job: Job): Either<String, String> =
         runBlocking { com.booleworks.kjobs.control.cancelJob(job, jobPersistence) }
+
+    /**
+     * Adds the given job to the [JobExecutionPool] instance.
+     */
+    fun addJobToJobExecutionPool(job: Job) = jobExecutionPool.addJob(job)
+
+    /**
+     * Removes the given job from the [JobExecutionPool] instance.
+     */
+    fun removeJobFromJobExecutionPool(uuid: String) = jobExecutionPool.removeJob(uuid)
 }
