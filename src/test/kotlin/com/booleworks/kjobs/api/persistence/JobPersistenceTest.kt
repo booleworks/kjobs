@@ -219,15 +219,13 @@ class JobPersistenceTest : FunSpec({
         val persistence = RedisJobPersistence(redis.lettuceClient)
         val now = LocalDateTime.now()
         persistence.fetchHeartbeats(now.minusYears(2000)).expectSuccess() shouldHaveSize 0
-        persistence.transaction {
-            updateHeartbeat(Heartbeat("I1", now.minusSeconds(3)))
-            updateHeartbeat(Heartbeat("I1", now))
-            updateHeartbeat(Heartbeat("I2", now.plusMinutes(1)))
-            updateHeartbeat(Heartbeat("I2", now.minusSeconds(1)))
-            updateHeartbeat(Heartbeat("I3", now.plusSeconds(2)))
-            updateHeartbeat(Heartbeat("I4", now.minusDays(5)))
-            updateHeartbeat(Heartbeat("I4", now.plusDays(5)))
-        }
+        persistence.updateHeartbeat(Heartbeat("I1", now.minusSeconds(3)))
+        persistence.updateHeartbeat(Heartbeat("I1", now))
+        persistence.updateHeartbeat(Heartbeat("I2", now.plusMinutes(1)))
+        persistence.updateHeartbeat(Heartbeat("I2", now.minusSeconds(1)))
+        persistence.updateHeartbeat(Heartbeat("I3", now.plusSeconds(2)))
+        persistence.updateHeartbeat(Heartbeat("I4", now.minusDays(5)))
+        persistence.updateHeartbeat(Heartbeat("I4", now.plusDays(5)))
         persistence.fetchHeartbeats(now).expectSuccess() shouldContainExactlyInAnyOrder listOf(
             Heartbeat("I1", now),
             Heartbeat("I3", now.plusSeconds(2)),

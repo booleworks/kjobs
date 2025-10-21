@@ -10,10 +10,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.slf4j.Logger
+import org.slf4j.event.Level
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
 import kotlin.time.TimeSource.Monotonic.markNow
+import kotlin.time.measureTimedValue
 
 /**
  * Executes the given [task] repeatedly until this [CoroutineContext] or the returned job is
@@ -54,4 +57,21 @@ fun CoroutineContext.scheduleForever(
         }
     }
     return supervisor
+}
+
+/**
+ * Logs the duration the given [block] takes to be executed.
+ * The [level] specifies the log level to be used. The [message] function specifies the log message with the duration as argument.
+ */
+inline fun <T> logTime(logger: Logger, level: Level, message: (Duration) -> String, block: () -> T): T {
+    val (result, duration) = measureTimedValue(block)
+    val logMessage = message(duration)
+    when (level) {
+        Level.TRACE -> logger.trace(logMessage)
+        Level.DEBUG -> logger.debug(logMessage)
+        Level.INFO -> logger.info(logMessage)
+        Level.WARN -> logger.warn(logMessage)
+        Level.ERROR -> logger.error(logMessage)
+    }
+    return result
 }

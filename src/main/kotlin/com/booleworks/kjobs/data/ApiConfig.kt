@@ -20,6 +20,7 @@ internal class ApiConfig<INPUT, RESULT>(
     val syncMockConfig: SynchronousResourceConfig<INPUT>,
     val jobInfoConfig: JobInfoConfig,
     val longPollingConfig: LongPollingConfig,
+    val deleteJobAfterFetchingResult: Boolean,
     val submitRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
     val statusRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,
     val resultRoute: Route.(suspend PipelineContext<Unit, ApplicationCall>.() -> Unit) -> Unit,

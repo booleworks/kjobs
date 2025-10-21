@@ -20,10 +20,10 @@ import com.booleworks.kjobs.data.ExecutionCapacity
 import com.booleworks.kjobs.data.ExecutionCapacityProvider
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
-import io.kotest.assertions.fail
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.equals.shouldBeEqual
 import kotlinx.coroutines.CoroutineScope
+import org.junit.jupiter.api.fail
 
 class ExecutionCapacityTest : FunSpec({
 
@@ -31,7 +31,7 @@ class ExecutionCapacityTest : FunSpec({
         val (jobPersistence, testingApi) = setupApi(executionCapacityProvider = DefaultExecutionCapacityProvider)
         val job1 = testingApi.submitJob("J1", TestInput(0)).expectSuccess()
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
-        jobPersistence.setRunning(job1.uuid)
+        setRunning(jobPersistence, testingApi, job1.uuid)
         testingApi.runExecutor()
         jobPersistence.fetchJob(job2.uuid).expectSuccess().status shouldBeEqual JobStatus.CREATED
 
@@ -45,9 +45,9 @@ class ExecutionCapacityTest : FunSpec({
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
         val job3 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
         val job4 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
-        jobPersistence.setRunning(job1.uuid)
-        jobPersistence.setRunning(job2.uuid)
-        jobPersistence.setRunning(job3.uuid)
+        setRunning(jobPersistence, testingApi, job1.uuid)
+        setRunning(jobPersistence, testingApi, job2.uuid)
+        setRunning(jobPersistence, testingApi, job3.uuid)
         testingApi.runExecutor(executionCapacityProvider = { ExecutionCapacity.Companion.AcceptingNoJob })
         jobPersistence.fetchJob(job4.uuid).expectSuccess().status shouldBeEqual JobStatus.CREATED
 
@@ -61,9 +61,9 @@ class ExecutionCapacityTest : FunSpec({
         val job2 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
         val job3 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
         val job4 = testingApi.submitJob("J1", TestInput(42)).expectSuccess()
-        jobPersistence.setRunning(job1.uuid)
-        jobPersistence.setRunning(job2.uuid)
-        jobPersistence.setRunning(job3.uuid)
+        setRunning(jobPersistence, testingApi, job1.uuid)
+        setRunning(jobPersistence, testingApi, job2.uuid)
+        setRunning(jobPersistence, testingApi, job3.uuid)
         testingApi.runExecutor()
         jobPersistence.fetchJob(job4.uuid).expectSuccess().status shouldBeEqual JobStatus.CREATED
 
@@ -99,10 +99,10 @@ class ExecutionCapacityTest : FunSpec({
             jobPersistence.fetchJob(job5.uuid).expectSuccess().shouldHaveBeenStarted()
         }
 
-        jobPersistence.reset(job5.uuid)
-        jobPersistence.setRunning(job1.uuid)
-        jobPersistence.setRunning(job2.uuid)
-        jobPersistence.setRunning(job3.uuid)
+        reset(jobPersistence, testingApi, job5.uuid)
+        setRunning(jobPersistence, testingApi, job1.uuid)
+        setRunning(jobPersistence, testingApi, job2.uuid)
+        setRunning(jobPersistence, testingApi, job3.uuid)
         testingApi.runExecutor()
         listOf(job4, job5).forEach { jobPersistence.fetchJob(it.uuid).expectSuccess().status shouldBeEqual JobStatus.CREATED }
 

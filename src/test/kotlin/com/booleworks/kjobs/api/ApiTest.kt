@@ -11,11 +11,14 @@ import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.defaultRedis
 import com.booleworks.kjobs.common.newRedisPersistence
 import com.booleworks.kjobs.common.parseTestResult
+import com.booleworks.kjobs.common.right
 import com.booleworks.kjobs.common.ser
 import com.booleworks.kjobs.common.testJobFrameworkWithRedis
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.string.shouldMatch
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
@@ -33,7 +36,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
-import java.util.UUID
+import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -220,6 +223,92 @@ class ApiTest : FunSpec({
         client.post("test/synchronous") { contentType(ContentType.Application.Json); setBody(TestInput(0).ser()) }
             .shouldHaveStatus(HttpStatusCode.OK).bodyAsText() shouldBeEqual "{\n  \"inputValue\" : 0\n}"
         client.get("test/result/$uuid").shouldHaveStatus(HttpStatusCode.OK).bodyAsText() shouldBeEqual "{\n  \"inputValue\" : 0\n}"
+        jobFramework!!.cancelAndJoin()
+    }
+
+    testJobFrameworkWithRedis("test deactivated job deletion") {
+        val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        var jobFramework: kotlinx.coroutines.Job? = null
+        routing {
+            route("test") {
+                jobFramework = JobFramework(defaultInstanceName, persistence) {
+                    maintenanceConfig { jobCheckInterval = 500.milliseconds }
+                    addApi(defaultJobType, this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                        apiConfig {
+                            deleteJobAfterFetchingResult = false
+                        }
+                    }
+                }
+            }
+        }
+        delay(100.milliseconds) // first run of executor should have started
+        var submit = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput().ser()) }
+        submit.status shouldBeEqual HttpStatusCode.OK
+        var uuid = submit.bodyAsText().also { UUID.fromString(it).shouldNotBeNull() }
+        client.get("test/status/$uuid").bodyAsText() shouldBeEqual "CREATED"
+        delay(1.seconds)
+        client.get("test/status/$uuid").bodyAsText() shouldBeEqual "SUCCESS"
+        persistence.fetchAllJobs().right() shouldHaveSize 1 // job not deleted
+        client.get("test/failure/$uuid").bodyAsText() shouldMatch "Cannot return a failure for job with ID [a-zA-Z0-9-]+ and status SUCCESS."
+        persistence.fetchAllJobs().right() shouldHaveSize 1 // job not deleted
+        client.get("test/result/$uuid").parseTestResult() shouldBeEqual TestResult()
+        persistence.fetchAllJobs().right() shouldHaveSize 1 // job not deleted
+
+        submit = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(43, throwException = true).ser()) }
+        submit.status shouldBeEqual HttpStatusCode.OK
+        uuid = submit.bodyAsText().also { UUID.fromString(it).shouldNotBeNull() }
+        client.get("test/status/$uuid").bodyAsText() shouldBeEqual "CREATED"
+        delay(1.seconds)
+        client.get("test/status/$uuid").bodyAsText() shouldBeEqual "FAILURE"
+        persistence.fetchAllJobs().right() shouldHaveSize 2 // job not deleted
+        client.get("test/result/$uuid").bodyAsText() shouldMatch "Cannot return the result for job with ID [a-zA-Z0-9-]+ and status FAILURE."
+        persistence.fetchAllJobs().right() shouldHaveSize 2 // job not deleted
+        client.get("test/failure/$uuid").bodyAsText() shouldMatch "Unexpected exception during computation: Test Exception Message"
+        persistence.fetchAllJobs().right() shouldHaveSize 2 // job not deleted
+
+        jobFramework!!.cancelAndJoin()
+    }
+
+    testJobFrameworkWithRedis("test activated job deletion") {
+        val persistence = newRedisPersistence<TestInput, TestResult>(defaultRedis)
+        var jobFramework: kotlinx.coroutines.Job? = null
+        routing {
+            route("test") {
+                jobFramework = JobFramework(defaultInstanceName, persistence) {
+                    maintenanceConfig { jobCheckInterval = 500.milliseconds }
+                    addApi(defaultJobType, this@route, persistence, { call.receive<TestInput>() }, { call.respond<TestResult>(it) }, defaultComputation) {
+                        apiConfig {
+                            deleteJobAfterFetchingResult = true
+                        }
+                    }
+                }
+            }
+        }
+        delay(100.milliseconds) // first run of executor should have started
+        var submit = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput().ser()) }
+        submit.status shouldBeEqual HttpStatusCode.OK
+        var uuid = submit.bodyAsText().also { UUID.fromString(it).shouldNotBeNull() }
+        client.get("test/status/$uuid").bodyAsText() shouldBeEqual "CREATED"
+        delay(1.seconds)
+        client.get("test/status/$uuid").bodyAsText() shouldBeEqual "SUCCESS"
+        persistence.fetchAllJobs().right() shouldHaveSize 1 // job not deleted yet
+        client.get("test/failure/$uuid").bodyAsText() shouldMatch "Cannot return a failure for job with ID [a-zA-Z0-9-]+ and status SUCCESS."
+        persistence.fetchAllJobs().right() shouldHaveSize 1 // job not deleted after fetching failure result since job was successful
+        client.get("test/result/$uuid").parseTestResult() shouldBeEqual TestResult()
+        persistence.fetchAllJobs().right() shouldHaveSize 0 // job deleted after fetching result
+
+        submit = client.post("test/submit") { contentType(ContentType.Application.Json); setBody(TestInput(43, throwException = true).ser()) }
+        submit.status shouldBeEqual HttpStatusCode.OK
+        uuid = submit.bodyAsText().also { UUID.fromString(it).shouldNotBeNull() }
+        client.get("test/status/$uuid").bodyAsText() shouldBeEqual "CREATED"
+        delay(1.seconds)
+        client.get("test/status/$uuid").bodyAsText() shouldBeEqual "FAILURE"
+        persistence.fetchAllJobs().right() shouldHaveSize 1 // job not deleted yet
+        client.get("test/result/$uuid").bodyAsText() shouldMatch "Cannot return the result for job with ID [a-zA-Z0-9-]+ and status FAILURE."
+        persistence.fetchAllJobs().right() shouldHaveSize 1 // job not deleted after fetching result since job failed
+        client.get("test/failure/$uuid").bodyAsText() shouldMatch "Unexpected exception during computation: Test Exception Message"
+        persistence.fetchAllJobs().right() shouldHaveSize 0 // job deleted after fetching failure result
+
         jobFramework!!.cancelAndJoin()
     }
 })

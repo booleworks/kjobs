@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-RC24] - 2025-08-xx
+
+### Changed
+- Improved `RedisLongPollManager` performance by using a single Redis connection for publishing a completed job instead of creating a new one each time.
+- Improved `RedisPersistence` performance by re-using a couple of Redis connections instead of creating a new one each time.
+- Improved performance by adding a `JobExecutionPool` that keeps track of the instance's running job instead of fetching all jobs from the job persistence again.
+- Improved performance job selection: Loop over fetched job candidates and try to reserve a job instead of just trying the first job. This avoids re-fetching all jobs again after the first try.
+- Improved job reservation for Redis by using a Lua script to avoid slower `transactionWithPreconditions` function
+- Improved performance by avoiding second check for stolen jobs, since the Lua script used for the job reservation is performed atomically.
+- Improved job timeout update by only updating timeout field and avoid using a transaction.
+- Improved performance of fetching all jobs with a specific status (function `allJobsWithStatus`).
+- Improved performance of updating a heartbeat (`updateHeartbeat`) and checking the instance's heartbeat in the liveness check (`livenessCheck`)
+- Minor dependency updates
+
+### Added
+- Configuration parameter `RedisConfig.scanLimit` to configure the limit of the Redis scan operations. The default is 1000 and has the same value as the previously hardcoded limit.
+- Configuration parameter `RedisConfig.heartbeatExpiration` to configure the expiration of a heartbeat in Redis. A heartbeat has an expiration to prevent heartbeat entries of previous instances to remain forever in Redis. The default is 1 day.
+- Configuration parameter `deleteJobAfterFetchingResult` in `ApiConfig`. If enabled a job is deleted after fetching the result (either via the result route, the failure route or the sync route). Default is `false`.
+
 ## [1.0.0-RC23] - 2025-05-07
 
 ### Changed

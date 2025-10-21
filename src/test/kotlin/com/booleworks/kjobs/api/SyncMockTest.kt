@@ -11,7 +11,10 @@ import com.booleworks.kjobs.common.defaultComputation
 import com.booleworks.kjobs.common.defaultInstanceName
 import com.booleworks.kjobs.common.expectSuccess
 import com.booleworks.kjobs.common.parseTestResult
+import com.booleworks.kjobs.common.right
 import com.booleworks.kjobs.data.JobStatus
+import com.booleworks.kjobs.data.PersistenceAccessResult
+import com.booleworks.kjobs.data.result
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.equals.shouldBeEqual
@@ -53,6 +56,7 @@ class SyncMockTest : FunSpec({
             client.post("test/synchronous") { setBody("42") }.parseTestResult() shouldBeEqual TestResult(42)
             client.post("test/synchronous") { setBody("43") }.parseTestResult() shouldBeEqual TestResult(43)
         }
+        dataPersistence.fetchAllJobs().right() shouldHaveSize 2 // jobs are kept by default
         jobFramework!!.cancelAndJoin()
     }
 
@@ -116,8 +120,66 @@ class SyncMockTest : FunSpec({
             }
             val response = client.post("test/synchronous") { setBody("42") }
             response.status shouldBeEqual HttpStatusCode.InternalServerError
-            response.bodyAsText() shouldBeEqual "Computation failed with message: Unexpected exception during computation: Test Exception Message"
+            response.bodyAsText() shouldBeEqual "Unexpected exception during computation: Test Exception Message"
         }
+        dataPersistence.fetchAllJobs().right() shouldHaveSize 1 // jobs are kept
+        jobFramework!!.cancelAndJoin()
+    }
+
+    test("test activated job deletion for successful computation") {
+        val jobPersistence = HashMapJobPersistence()
+        val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
+        testApplication {
+            routing {
+                route("test") {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
+                        addApi(
+                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt()) },
+                            { call.respond(it) }, defaultComputation
+                        ) {
+                            apiConfig {
+                                deleteJobAfterFetchingResult = true
+                            }
+                            enableSynchronousResource { checkInterval = 5.milliseconds }
+                        }
+                        maintenanceConfig { jobCheckInterval = 5.milliseconds }
+                    }
+                }
+            }
+            client.post("test/synchronous") { setBody("42") }.parseTestResult() shouldBeEqual TestResult(42)
+            client.post("test/synchronous") { setBody("43") }.parseTestResult() shouldBeEqual TestResult(43)
+        }
+        dataPersistence.fetchAllJobs() shouldBeEqual PersistenceAccessResult.result(listOf()) // jobs are deleted
+        jobFramework!!.cancelAndJoin()
+    }
+
+    test("test activated job deletion for failure computation") {
+        val jobPersistence = HashMapJobPersistence()
+        val dataPersistence = HashMapDataPersistence<TestInput, TestResult>(jobPersistence)
+        var jobFramework: kotlinx.coroutines.Job? = null
+        testApplication {
+            routing {
+                route("test") {
+                    jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
+                        addApi(
+                            "J1", this@route, dataPersistence, { TestInput(call.receiveText().toInt(), throwException = true) },
+                            { call.respond(it) }, defaultComputation
+                        ) {
+                            apiConfig {
+                                deleteJobAfterFetchingResult = true
+                            }
+                            enableSynchronousResource { checkInterval = 10.milliseconds }
+                        }
+                        maintenanceConfig { jobCheckInterval = 5.milliseconds }
+                    }
+                }
+            }
+            val response = client.post("test/synchronous") { setBody("42") }
+            response.status shouldBeEqual HttpStatusCode.InternalServerError
+            response.bodyAsText() shouldBeEqual "Unexpected exception during computation: Test Exception Message"
+        }
+        dataPersistence.fetchAllJobs() shouldBeEqual PersistenceAccessResult.result(listOf()) // jobs are deleted
         jobFramework!!.cancelAndJoin()
     }
 })

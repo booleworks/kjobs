@@ -18,4 +18,4 @@ fun FunSpec.testBlocking(name: String, block: suspend CoroutineScope.() -> Unit)
     }
 }
 
-val RedisServer.lettuceClient: RedisClient get() = RedisClient.create(RedisURI(host, bindPort, 1.minutes.toJavaDuration()))
+val RedisServer.lettuceClient: RedisClient get() = RedisClient.create(RedisURI("localhost", bindPort, 1.minutes.toJavaDuration()))

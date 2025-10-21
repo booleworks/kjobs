@@ -8,6 +8,7 @@ import com.booleworks.kjobs.api.persistence.DataTransactionalPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.api.persistence.JobTransactionalPersistence
 import com.booleworks.kjobs.common.unwrapOrReturnFirstError
+import com.booleworks.kjobs.control.logTime
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
@@ -24,20 +25,26 @@ import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisFuture
 import io.lettuce.core.ScanArgs
 import io.lettuce.core.ScanIterator
+import io.lettuce.core.ScriptOutputType
+import io.lettuce.core.SetArgs
+import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.api.async.RedisAsyncCommands
 import io.lettuce.core.codec.ByteArrayCodec
 import io.lettuce.core.codec.CompressionCodec
 import io.lettuce.core.codec.CompressionCodec.CompressionType.GZIP
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.intellij.lang.annotations.Language
 import org.slf4j.LoggerFactory
+import org.slf4j.event.Level
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.time.toJavaDuration
 
 
 private val logger = LoggerFactory.getLogger("com.booleworks.kjobs.RedisDataPersistence")
-
-private const val SCAN_LIMIT = 1000L
 
 /**
  * [JobPersistence] implementation for Redis based on [Lettuce](https://lettuce.io).
@@ -48,30 +55,35 @@ open class RedisJobPersistence(
     val redisClient: RedisClient,
     protected val config: RedisConfig = DefaultRedisConfig(),
 ) : JobPersistence {
-    protected val stringCommands = redisClient.connect().async()
 
-    override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> {
-        val connection = redisClient.connect()
-        val commands = connection.async()
-        return try {
+    // the standard connection can be shared among threads without locking since it is NOT used for pipelines (setAutoFlushCommands = false/true) NOR for transactions (multi/exec)
+    protected val standardConnection: StatefulRedisConnection<String, String> = redisClient.connect()
+    protected val standardStringCommands: RedisAsyncCommands<String, String> = standardConnection.async()
+
+    protected val pipelineConnectionMutex = Mutex()
+    protected val pipelineConnection: StatefulRedisConnection<String, String> = redisClient.connect()
+
+    protected val transactionStringConnectionMutex = Mutex()
+    protected val transactionStringConnection: StatefulRedisConnection<String, String> = redisClient.connect()
+
+    override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = try {
+        transactionStringConnectionMutex.withLock {
+            val commands = transactionStringConnection.async()
             commands.multi().get()
             RedisJobTransactionalPersistence(commands, config).run { block() }
             commands.exec().get()
-            PersistenceAccessResult.success
-        } catch (exception: Exception) {
-            return handleTransactionException(exception)
-        } finally {
-            connection.close()
         }
+        PersistenceAccessResult.success
+    } catch (exception: Exception) {
+        handleTransactionException(exception)
     }
 
     override suspend fun transactionWithPreconditions(
         preconditions: Map<String, (Job) -> Boolean>,
         block: suspend JobTransactionalPersistence.() -> Unit
-    ): PersistenceAccessResult<Unit> {
-        val connection = redisClient.connect()
-        val commands = connection.async()
-        return try {
+    ): PersistenceAccessResult<Unit> = try {
+        val transactionResult = transactionStringConnectionMutex.withLock {
+            val commands = transactionStringConnection.async()
             preconditions.forEach { (uuid, condition) ->
                 commands.watch(uuid)
                 val job = commands.hgetall(config.jobKey(uuid)).get()
@@ -82,36 +94,71 @@ open class RedisJobPersistence(
                     return PersistenceAccessResult.modified()
                 }
             }
-            commands.multi().get()
-            RedisJobTransactionalPersistence(commands, config).run { block() }
-            val transactionResult = commands.exec().get()
-            if (transactionResult == null || transactionResult.wasDiscarded()) {
-                logger.debug(
-                    "Transaction with precondition was not executed ({})",
-                    transactionResult?.let { "Transaction was discarded" } ?: "Transaction was null")
-                PersistenceAccessResult.modified()
-            } else {
-                PersistenceAccessResult.success
+            logTime(logger, Level.TRACE, { "Transaction with precondition in $it" }) {
+                commands.multi().get()
+                RedisJobTransactionalPersistence(commands, config).run { block() }
+                commands.exec().get()
             }
-        } catch (exception: Exception) {
-            return handleTransactionException(exception)
-        } finally {
-            connection.close()
+        }
+        if (transactionResult == null || transactionResult.wasDiscarded()) {
+            logger.debug(
+                "Transaction with precondition was not executed ({})",
+                transactionResult?.let { "Transaction was discarded" } ?: "Transaction was null")
+            PersistenceAccessResult.modified()
+        } else {
+            PersistenceAccessResult.success
+        }
+    } catch (exception: Exception) {
+        handleTransactionException(exception)
+    }
+
+    override suspend fun tryReserveJob(job: Job, instanceName: String): PersistenceAccessResult<Unit> {
+        try {
+            val keyArguments: Array<String> = arrayOf(config.jobKey(job.uuid))
+            val valueArguments: Array<String?> = arrayOf(instanceName, job.startedAt?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), job.timeout?.toString())
+            return when (val result = standardStringCommands.eval<String>(LuaScripts.reserveJobIfStatusIsCreated, ScriptOutputType.STATUS, keyArguments, *valueArguments).get()) {
+                "OK" -> PersistenceAccessResult.success
+                "MODIFIED" -> PersistenceAccessResult.modified()
+                else -> PersistenceAccessResult.internalError("Unknown result: $result")
+            }
+        } catch (e: Exception) {
+            logger.error("Trying to reserve job failed with exception.", e)
+            return PersistenceAccessResult.internalError(e.message ?: "Unknown error")
         }
     }
 
-    override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> = getAllJobsBy<Unit>()
+    override suspend fun updateJobTimeout(uuid: String, timeout: LocalDateTime?): PersistenceAccessResult<Unit> {
+        standardStringCommands.hset(config.jobKey(uuid), "timeout", timeout?.toString())
+        return PersistenceAccessResult.success
+    }
+
+    override suspend fun fetchAllJobs(): PersistenceAccessResult<List<Job>> =
+        logTime(logger, Level.TRACE, { "Fetched all jobs in $it" }) { getAllJobsBy<Unit>() }
 
     override suspend fun fetchJob(uuid: String): PersistenceAccessResult<Job> = withContext(Dispatchers.IO) {
-        stringCommands.hgetall(config.jobKey(uuid)).get()
+        standardStringCommands.hgetall(config.jobKey(uuid)).get()
             .ifEmpty { return@withContext PersistenceAccessResult.uuidNotFound(uuid) }
             .redisMapToJob(uuid)
     }
 
+    override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
+        // heartbeat with expiration to prevent heartbeat entries of previous instances to remain forever in Redis
+        val setArgs = SetArgs.Builder.ex(config.heartbeatExpiration.toJavaDuration())
+        standardStringCommands.set(config.heartbeatKey(heartbeat.instanceName), heartbeat.lastBeat.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), setArgs)
+        return PersistenceAccessResult.success
+    }
+
+    override suspend fun fetchHeartbeat(instanceName: String, since: LocalDateTime): PersistenceAccessResult<Heartbeat?> = withContext(Dispatchers.IO) {
+        val heartbeatKey = config.heartbeatKey(instanceName)
+        val lastBeat = standardStringCommands.get(heartbeatKey).get() ?: run { return@withContext PersistenceAccessResult.notFound() }
+        val heartbeat = Heartbeat(instanceName, LocalDateTime.parse(lastBeat))
+        return@withContext PersistenceAccessResult.result(if (heartbeat.lastBeat.isBefore(since)) null else heartbeat)
+    }
+
     override suspend fun fetchHeartbeats(since: LocalDateTime): PersistenceAccessResult<List<Heartbeat>> = withContext(Dispatchers.IO) {
-        val heartbeatKeys = scanKeys(config.heartbeatPattern).toTypedArray()
+        val heartbeatKeys = standardConnection.scanKeys(config.heartbeatPattern).toTypedArray()
             .ifEmpty { return@withContext PersistenceAccessResult.result(emptyList()) }
-        val plainHeartbeats = stringCommands.mget(*heartbeatKeys).get() ?: run { return@withContext PersistenceAccessResult.notFound() }
+        val plainHeartbeats = standardStringCommands.mget(*heartbeatKeys).get() ?: run { return@withContext PersistenceAccessResult.notFound() }
         val filteredHeartbeats = plainHeartbeats
             .map { beat -> Heartbeat(config.extractInstanceName(beat.key), LocalDateTime.parse(beat.value)) }
             .filter { !it.lastBeat.isBefore(since) }
@@ -119,28 +166,36 @@ open class RedisJobPersistence(
     }
 
     override suspend fun allJobsWithStatus(status: JobStatus): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy({ transaction, key -> transaction.hget(key, "status") }) { it == status.toString() }
+        logTime(logger, Level.TRACE, { "Fetching all jobs with $status in $it" }) {
+            getAllJobsBy(status, config.jobPattern)
+        }
 
     override suspend fun allJobsOfInstance(status: JobStatus, instance: String): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy({ commands, key -> commands.hmget(key, "status", "executingInstance") }) {
-            it.get("status") == status.toString() && it.get("executingInstance") == instance
+        logTime(logger, Level.TRACE, { "Fetching all jobs of $status and instance $instance in $it" }) {
+            getAllJobsBy({ commands, key -> commands.hmget(key, "status", "executingInstance") }) {
+                it.get("status") == status.toString() && it.get("executingInstance") == instance
+            }
         }
 
     override suspend fun allJobsFinishedBefore(date: LocalDateTime): PersistenceAccessResult<List<Job>> =
-        getAllJobsBy({ commands, key -> commands.hmget(key, "status", "finishedAt") }) {
-            it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
-                    && it.get("finishedAt")?.let(LocalDateTime::parse)?.isBefore(date) ?: false
+        logTime(logger, Level.TRACE, { "Fetching all jobs finished before $date in $it" }) {
+            getAllJobsBy({ commands, key -> commands.hmget(key, "status", "finishedAt") }) {
+                it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
+                        && it.get("finishedAt")?.let(LocalDateTime::parse)?.isBefore(date) ?: false
+            }
         }
 
     override suspend fun allJobsExceedingDbJobCount(maxNumberKeptJobs: Int): PersistenceAccessResult<List<Job>> {
-        val overallKeyCount = scanKeys(config.jobPattern).count()
+        val overallKeyCount = standardConnection.scanKeys(config.jobPattern).count()
         val exceedingJobCount = overallKeyCount - maxNumberKeptJobs
         return if (exceedingJobCount > 0) {
-            getAllJobsBy({ commands, key -> commands.hmget(key, "status") }) {
-                it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
-            }.orQuitWith {
-                logger.error("Failed fetching jobs for job count: " + it.message)
-                return PersistenceAccessResult.internalError<List<Job>>(it.message)
+            logTime(logger, Level.TRACE, { "Fetched jobs for job count in $it" }) {
+                getAllJobsBy({ commands, key -> commands.hmget(key, "status") }) {
+                    it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
+                }.orQuitWith {
+                    logger.error("Failed fetching jobs for job count: " + it.message)
+                    return PersistenceAccessResult.internalError<List<Job>>(it.message)
+                }
             }.let { jobs ->
                 PersistenceAccessResult.result(jobs.sortedBy { it.createdAt }.take(exceedingJobCount))
             }
@@ -153,33 +208,62 @@ open class RedisJobPersistence(
         // TODO use pipelining
         return PersistenceAccessResult.result(
             uuids.map { uuid ->
-                stringCommands.hget(config.jobKey(uuid), "status").get()?.let { status -> JobStatus.valueOf(status) }
+                standardStringCommands.hget(config.jobKey(uuid), "status").get()?.let { status -> JobStatus.valueOf(status) }
                     ?: return@fetchStates PersistenceAccessResult.uuidNotFound(uuid)
             })
     }
 
-    private fun <T> getAllJobsBy(
+    private suspend fun <T> getAllJobsBy(
         query: ((RedisAsyncCommands<String, String>, String) -> RedisFuture<T>)? = null,
         condition: ((T) -> Boolean)? = null
-    ): PersistenceAccessResult<List<Job>> = redisClient.connect().use { redisConnection ->
-        val stringCommands = redisConnection.async()
-        val allJobKeys = scanKeys(config.jobPattern)
-        redisConnection.setAutoFlushCommands(false)
+    ): PersistenceAccessResult<List<Job>> = pipelineConnectionMutex.withLock {
+        val stringCommands = pipelineConnection.async()
+        val allJobKeys = pipelineConnection.scanKeys(config.jobPattern)
+        pipelineConnection.setAutoFlushCommands(false)
         val relevantKeys = if (query != null && condition != null) {
             val keyQueries = allJobKeys.map { it to query(stringCommands, it) }
-            redisConnection.flushCommands()
+            pipelineConnection.flushCommands()
             keyQueries.filter { condition(it.second.get()) }.map { it.first }
         } else {
             allJobKeys
         }
         val jobFutures = relevantKeys.map { it to stringCommands.hgetall(it) }
-        redisConnection.flushCommands()
-        jobFutures.map { it.second.get().redisMapToJob(config.extractUuid(it.first)) }
+        pipelineConnection.flushCommands()
+        val result = jobFutures.map { it.second.get().redisMapToJob(config.extractUuid(it.first)) }
             .unwrapOrReturnFirstError { return@getAllJobsBy it }
+
+        pipelineConnection.setAutoFlushCommands(true)
+        return result
     }
 
-    private fun scanKeys(keyPattern: String): List<String> = redisClient.connect().use { redisConnection ->
-        ScanIterator.scan(redisConnection.sync(), ScanArgs().match(keyPattern).limit(SCAN_LIMIT)).asSequence().toList()
+    private fun StatefulRedisConnection<String, String>.scanKeys(keyPattern: String): List<String> =
+        logTime(logger, Level.TRACE, { "Scanned keys of pattern $keyPattern in $it" }) {
+            ScanIterator.scan(sync(), ScanArgs().match(keyPattern).limit(config.scanLimit)).asSequence().toList()
+        }
+
+    private fun getAllJobsBy(status: JobStatus, jobPattern: String): PersistenceAccessResult<List<Job>> {
+        val valueArguments: Array<String> = arrayOf(status.name, jobPattern, config.scanLimit.toString())
+        val jobs = standardStringCommands.eval<List<List<String>>>(LuaScripts.filterJobs, ScriptOutputType.OBJECT, arrayOf<String>(), *valueArguments).get()
+        return jobs.map {
+            val redisMap = it.redisListToRedisMap()
+            redisMap.redisMapToJob(config.extractUuid(redisMap["redis-key"]!!))
+        }.unwrapOrReturnFirstError { return@getAllJobsBy it }
+    }
+
+    /**
+     * Converts a Redis list with map data into a map instance.
+     * Assumption: The Redis list contains the map entries as consecutive key-value list entries.
+     * Example: `["key1", "value1", "key2", "value2"]`
+     */
+    private fun List<String>.redisListToRedisMap(): Map<String, String> {
+        if (size % 2 == 1) {
+            error("Unexpected number of elements in Redis Job list")
+        }
+        return 0.until(size / 2).associate { i ->
+            val key = get(i * 2)
+            val value = get(i * 2 + 1)
+            key to value
+        }
     }
 }
 
@@ -208,11 +292,6 @@ open class RedisJobTransactionalPersistence(
         stringCommands.del(config.jobKey(uuid), config.inputKey(uuid), config.resultKey(uuid), config.failureKey(uuid))
         return PersistenceAccessResult.success
     }
-
-    override suspend fun updateHeartbeat(heartbeat: Heartbeat): PersistenceAccessResult<Unit> {
-        stringCommands.set(config.heartbeatKey(heartbeat.instanceName), heartbeat.lastBeat.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
-        return PersistenceAccessResult.success
-    }
 }
 
 /**
@@ -228,53 +307,58 @@ open class RedisDataPersistence<INPUT, RESULT>(
     protected val resultDeserializer: (ByteArray) -> RESULT,
     config: RedisConfig = DefaultRedisConfig(),
 ) : RedisJobPersistence(redisClient, config), DataPersistence<INPUT, RESULT> {
-    protected val byteArrayCommands: RedisAsyncCommands<ByteArray, ByteArray> = newByteArrayConnection().async()
-    protected fun newByteArrayConnection() = redisClient
+
+    // the standard connection can be shared among threads without looking since it is NOT used for pipelines (setAutoFlushCommands = false/true) NOR for transactions (multi/exec)
+    protected val standardByteArrayConnection: StatefulRedisConnection<ByteArray, ByteArray> = newByteArrayConnection()
+    protected val standardByteArrayCommands: RedisAsyncCommands<ByteArray, ByteArray> = standardByteArrayConnection.async()
+
+    protected val transactionByteArrayConnectionMutex = Mutex()
+    protected val transactionByteArrayConnection: StatefulRedisConnection<ByteArray, ByteArray> = newByteArrayConnection()
+
+    protected fun newByteArrayConnection(): StatefulRedisConnection<ByteArray, ByteArray> = redisClient
         .connect(if (config.useCompression) CompressionCodec.valueCompressor(ByteArrayCodec.INSTANCE, GZIP) else ByteArrayCodec.INSTANCE)
 
     override suspend fun transaction(block: suspend JobTransactionalPersistence.() -> Unit): PersistenceAccessResult<Unit> = dataTransaction(block)
 
-    override suspend fun <T> dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> T): PersistenceAccessResult<T> {
-        val stringConnection = redisClient.connect()
-        val stringCommandsForTransaction = stringConnection.async()
-        val byteArrayConnection = newByteArrayConnection()
-        val byteArrayCommandsForTransaction = byteArrayConnection.async()
-        return try {
-            stringCommandsForTransaction.multi().get()
-            byteArrayCommandsForTransaction.multi().get()
-            RedisDataTransactionalPersistence(stringCommandsForTransaction, byteArrayCommandsForTransaction, inputSerializer, resultSerializer, config)
-                .run { block() }
-                .also {
-                    // The order here is relevant for storing new jobs. If we finish the string commands transaction first,
-                    // other instances/threads may find the new job but not its input (especially since inputs may be quite large).
-                    byteArrayCommandsForTransaction.exec().get()
-                    stringCommandsForTransaction.exec().get()
-                }.let { PersistenceAccessResult.result(it) }
-        } catch (exception: Exception) {
-            // TODO this may fail if one transaction already succeeded
-            stringCommandsForTransaction.discard().get()
-            byteArrayCommandsForTransaction.discard().get()
-            return handleTransactionException(exception)
-        } finally {
-            stringConnection.close()
-            byteArrayConnection.close()
+    override suspend fun <T> dataTransaction(block: suspend DataTransactionalPersistence<INPUT, RESULT>.() -> T): PersistenceAccessResult<T> =
+        transactionStringConnectionMutex.withLock {
+            transactionByteArrayConnectionMutex.withLock {
+                val stringCommandsForTransaction = transactionStringConnection.async()
+                val byteArrayCommandsForTransaction = transactionByteArrayConnection.async()
+                return try {
+                    stringCommandsForTransaction.multi().get()
+                    byteArrayCommandsForTransaction.multi().get()
+                    RedisDataTransactionalPersistence(stringCommandsForTransaction, byteArrayCommandsForTransaction, inputSerializer, resultSerializer, config)
+                        .run { block() }
+                        .also {
+                            // The order here is relevant for storing new jobs. If we finish the string commands transaction first,
+                            // other instances/threads may find the new job but not its input (especially since inputs may be quite large).
+                            byteArrayCommandsForTransaction.exec().get()
+                            stringCommandsForTransaction.exec().get()
+                        }.let { PersistenceAccessResult.result(it) }
+                } catch (exception: Exception) {
+                    // TODO this may fail if one transaction already succeeded
+                    stringCommandsForTransaction.discard().get()
+                    byteArrayCommandsForTransaction.discard().get()
+                    handleTransactionException(exception)
+                }
+            }
         }
-    }
 
     override suspend fun fetchInput(uuid: String): PersistenceAccessResult<INPUT> = withContext(Dispatchers.IO) {
-        byteArrayCommands.get(config.inputKey(uuid).toByteArray()).get()
+        standardByteArrayCommands.get(config.inputKey(uuid).toByteArray()).get()
             ?.let { PersistenceAccessResult.result(inputDeserializer(it)) }
             ?: PersistenceAccessResult.uuidNotFound(uuid)
     }
 
     override suspend fun fetchResult(uuid: String): PersistenceAccessResult<RESULT> = withContext(Dispatchers.IO) {
-        byteArrayCommands.get(config.resultKey(uuid).toByteArray()).get()
+        standardByteArrayCommands.get(config.resultKey(uuid).toByteArray()).get()
             ?.let { PersistenceAccessResult.result(resultDeserializer(it)) }
             ?: PersistenceAccessResult.uuidNotFound(uuid)
     }
 
     override suspend fun fetchFailure(uuid: String): PersistenceAccessResult<String> = withContext(Dispatchers.IO) {
-        stringCommands.get(config.failureKey(uuid)).get()
+        standardStringCommands.get(config.failureKey(uuid)).get()
             ?.let { PersistenceAccessResult.result(it) }
             ?: PersistenceAccessResult.uuidNotFound(uuid)
     }
@@ -312,7 +396,7 @@ open class RedisDataTransactionalPersistence<INPUT, RESULT>(
 
 private fun <T> handleTransactionException(ex: Throwable): PersistenceAccessResult<T> {
     val message = ex.message ?: "Undefined error"
-    logger.error("Jedis transaction failed with: $message", ex)
+    logger.error("Redis transaction failed with: $message", ex)
     return PersistenceAccessResult.internalError(message)
 }
 
@@ -370,3 +454,53 @@ internal fun Map<String, String>.redisMapToJob(uuidIn: String? = null): Persiste
 private const val TAG_SEPARATOR = """\\\\"""
 
 fun <K, V> List<KeyValue<K, V>>.get(key: K): V? = firstOrNull { it.key == key }?.getValueOrElse(null)
+
+private object LuaScripts {
+
+    // input: 1 key (job key), 3 values (executing instance, started at, timeout)
+    // output: "OK" if reservation was successful, "MODIFIED" if job was already reserved
+    @Language("Lua")
+    val reserveJobIfStatusIsCreated = """
+        local jobId = KEYS[1]
+        local instanceName = ARGV[1]
+        local startedAt = ARGV[2]
+        local timeout = ARGV[3]
+
+        if redis.call("hget", jobId,"status") == "CREATED"
+        then
+            return redis.call("hmset", jobId, "executingInstance", instanceName, "startedAt", startedAt, "status", "RUNNING", "timeout", timeout)
+        else
+            return "MODIFIED"
+        end
+    """.trimIndent()
+
+    // input: 0 keys, 3 values (status, job pattern, scan limit)
+    // output: list of all jobs that match the given status
+    @Language("Lua")
+    val filterJobs = """
+        local status = ARGV[1]
+        local jobPattern = ARGV[2]
+        local scanLimit = ARGV[3]
+
+        local cursor = "0"
+        local jobs = {}
+
+        repeat
+            local result = redis.call("SCAN", cursor, "MATCH", jobPattern, "COUNT", scanLimit)
+            cursor = result[1]
+            local keys = result[2]
+
+            for _, key in ipairs(keys) do
+                local jobStatus = redis.call("HGET", key, "status")
+                if jobStatus == status then
+                    local all = redis.call("HGETALL", key)
+                    -- we add an additional pair ("redis-key" to key) to create the Job instance more easily later
+                    table.insert(all, "redis-key")
+                    table.insert(all, key)
+                    table.insert(jobs, all)
+                end
+            end
+        until cursor == "0"
+        return jobs
+    """.trimIndent()
+}

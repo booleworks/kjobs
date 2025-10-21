@@ -7,6 +7,7 @@ import com.booleworks.kjobs.api.JobFrameworkBuilder.MaintenanceConfig
 import com.booleworks.kjobs.api.persistence.DataPersistence
 import com.booleworks.kjobs.api.persistence.JobPersistence
 import com.booleworks.kjobs.common.Either
+import com.booleworks.kjobs.control.JobExecutionPool
 import com.booleworks.kjobs.control.MainJobExecutor
 import com.booleworks.kjobs.control.Maintenance
 import com.booleworks.kjobs.control.SpecificExecutor
@@ -59,6 +60,7 @@ class JobFrameworkTestingApi internal constructor(
     private val maintenanceConfig: MaintenanceConfig,
     private val cancellationConfig: JobFrameworkBuilder.CancellationConfig,
     private val maxRestartsPerType: Map<String, Int>,
+    private val jobExecutionPool: JobExecutionPool = JobExecutionPool()
 ) {
     /**
      * Runs the executor *once* with the given optional parameters. This function blocks until the
@@ -70,7 +72,8 @@ class JobFrameworkTestingApi internal constructor(
         executionCapacityProvider: ExecutionCapacityProvider = executorConfig.executionCapacityProvider,
         jobPrioritizer: JobPrioritizer = executorConfig.jobPrioritizer,
         tagMatcher: TagMatcher = executorConfig.tagMatcher,
-        jobCancellationQueue: AtomicReference<Set<String>> = AtomicReference(setOf())
+        jobCancellationQueue: AtomicReference<Set<String>> = AtomicReference(setOf()),
+        jobExecutionPool: JobExecutionPool = this.jobExecutionPool
     ) = runBlocking(Dispatchers.Default) {
         MainJobExecutor(
             jobPersistence,
@@ -80,7 +83,8 @@ class JobFrameworkTestingApi internal constructor(
             tagMatcher,
             cancellationConfig,
             jobCancellationQueue,
-            executorsPerType
+            executorsPerType,
+            jobExecutionPool
         ).execute(executorConfig.computationDispatcher)?.join()
     }
 
@@ -150,4 +154,14 @@ class JobFrameworkTestingApi internal constructor(
      */
     fun cancelJob(job: Job): Either<String, String> =
         runBlocking { com.booleworks.kjobs.control.cancelJob(job, jobPersistence) }
+
+    /**
+     * Adds the given job to the [JobExecutionPool] instance.
+     */
+    fun addJobToJobExecutionPool(job: Job) = jobExecutionPool.addJob(job)
+
+    /**
+     * Removes the given job from the [JobExecutionPool] instance.
+     */
+    fun removeJobFromJobExecutionPool(uuid: String) = jobExecutionPool.removeJob(uuid)
 }
