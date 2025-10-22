@@ -59,8 +59,9 @@
     <version.jacoco>0.8.14</version.jacoco>
     <version.dokka>2.1.0</version.dokka>
     <version.detekt>1.23.8</version.detekt>
-    <version.maven-gpg>1.6</version.maven-gpg>
-    <version.nexus-staging>1.7.0</version.nexus-staging>
+
+    <version.maven-gpg>3.2.8</version.maven-gpg>
+    <version.central-publishing>0.9.0</version.central-publishing>
   </properties>
 
   <build>
@@ -356,14 +357,12 @@
         <plugins>
           <!-- Deploy to Maven Central -->
           <plugin>
-            <groupId>org.sonatype.plugins</groupId>
-            <artifactId>nexus-staging-maven-plugin</artifactId>
-            <version>${version.nexus-staging}</version>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>${version.central-publishing}</version>
             <extensions>true</extensions>
             <configuration>
-              <serverId>ossrh-s01</serverId>
-              <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
-              <autoReleaseAfterClose>false</autoReleaseAfterClose>
+              <publishingServerId>central</publishingServerId>
             </configuration>
           </plugin>
 
