@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0-RC24] - 2025-08-xx
+## [1.0.0] - 2025-10-22
 
 ### Changed
 - Improved `RedisLongPollManager` performance by using a single Redis connection for publishing a completed job instead of creating a new one each time.
@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved performance of updating a heartbeat (`updateHeartbeat`) and checking the instance's heartbeat in the liveness check (`livenessCheck`)
 - Major dependency update to ktor 3.3.1 and according refactoring for breaking changes
 - Update Lettuce to 6.8.1.RELEASE, Jackson to 2.20.0
+- Update to JUnit and Kotest version 6.x
 - Minor dependency updates
 
 ### Added
