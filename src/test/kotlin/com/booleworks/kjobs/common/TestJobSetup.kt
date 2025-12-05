@@ -47,7 +47,7 @@ data class TestInput(val value: Int = 0, val expectedDelay: Int = 1, val throwEx
 data class TestResult(val inputValue: Int = 0)
 
 inline fun <reified INPUT, reified RESULT> newRedisPersistence(redis: RedisServer = defaultRedis) = RedisDataPersistence<INPUT, RESULT>(
-    redis.lettuceClient,
+    redis.glideClient,
     { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
     { jacksonObjectMapperWithTime().writeValueAsBytes(it) },
     { jacksonObjectMapperWithTime().readValue(it) },

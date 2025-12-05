@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.booleworks</groupId>
   <artifactId>kjobs</artifactId>
-  <version>1.0.0</version>
+  <version>1.1.0-FEATURE-GLIDE</version>
   <packaging>jar</packaging>
 
   <name>Kotlin Job Framework</name>
@@ -43,7 +43,7 @@
     <version.kotlin>2.2.20</version.kotlin>
     <version.ktor>3.3.1</version.ktor>
     <version.slf4j>2.0.17</version.slf4j>
-    <version.lettuce>6.8.1.RELEASE</version.lettuce>
+    <version.glide>2.2.0</version.glide>
 
     <version.kotest>6.0.4</version.kotest>
     <version.junit>6.0.0</version.junit>
@@ -233,11 +233,12 @@
       <version>${version.slf4j}</version>
     </dependency>
 
-    <!-- Redis access -->
+    <!-- TODO add linux support  -->
     <dependency>
-      <groupId>io.lettuce</groupId>
-      <artifactId>lettuce-core</artifactId>
-      <version>${version.lettuce}</version>
+      <groupId>io.valkey</groupId>
+      <artifactId>valkey-glide</artifactId>
+      <classifier>osx-aarch_64</classifier>
+      <version>${version.glide}</version>
     </dependency>
 
     <!-- Testing Framework -->

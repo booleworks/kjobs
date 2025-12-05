@@ -7,7 +7,7 @@ import com.booleworks.kjobs.api.persistence.hashmap.HashMapJobPersistence
 import com.booleworks.kjobs.api.persistence.redis.RedisJobPersistence
 import com.booleworks.kjobs.common.defaultJobType
 import com.booleworks.kjobs.common.expectSuccess
-import com.booleworks.kjobs.common.lettuceClient
+import com.booleworks.kjobs.common.glideClient
 import com.booleworks.kjobs.data.Heartbeat
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
@@ -28,7 +28,7 @@ class JobPersistenceTest : FunSpec({
         test("HashMap: $testName") { block(HashMapJobPersistence()) }
         val redis = RedisServer.newRedisServer().start()
         test("Redis: $testName") {
-            val redisClient = redis.lettuceClient
+            val redisClient = redis.glideClient
             block(RedisJobPersistence(redisClient))
             redisClient.close()
             redis.stop()
@@ -216,7 +216,7 @@ class JobPersistenceTest : FunSpec({
 
     test("Redis: test heartbeats") {
         val redis = RedisServer.newRedisServer().start()
-        val persistence = RedisJobPersistence(redis.lettuceClient)
+        val persistence = RedisJobPersistence(redis.glideClient)
         val now = LocalDateTime.now()
         persistence.fetchHeartbeats(now.minusYears(2000)).expectSuccess() shouldHaveSize 0
         persistence.updateHeartbeat(Heartbeat("I1", now.minusSeconds(3)))
@@ -250,3 +250,4 @@ internal fun newJob(
     )
 
 internal fun fixDateWithSecond(second: Int) = LocalDateTime.of(2022, 7, 22, second, 0)
+

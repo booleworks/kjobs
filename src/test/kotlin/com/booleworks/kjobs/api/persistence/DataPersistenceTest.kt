@@ -12,17 +12,17 @@ import com.booleworks.kjobs.api.persistence.redis.RedisJobPersistence
 import com.booleworks.kjobs.common.TestInput
 import com.booleworks.kjobs.common.TestResult
 import com.booleworks.kjobs.common.expectSuccess
-import com.booleworks.kjobs.common.lettuceClient
+import com.booleworks.kjobs.common.glideClient
 import com.booleworks.kjobs.data.PersistenceAccessResult
 import com.booleworks.kjobs.data.uuidNotFound
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.github.fppt.jedismock.RedisServer
-import kotlinx.coroutines.test.runTest
+import glide.api.models.GlideString.gs
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.equals.shouldBeEqual
-import io.lettuce.core.codec.ByteArrayCodec
+import kotlinx.coroutines.test.runTest
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPOutputStream
 
@@ -39,7 +39,7 @@ class DataPersistenceTest : FunSpec({
         test("Redis: $testName") {
             block(
                 RedisDataPersistence(
-                    redis.lettuceClient,
+                    redis.glideClient,
                     { jacksonObjectMapper().writeValueAsBytes(it) },
                     { jacksonObjectMapper().writeValueAsBytes(it) },
                     { jacksonObjectMapper().readValue(it) },
@@ -188,7 +188,7 @@ class DataPersistenceTest : FunSpec({
 
     test("Redis: test delete") {
         val redis = RedisServer.newRedisServer().start()
-        val redisClient = redis.lettuceClient
+        val redisClient = redis.glideClient
         val jobPersistence = RedisJobPersistence(redisClient)
         val testInputPersistence = RedisDataPersistence<TestInput, TestResult>(
             redisClient,
@@ -280,7 +280,7 @@ class DataPersistenceTest : FunSpec({
     test("Redis: test persist input with compression") {
         val redis = RedisServer.newRedisServer().start()
         val dataPersistence = RedisDataPersistence<MyInput, MyResult>(
-            redis.lettuceClient,
+            redis.glideClient,
             { jacksonObjectMapper().writeValueAsBytes(it) },
             { jacksonObjectMapper().writeValueAsBytes(it) },
             { jacksonObjectMapper().readValue(it) },
@@ -292,7 +292,7 @@ class DataPersistenceTest : FunSpec({
         dataPersistence.dataTransaction {
             inputs.forEach { persistInput(newJob(it.first), it.second).expectSuccess() }
         }
-        redis.lettuceClient.connect(ByteArrayCodec.INSTANCE).sync().get("input:42".toByteArray()).toList() shouldContainExactly compressToByteList(inputs[0].second)
+        redis.glideClient.get(gs("input:42")).get().bytes.toList() shouldContainExactly compressToByteList(inputs[0].second)
         dataPersistence.fetchInput("42").expectSuccess() shouldBeEqual inputs[0].second
         dataPersistence.fetchInput("43").expectSuccess() shouldBeEqual inputs[1].second
         dataPersistence.fetchInput("44").expectSuccess() shouldBeEqual inputs[2].second
@@ -304,7 +304,7 @@ class DataPersistenceTest : FunSpec({
     test("Redis: test persist result with compression") {
         val redis = RedisServer.newRedisServer().start()
         val dataPersistence = RedisDataPersistence<MyInput, MyResult>(
-            redis.lettuceClient,
+            redis.glideClient,
             { jacksonObjectMapper().writeValueAsBytes(it) },
             { jacksonObjectMapper().writeValueAsBytes(it) },
             { jacksonObjectMapper().readValue(it) },
@@ -316,7 +316,7 @@ class DataPersistenceTest : FunSpec({
         dataPersistence.dataTransaction {
             results.forEach { persistOrUpdateResult(newJob(it.first), it.second).expectSuccess() }
         }
-        redis.lettuceClient.connect(ByteArrayCodec.INSTANCE).sync().get("result:44".toByteArray()).toList() shouldContainExactly compressToByteList(results[2].second)
+        redis.glideClient.get(gs("result:44")).get().bytes.toList() shouldContainExactly compressToByteList(results[2].second)
         dataPersistence.fetchResult("42").expectSuccess() shouldBeEqual results[0].second
         dataPersistence.fetchResult("43").expectSuccess() shouldBeEqual results[1].second
         dataPersistence.fetchResult("44").expectSuccess() shouldBeEqual results[2].second
@@ -329,7 +329,7 @@ class DataPersistenceTest : FunSpec({
             persistOrUpdateResult(newJob("44"), newResult)
             persistOrUpdateResult(newJob("46"), newResult)
         }
-        redis.lettuceClient.connect(ByteArrayCodec.INSTANCE).sync().get("result:44".toByteArray()).toList() shouldContainExactly compressToByteList(newResult)
+        redis.glideClient.get(gs("result:44")).get().bytes.toList() shouldContainExactly compressToByteList(newResult)
         dataPersistence.fetchResult("42").expectSuccess() shouldBeEqual results[0].second
         dataPersistence.fetchResult("43").expectSuccess() shouldBeEqual results[1].second
         dataPersistence.fetchResult("44").expectSuccess() shouldBeEqual newResult
