@@ -6,7 +6,6 @@ package com.booleworks.kjobs.control.polling
 import com.booleworks.kjobs.control.logTime
 import com.booleworks.kjobs.data.PollStatus
 import io.lettuce.core.RedisClient
-import io.lettuce.core.api.sync.RedisCommands
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -27,15 +26,13 @@ private const val FAILURE_INDICATOR = "||FAILURE"
 private const val CONNECTION_CLOSE_DELAY = 50L
 
 class RedisLongPollManager(protected val redisClient: RedisClient, protected val channelName: String = DEFAULT_REDIS_CHANNEL) : LongPollManager {
-    val stringCommands: RedisCommands<String, String> = redisClient.connect().sync()
-
     override fun publishSuccess(uuid: String) = publish("$uuid$SUCCESS_INDICATOR")
 
     override fun publishFailure(uuid: String) = publish("$uuid$FAILURE_INDICATOR")
 
     private fun publish(message: String) {
         log.debug("Publishing $message")
-        logTime(log, Level.TRACE, { "Publishing in $it" }) { stringCommands.publish(channelName, message) }
+        logTime(log, Level.TRACE, { "Publishing in $it" }) { redisClient.connect().use { it.sync().publish(channelName, message) } }
     }
 
     override fun CoroutineScope.subscribe(uuid: String, timeout: Duration): Deferred<PollStatus> {
