@@ -18,8 +18,10 @@ import com.booleworks.kjobs.control.ComputationResult
 import com.booleworks.kjobs.data.Job
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.orQuitWith
+import com.booleworks.kjobs.data.successful
 import io.kotest.assertions.fail
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSingleElement
 import io.kotest.matchers.date.shouldBeAfter
@@ -147,6 +149,52 @@ class ExecutorTest : FunSpec({
         jobAfterComputation.timeout!! shouldBeBefore now()
         jobAfterComputation.numRestarts.shouldBeZero()
         fetchFailure(job.uuid).right() shouldBeEqual "The job did not finish within the configured timeout of 1ms"
+    }
+
+    testWithRedis("test computation with already expired timeout with redis") {
+        val job = newJob()
+        val input = TestInput(42, expectedDelay = 10, throwException = true)
+        dataTransaction { persistJob(job); persistInput(job, input) }
+        defaultExecutor(this, timeout = { _, _ -> 0.milliseconds }).execute(Dispatchers.Default)?.join()
+        val jobAfterComputation = fetchJob(job.uuid).right()
+        jobAfterComputation.uuid shouldBeEqual job.uuid
+        jobAfterComputation.type shouldBeEqual "TestJob"
+        jobAfterComputation.tags.isEmpty()
+        jobAfterComputation.customInfo.shouldBeNull()
+        jobAfterComputation.priority.shouldBeZero()
+        jobAfterComputation.createdBy shouldBeEqual defaultInstanceName
+        jobAfterComputation.createdAt shouldBeEqual job.createdAt
+        jobAfterComputation.status shouldBeEqual JobStatus.CANCELLED
+        jobAfterComputation.startedAt!!.shouldBeBetween(job.createdAt, now())
+        jobAfterComputation.executingInstance!! shouldBeEqual defaultInstanceName
+        jobAfterComputation.finishedAt!!.shouldBeBetween(jobAfterComputation.startedAt!!, now())
+        jobAfterComputation.timeout!! shouldBeBefore now()
+        jobAfterComputation.numRestarts.shouldBeZero()
+        fetchResult(job.uuid).successful.shouldBeFalse()
+        fetchFailure(job.uuid).successful.shouldBeFalse()
+    }
+
+    testWithRedis("test computation with negative timeout with redis") {
+        val job = newJob()
+        val input = TestInput(42, expectedDelay = 10, throwException = true)
+        dataTransaction { persistJob(job); persistInput(job, input) }
+        defaultExecutor(this, timeout = { _, _ -> (-10).seconds }).execute(Dispatchers.Default)?.join()
+        val jobAfterComputation = fetchJob(job.uuid).right()
+        jobAfterComputation.uuid shouldBeEqual job.uuid
+        jobAfterComputation.type shouldBeEqual "TestJob"
+        jobAfterComputation.tags.isEmpty()
+        jobAfterComputation.customInfo.shouldBeNull()
+        jobAfterComputation.priority.shouldBeZero()
+        jobAfterComputation.createdBy shouldBeEqual defaultInstanceName
+        jobAfterComputation.createdAt shouldBeEqual job.createdAt
+        jobAfterComputation.status shouldBeEqual JobStatus.CANCELLED
+        jobAfterComputation.startedAt!!.shouldBeBetween(job.createdAt, now())
+        jobAfterComputation.executingInstance!! shouldBeEqual defaultInstanceName
+        jobAfterComputation.finishedAt!!.shouldBeBetween(jobAfterComputation.startedAt!!, now())
+        jobAfterComputation.timeout!! shouldBeBefore now().minusSeconds(10)
+        jobAfterComputation.numRestarts.shouldBeZero()
+        fetchResult(job.uuid).successful.shouldBeFalse()
+        fetchFailure(job.uuid).successful.shouldBeFalse()
     }
 })
 

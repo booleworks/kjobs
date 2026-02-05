@@ -50,7 +50,10 @@ sealed interface ComputationResult<out RESULT> {
     data class Success<out RESULT>(val result: RESULT) : ComputationResult<RESULT>
     data class Error(val message: String, val tryRepeat: Boolean = false) : ComputationResult<Nothing>
 
-    fun resultStatus(): JobStatus = if (this is Success) JobStatus.SUCCESS else JobStatus.FAILURE
+    fun resultStatus(): JobStatus = when (this) {
+        is Success -> JobStatus.SUCCESS
+        is Error -> JobStatus.FAILURE
+    }
 }
 
 /**
@@ -250,18 +253,33 @@ class SpecificExecutor<INPUT, RESULT>(
             val timeout = timeoutComputation(job, jobInput)
             job.timeout = LocalDateTime.now().plusSeconds(timeout.inWholeSeconds)
             persistence.updateJobTimeout(job.uuid, job.timeout)
-
-            val result: ComputationResult<RESULT> = logTime(log, Level.TRACE, { "Computed job $uuid in $it" }) {
-                runCatching {
-                    withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
-                        ?: ComputationResult.Error("The job did not finish within the configured timeout of $timeout", tryRepeat = false)
-                }.getOrElse {
-                    yield() // for the case that the coroutine was cancelled
-                    log.error("The job with ID $uuid failed with an exception and will be set to 'FAILURE': ${it.message}", it)
-                    ComputationResult.Error("Unexpected exception during computation: ${it.message}", tryRepeat = false)
+            if (timeout.isPositive()) {
+                val result: ComputationResult<RESULT> = logTime(log, Level.TRACE, { "Computed job $uuid in $it" }) {
+                    runCatching {
+                        withTimeoutOrNull(timeout.toJavaDuration()) { computation(job, jobInput) }
+                            ?: ComputationResult.Error("The job did not finish within the configured timeout of $timeout", tryRepeat = false)
+                    }.getOrElse {
+                        yield() // for the case that the coroutine was cancelled
+                        log.error("The job with ID $uuid failed with an exception and will be set to 'FAILURE': ${it.message}", it)
+                        ComputationResult.Error("Unexpected exception during computation: ${it.message}", tryRepeat = false)
+                    }
                 }
+                logTime(log, Level.TRACE, { "Writing job result to DB in $it" }) { writeResultToDb(uuid, result) }
+            } else {
+                log.debug("The timeout of job ${job.uuid} expired before the computation could start. The job will be cancelled.")
+                job.status = JobStatus.CANCELLED
+                job.finishedAt = LocalDateTime.now()
+                persistence.transaction { updateJob(job) }.orQuitWith {
+                    abortComputationWithError(
+                        persistence,
+                        uuid,
+                        "Failed to cancel for ID ${uuid}: $it",
+                        "Failed to cancel job whose timeout was expired before the computation could start: $it"
+                    )
+                    return@launch
+                }
+                log.info("Job with ID $uuid was cancelled successfully.")
             }
-            logTime(log, Level.TRACE, { "Writing job result to DB in $it" }) { writeResultToDb(uuid, result) }
         }
 
     private suspend inline fun writeResultToDb(id: String, computationResult: ComputationResult<RESULT>) {
