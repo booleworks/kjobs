@@ -68,13 +68,13 @@ class SyncMockTest : FunSpec({
                 route("test") {
                     jobFramework = JobFramework(defaultInstanceName, jobPersistence) {
                         addApi(
-                            "J1", this@route, dataPersistence, { receiveText().toInt().let { TestInput(it, it) } },
+                            "J1", this@route, dataPersistence, { receiveText().split(",").map { it.toInt() }.let { TestInput(it[0], it[1]) } },
                             { respond(it) }, defaultComputation
                         ) {
                             enableSynchronousResource {
                                 checkInterval = 5.milliseconds
-                                maxWaitingTime = 50.milliseconds
-                                customPriorityProvider = { it.value }
+                                maxWaitingTime = { _, input -> input.value.milliseconds }
+                                customPriorityProvider = { it.value + it.expectedDelay }
                             }
                             jobConfig { priorityProvider = { 2 } }
                         }
@@ -82,11 +82,12 @@ class SyncMockTest : FunSpec({
                     }
                 }
             }
-            client.post("test/synchronous") { setBody("20") }.parseTestResult() shouldBeEqual TestResult(20)
+            // input = <maxWaitingTime>,<expectedDelayOfComputation>
+            client.post("test/synchronous") { setBody("50,20") }.parseTestResult() shouldBeEqual TestResult(50)
             val jobs = jobPersistence.allJobsOfInstance(JobStatus.SUCCESS, defaultInstanceName).expectSuccess() shouldHaveSize 1
-            jobs.first().priority shouldBeEqual 20
+            jobs.first().priority shouldBeEqual 70
 
-            val abortedJob = client.post("test/synchronous") { setBody("100") }
+            val abortedJob = client.post("test/synchronous") { setBody("50,100") }
             abortedJob.status shouldBeEqual HttpStatusCode.BadRequest
             val response = abortedJob.bodyAsText()
             response shouldStartWith "The job did not finish within the timeout of 50ms. You may be able to retrieve the result later via the asynchronous API using the job id "
