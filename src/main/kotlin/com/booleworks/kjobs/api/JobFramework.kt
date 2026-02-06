@@ -361,7 +361,7 @@ class JobFrameworkBuilder internal constructor(
                     Maintenance.checkForCancellations(jobPersistence, jobCancellationQueue)
                 }
             }
-            return supervisor
+            supervisor
         } else null
     }
 
@@ -585,6 +585,8 @@ class ApiConfigBuilder<INPUT> internal constructor(
  * Default is a function returning `null`.
  * @param priorityProvider a function providing an integer priority for a job input. A smaller number means a higher priority. Default is 0.
  * @param timeoutComputation a function providing a timeout for the given job. The default is 24 hours. In most cases this default should be set much lower.
+ * The timeout may also be 0 or negative. When a job is selected and has a negative timeout (e.g. if the waiting time for the job was too long) the
+ * computation is not started and the job is set to status [JobStatus.CANCELLED].
  * @param maxRestarts the maximum number of restarts for this job in case of (potentially temporary) errors. Default is [DEFAULT_MAX_JOB_RESTARTS].
  */
 @KJobsDsl
@@ -602,7 +604,7 @@ class JobConfigBuilder<INPUT> internal constructor(
 /**
  * Configuration options for the synchronous resource.
  *
- * The synchronous resource is a wrapper around the asynchronous resources (`submit`, `status`, `result`, etc). It does not perform the computation itself,
+ * The synchronous resource is a wrapper around the asynchronous resources (`submit`, `status`, `result`, etc.). It does not perform the computation itself,
  * but (like the asynchronous API) stores the job in the database and then waits for the job to be computed.
  *
  * To accelerate the selection of such jobs you might want to configure a [custom priority provider][customPriorityProvider].
@@ -630,7 +632,7 @@ class SynchronousResourceConfigBuilder<INPUT>(
 /**
  * Configuration for the job info.
  *
- * If [enabled] the KJobs will provide an additional resource (defined in [ApiConfigBuilder.infoRoute], default `GET info/{uuid}`
+ * If [enabled] the KJobs will provide an additional resource (defined in [ApiConfigBuilder.infoRoute], default `GET info/{uuid}`)
  * which can return general information about the job. The content returned by the resource can be configured via the [responder].
  *
  * Note that the default implementation of the [responder] requires JSON serialization to be installed in the Ktor server.

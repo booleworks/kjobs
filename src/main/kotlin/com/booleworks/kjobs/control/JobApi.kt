@@ -87,7 +87,7 @@ private val apiLog = LoggerFactory.getLogger("com.booleworks.kjobs.ApiLog")
  * - the job must have the `jobType` of this API, otherwise status 400 is returned. So only jobs belonging
  *     to this API can be deleted.
  * - the job must not be in one of the states `CREATED`, `RUNNING`, or `CANCEL_REQUESTED`. Such jobs must be
- *     canceled first (and/or it has to be waited until the cancellation has succeeded and the status is
+ *     cancelled first (and/or it has to be waited until the cancellation has succeeded and the status is
  *     `CANCELLED`)
  *
  * ### `GET info/{uuid}` (if enabled via [JobInfoConfig.enabled])

@@ -8,7 +8,7 @@ package com.booleworks.kjobs.data
  * - `SUCCESS`: The job finished with [JobStatus.SUCCESS]
  * - `FAILURE`: The job finished with [JobStatus.FAILURE]
  * - `TIMEOUT`: The job is still in status [JobStatus.CREATED] or [JobStatus.RUNNING]
- * - `ABORTED`: The job was canceled or even removed
+ * - `ABORTED`: The job was cancelled or even removed
  */
 enum class PollStatus {
     SUCCESS, FAILURE, TIMEOUT, ABORTED;
