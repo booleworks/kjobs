@@ -615,15 +615,15 @@ class JobConfigBuilder<INPUT> internal constructor(
  * By default, the synchronous API is disabled.
  * @param enabled whether the synchronous resource is enabled for this API, by default it is not enabled
  * @param checkInterval the interval in which the job status should be checked after it was submitted
- * @param maxWaitingTime the maximum time to wait for the job to complete. If this time is exceeded, status 400 is returned including the information
- * about the UUID of the generated job.
+ * @param maxWaitingTime the maximum time to wait for the job to complete, optionally depending on the [Job] and [INPUT].
+ * If this time is exceeded, status 400 is returned including the information about the UUID of the generated job.
  * @param customPriorityProvider a custom priority provider for jobs from the synchronous resource
  */
 @KJobsDsl
 class SynchronousResourceConfigBuilder<INPUT>(
     internal var enabled: Boolean = false,
     var checkInterval: Duration = 200.milliseconds,
-    var maxWaitingTime: Duration = 1.hours,
+    var maxWaitingTime: (Job, INPUT) -> Duration = { _, _ -> 1.hours },
     var customPriorityProvider: (INPUT) -> Int = { 0 }
 ) {
     internal fun toSynchronousResourceConfig() = SynchronousResourceConfig(enabled, checkInterval, maxWaitingTime, customPriorityProvider)
