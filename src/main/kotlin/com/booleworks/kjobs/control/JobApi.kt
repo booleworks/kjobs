@@ -101,7 +101,7 @@ private val apiLog = LoggerFactory.getLogger("com.booleworks.kjobs.ApiLog")
  */
 internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESULT>, jobConfig: JobConfig<INPUT, RESULT>) = with(apiConfig) {
     submitRoute {
-        validateAndSubmit(apiConfig, jobConfig, inputReceiver())?.let { respond(it) }
+        validateAndSubmit(apiConfig, jobConfig, inputReceiver())?.let { respond(it.uuid) }
     }
 
     statusRoute {
@@ -164,10 +164,13 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
 
     if (syncMockConfig.enabled) {
         syncRoute {
-            val uuid = validateAndSubmit(apiConfig, jobConfig.copy(priorityProvider = syncMockConfig.priorityProvider), inputReceiver()) ?: return@syncRoute
+            val input = inputReceiver()
+            val job = validateAndSubmit(apiConfig, jobConfig.copy(priorityProvider = syncMockConfig.priorityProvider), input) ?: return@syncRoute
+            val uuid = job.uuid
             apiLog.trace("Submitted job for synchronous computation, got ID $uuid")
+            val maxWaitingTime = syncMockConfig.maxWaitingTime(job, input)
+            val timeout = LocalDateTime.now().plus(maxWaitingTime.inWholeMilliseconds, ChronoUnit.MILLIS)
             var status: JobStatus
-            val timeout = LocalDateTime.now().plus(syncMockConfig.maxWaitingTime.inWholeMilliseconds, ChronoUnit.MILLIS)
             do {
                 delay(syncMockConfig.checkInterval)
                 status = jobConfig.persistence.fetchJob(uuid).orQuitWith {
@@ -183,7 +186,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
             } else {
                 if (LocalDateTime.now() > timeout) {
                     respondText(
-                        "The job did not finish within the timeout of ${syncMockConfig.maxWaitingTime}. " +
+                        "The job did not finish within the timeout of ${maxWaitingTime}. " +
                                 "You may be able to retrieve the result later via the asynchronous API using the job id $uuid.", status = BadRequest
                     )
                 } else {
@@ -236,7 +239,7 @@ internal fun <INPUT, RESULT> Route.setupJobApi(apiConfig: ApiConfig<INPUT, RESUL
 
 internal suspend inline fun cancelJob(job: Job, persistence: JobPersistence): Either<String, String> {
     when (job.status) {
-        JobStatus.CREATED                                         -> {
+        JobStatus.CREATED -> {
             apiLog.info("Cancelling job with ID ${job.uuid} from status CREATED")
             job.status = JobStatus.CANCELLED
             job.finishedAt = LocalDateTime.now()
@@ -254,7 +257,7 @@ internal suspend inline fun cancelJob(job: Job, persistence: JobPersistence): Ei
             }
         }
 
-        JobStatus.RUNNING                                         -> {
+        JobStatus.RUNNING -> {
             apiLog.info("Cancelling job with ID ${job.uuid} from status RUNNING")
             job.status = JobStatus.CANCEL_REQUESTED
             val jobInStatusRunning: Map<String, (Job) -> Boolean> = mapOf(job.uuid to { it.status == JobStatus.RUNNING })
@@ -274,7 +277,7 @@ internal suspend inline fun cancelJob(job: Job, persistence: JobPersistence): Ei
             }
         }
 
-        JobStatus.CANCEL_REQUESTED                                -> {
+        JobStatus.CANCEL_REQUESTED -> {
             apiLog.warn("Detected a duplicate cancellation request for job with ID ${job.uuid}")
             return Either.Right("Cancellation for job with id ${job.uuid} has already been requested")
         }
@@ -303,7 +306,7 @@ private suspend inline fun <INPUT> ApplicationCall.validateAndSubmit(
     apiConfig: ApiConfig<INPUT, *>,
     jobConfig: JobConfig<INPUT, *>,
     input: INPUT
-): String? {
+): Job? {
     val inputValidation = apiConfig.inputValidation(input)
     if (!inputValidation.success) {
         respond(inputValidation.responseCode, inputValidation.message)
@@ -312,7 +315,7 @@ private suspend inline fun <INPUT> ApplicationCall.validateAndSubmit(
     return submit(input, jobConfig).orQuitWith {
         respondText("Failed to persist job: $it", status = InternalServerError)
         return null
-    }.uuid
+    }
 }
 
 private suspend inline fun ApplicationCall.fetchJobAndCheckType(
@@ -322,7 +325,7 @@ private suspend inline fun ApplicationCall.fetchJobAndCheckType(
 ): Job? {
     val job = persistence.fetchJob(uuid.toString()).orQuitWith {
         when (it) {
-            is PersistenceAccessError.InternalError                                    -> respondText(
+            is PersistenceAccessError.InternalError -> respondText(
                 "Failed to access job with ID $uuid: $it",
                 status = InternalServerError
             )
@@ -330,7 +333,7 @@ private suspend inline fun ApplicationCall.fetchJobAndCheckType(
             is PersistenceAccessError.NotFound, is PersistenceAccessError.UuidNotFound ->
                 respondText("No job with ID $uuid could be found.", status = NotFound)
 
-            is PersistenceAccessError.Modified                                         -> error("Unexpected")
+            is PersistenceAccessError.Modified -> error("Unexpected")
         }
         return null
     }

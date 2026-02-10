@@ -43,7 +43,7 @@ internal data class JobConfig<INPUT, RESULT>(
 internal class SynchronousResourceConfig<INPUT>(
     val enabled: Boolean,
     val checkInterval: Duration,
-    val maxWaitingTime: Duration,
+    val maxWaitingTime: (Job, INPUT) -> Duration,
     val priorityProvider: (INPUT) -> Int,
 )
 
