@@ -14,7 +14,6 @@ import org.slf4j.Logger
 import org.slf4j.event.Level
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
-import kotlin.time.ExperimentalTime
 import kotlin.time.TimeSource.Monotonic.markNow
 import kotlin.time.measureTimedValue
 
@@ -32,7 +31,6 @@ import kotlin.time.measureTimedValue
  * The default dispatcher used for executing the [task] can be overridden with the given
  * [dispatcher].
  */
-@OptIn(ExperimentalTime::class)
 fun CoroutineContext.scheduleForever(
     interval: Duration,
     taskName: String,

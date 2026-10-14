@@ -22,7 +22,6 @@ import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
-import io.ktor.server.application.call
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.routing.route
@@ -51,11 +50,11 @@ class CancellationTest : FunSpec({
             }
         }
         val uuid = client.post("test/submit") { setBody("5") }.bodyAsText()
-        delay(20)
+        delay(20.milliseconds)
         client.get("test/status/$uuid").bodyAsText() shouldBeEqual "RUNNING"
         client.post("test/cancel/$uuid")
             .bodyAsText() shouldBeEqual "Job with id $uuid is currently running and will be cancelled as soon as possible. If it finishes in the meantime, the cancel request will be ignored."
-        delay(200)
+        delay(200.milliseconds)
         client.get("test/status/$uuid").bodyAsText() shouldBeEqual "CANCELLED"
         frameworkJob!!.cancelAndJoin()
     }
@@ -84,11 +83,11 @@ class CancellationTest : FunSpec({
             }
         }
         val uuid = client.post("test/submit") { setBody("5") }.bodyAsText()
-        delay(20)
+        delay(20.milliseconds)
         client.get("test/status/$uuid").bodyAsText() shouldBeEqual "RUNNING"
         client.post("test/cancel/$uuid")
             .bodyAsText() shouldBeEqual "Job with id $uuid is currently running and will be cancelled as soon as possible. If it finishes in the meantime, the cancel request will be ignored."
-        delay(500)
+        delay(500.milliseconds)
         client.get("test/status/$uuid").bodyAsText() shouldBeEqual "CANCEL_REQUESTED"
         frameworkJob!!.cancelAndJoin()
     }

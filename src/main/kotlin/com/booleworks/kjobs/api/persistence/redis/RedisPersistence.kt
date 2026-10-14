@@ -196,7 +196,7 @@ open class RedisJobPersistence(
                     it.get("status") in setOf(JobStatus.SUCCESS.toString(), JobStatus.FAILURE.toString(), JobStatus.CANCELLED.toString())
                 }.orQuitWith {
                     logger.error("Failed fetching jobs for job count: " + it.message)
-                    return PersistenceAccessResult.internalError<List<Job>>(it.message)
+                    return PersistenceAccessResult.internalError(it.message)
                 }
             }.let { jobs ->
                 PersistenceAccessResult.result(jobs.sortedBy { it.createdAt }.take(exceedingJobCount))

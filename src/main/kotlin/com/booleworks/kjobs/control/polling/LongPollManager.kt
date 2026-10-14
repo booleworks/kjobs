@@ -1,6 +1,5 @@
 package com.booleworks.kjobs.control.polling
 
-import com.booleworks.kjobs.control.polling.NopLongPollManager.subscribe
 import com.booleworks.kjobs.data.JobStatus
 import com.booleworks.kjobs.data.PollStatus
 import kotlinx.coroutines.CoroutineScope

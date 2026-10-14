@@ -94,7 +94,7 @@ class SyncMockTest : FunSpec({
 
             val uuid = response.split(" ").last().dropLast(1)
             client.get("test/status/$uuid").bodyAsText() shouldBeEqual "RUNNING"
-            delay(100)
+            delay(100.milliseconds)
             client.get("test/status/$uuid").bodyAsText() shouldBeEqual "SUCCESS"
         }
         jobFramework!!.cancelAndJoin()

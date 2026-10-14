@@ -4,8 +4,6 @@
 package com.booleworks.kjobs.data
 
 import com.booleworks.kjobs.api.persistence.JobPersistence
-import com.booleworks.kjobs.data.JobStatistics.Companion.byType
-import com.booleworks.kjobs.data.JobStatistics.Companion.forAllJobs
 import java.time.Duration
 
 /**
