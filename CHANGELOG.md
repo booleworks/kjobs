@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Kotlin 2.4.21
   - Ktor 3.6.0
   - slfj4j 2.0.20
-  - Lettuce 7.8.0.RELEASE
-  - Jackson 2.22.3
+  - Lettuce 7.9.0.RELEASE
+  - Jackson 2.22.4
   - Logback 1.6.5
   - Other minor dependency updates
 
