@@ -61,7 +61,7 @@
     <version.detekt>1.23.8</version.detekt>
 
     <version.maven-gpg>3.2.8</version.maven-gpg>
-    <version.central-publishing>0.9.0</version.central-publishing>
+    <version.central-publishing>0.12.0</version.central-publishing>
   </properties>
 
   <build>
